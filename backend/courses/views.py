@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count
 
-from .models import Course, Enrollment, Dataset
+from .models import Course, Enrollment, Dataset, Lesson
 from .serializers import (
     CourseListSerializer,
     CourseDetailSerializer,
@@ -12,6 +12,9 @@ from .serializers import (
     EnrollmentSerializer,
     EnrollRequestSerializer,
     DatasetSerializer,
+    LessonListSerializer,
+    LessonDetailSerializer,
+    LessonCreateSerializer,
 )
 from config.permissions import IsInstructor, IsEnrolledOrInstructor, IsCourseInstructor
 
@@ -23,7 +26,8 @@ class CourseViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = Course.objects.annotate(
             student_count=Count('enrollments', distinct=True),
-            assignment_count=Count('assignments', distinct=True)
+            assignment_count=Count('assignments', distinct=True),
+            lesson_count=Count('lessons', distinct=True)
         )
 
         if user.is_instructor:
@@ -138,6 +142,7 @@ class CourseViewSet(viewsets.ModelViewSet):
 class DatasetViewSet(viewsets.ModelViewSet):
     serializer_class = DatasetSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None  # No pagination for datasets
 
     def get_queryset(self):
         course_id = self.kwargs.get('course_pk')
@@ -165,3 +170,51 @@ class EnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
         if user.is_instructor:
             return Enrollment.objects.filter(course__instructor=user)
         return Enrollment.objects.filter(student=user)
+
+
+class LessonViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        course_id = self.kwargs.get('course_pk')
+        user = self.request.user
+        queryset = Lesson.objects.filter(course_id=course_id)
+
+        # Students only see published lessons
+        if not user.is_instructor:
+            queryset = queryset.filter(is_published=True)
+
+        return queryset.order_by('order', 'created_at')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return LessonListSerializer
+        if self.action == 'create':
+            return LessonCreateSerializer
+        return LessonDetailSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsInstructor()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        course_id = self.kwargs.get('course_pk')
+        course = Course.objects.get(id=course_id)
+        if course.instructor != self.request.user and not self.request.user.is_superuser:
+            raise PermissionError('Not authorized to add lessons to this course')
+
+        # Auto-set order if not provided
+        if not serializer.validated_data.get('order'):
+            max_order = Lesson.objects.filter(course_id=course_id).count()
+            serializer.save(course_id=course_id, order=max_order + 1)
+        else:
+            serializer.save(course_id=course_id)
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request, course_pk=None):
+        """Reorder lessons within a course."""
+        lesson_ids = request.data.get('lesson_ids', [])
+        for idx, lesson_id in enumerate(lesson_ids):
+            Lesson.objects.filter(id=lesson_id, course_id=course_pk).update(order=idx + 1)
+        return Response({'detail': 'Lessons reordered successfully'})
