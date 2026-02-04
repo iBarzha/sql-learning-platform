@@ -1,3 +1,90 @@
-from django.shortcuts import render
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Count, Avg
 
-# Create your views here.
+from .models import Assignment
+from .serializers import (
+    AssignmentListSerializer,
+    AssignmentDetailSerializer,
+    AssignmentCreateSerializer,
+    AssignmentInstructorSerializer,
+)
+from courses.models import Course
+from config.permissions import IsInstructor, IsCourseInstructor
+
+
+class AssignmentViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        course_id = self.kwargs.get('course_pk')
+
+        queryset = Assignment.objects.annotate(
+            submission_count=Count('submissions', distinct=True),
+            average_score=Avg('submissions__score')
+        )
+
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+
+        if user.is_instructor:
+            return queryset.filter(course__instructor=user)
+        else:
+            return queryset.filter(
+                course__enrollments__student=user,
+                course__enrollments__status='active',
+                is_published=True
+            )
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return AssignmentListSerializer
+        if self.action in ['create', 'update', 'partial_update']:
+            return AssignmentCreateSerializer
+        if self.request.user.is_instructor:
+            return AssignmentInstructorSerializer
+        return AssignmentDetailSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsInstructor()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        course_id = self.kwargs.get('course_pk')
+        course = Course.objects.get(id=course_id)
+        if course.instructor != self.request.user:
+            raise PermissionError('Not authorized to add assignments to this course')
+        serializer.save(course=course)
+
+    @action(detail=True, methods=['get'])
+    def stats(self, request, pk=None, course_pk=None):
+        """Get statistics for an assignment (instructor only)."""
+        assignment = self.get_object()
+
+        if assignment.course.instructor != request.user:
+            return Response(
+                {'detail': 'Not authorized'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        total_students = assignment.course.enrollments.filter(status='active').count()
+        completed_count = assignment.user_results.filter(is_completed=True).count()
+        attempted_count = assignment.user_results.count()
+
+        submissions = assignment.submissions.all()
+        scores = [s.score for s in submissions if s.score is not None]
+
+        return Response({
+            'total_students': total_students,
+            'attempted_count': attempted_count,
+            'completed_count': completed_count,
+            'completion_rate': (completed_count / total_students * 100) if total_students > 0 else 0,
+            'total_submissions': submissions.count(),
+            'average_score': sum(scores) / len(scores) if scores else None,
+            'highest_score': max(scores) if scores else None,
+            'lowest_score': min(scores) if scores else None,
+        })
