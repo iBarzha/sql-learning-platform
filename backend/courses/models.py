@@ -39,14 +39,6 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
-    @property
-    def student_count(self):
-        return self.enrollments.filter(is_active=True).count()
-
-    @property
-    def assignment_count(self):
-        return self.assignments.count()
-
 
 class Enrollment(models.Model):
     class Status(models.TextChoices):
@@ -86,6 +78,68 @@ class Enrollment(models.Model):
     @property
     def is_active(self):
         return self.status == self.Status.ACTIVE
+
+
+class Lesson(models.Model):
+    class LessonType(models.TextChoices):
+        THEORY = 'theory', 'Theory'
+        PRACTICE = 'practice', 'Practice'
+        MIXED = 'mixed', 'Theory & Practice'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name='lessons'
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, help_text='Short description shown on card')
+    lesson_type = models.CharField(
+        max_length=20,
+        choices=LessonType.choices,
+        default=LessonType.MIXED
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    # Theory content
+    theory_content = models.TextField(blank=True, help_text='Markdown supported')
+
+    # Practice content
+    practice_description = models.TextField(blank=True, help_text='Task description')
+    practice_initial_code = models.TextField(blank=True, help_text='Initial code template')
+    expected_query = models.TextField(blank=True, help_text='Expected SQL query')
+    expected_result = models.JSONField(null=True, blank=True)
+
+    # Grading options
+    required_keywords = models.JSONField(default=list, blank=True)
+    forbidden_keywords = models.JSONField(default=list, blank=True)
+    order_matters = models.BooleanField(default=False)
+    max_score = models.PositiveIntegerField(default=100)
+    time_limit_seconds = models.PositiveIntegerField(default=60)
+    max_attempts = models.PositiveIntegerField(null=True, blank=True)
+
+    # Hints
+    hints = models.JSONField(default=list, blank=True)
+
+    # Dataset for practice
+    dataset = models.ForeignKey(
+        'Dataset',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lessons'
+    )
+
+    is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'lessons'
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.course.title})'
 
 
 class Dataset(models.Model):

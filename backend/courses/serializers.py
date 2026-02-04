@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Course, Enrollment, Dataset
+from .models import Course, Enrollment, Dataset, Lesson
 from users.serializers import UserSerializer
 
 
@@ -17,6 +17,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     instructor_name = serializers.CharField(source='instructor.full_name', read_only=True)
     student_count = serializers.IntegerField(read_only=True)
     assignment_count = serializers.IntegerField(read_only=True)
+    lesson_count = serializers.IntegerField(read_only=True)
     is_enrolled = serializers.SerializerMethodField()
 
     class Meta:
@@ -24,7 +25,7 @@ class CourseListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'instructor', 'instructor_name',
             'database_type', 'is_published', 'student_count', 'assignment_count',
-            'start_date', 'end_date', 'is_enrolled', 'created_at'
+            'lesson_count', 'start_date', 'end_date', 'is_enrolled', 'created_at'
         ]
         read_only_fields = ['id', 'instructor', 'created_at']
 
@@ -40,6 +41,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     datasets = DatasetSerializer(many=True, read_only=True)
     student_count = serializers.IntegerField(read_only=True)
     assignment_count = serializers.IntegerField(read_only=True)
+    lesson_count = serializers.IntegerField(read_only=True)
     is_enrolled = serializers.SerializerMethodField()
 
     class Meta:
@@ -47,8 +49,8 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'instructor', 'database_type',
             'is_published', 'enrollment_key', 'max_students', 'start_date',
-            'end_date', 'student_count', 'assignment_count', 'datasets',
-            'is_enrolled', 'created_at', 'updated_at'
+            'end_date', 'student_count', 'assignment_count', 'lesson_count',
+            'datasets', 'is_enrolled', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'instructor', 'created_at', 'updated_at']
 
@@ -87,3 +89,81 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
 class EnrollRequestSerializer(serializers.Serializer):
     enrollment_key = serializers.CharField(required=False, allow_blank=True)
+
+
+class LessonListSerializer(serializers.ModelSerializer):
+    dataset_name = serializers.CharField(source='dataset.name', read_only=True)
+    user_completed = serializers.SerializerMethodField()
+    user_best_score = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Lesson
+        fields = [
+            'id', 'title', 'description', 'lesson_type', 'order',
+            'is_published', 'max_score', 'dataset_name',
+            'user_completed', 'user_best_score', 'created_at'
+        ]
+
+    def get_user_completed(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and obj.lesson_type != 'theory':
+            from submissions.models import UserResult
+            return UserResult.objects.filter(
+                student=request.user,
+                lesson=obj,
+                is_completed=True
+            ).exists()
+        return None
+
+    def get_user_best_score(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and obj.lesson_type != 'theory':
+            from submissions.models import UserResult
+            result = UserResult.objects.filter(student=request.user, lesson=obj).first()
+            return result.best_score if result else None
+        return None
+
+
+class LessonDetailSerializer(serializers.ModelSerializer):
+    dataset = DatasetSerializer(read_only=True)
+    dataset_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    course_title = serializers.CharField(source='course.title', read_only=True)
+
+    class Meta:
+        model = Lesson
+        fields = [
+            'id', 'course', 'course_title', 'title', 'description', 'lesson_type', 'order',
+            'theory_content', 'practice_description', 'practice_initial_code',
+            'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
+            'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
+            'hints', 'dataset', 'dataset_id', 'is_published', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'course', 'created_at', 'updated_at']
+
+    def update(self, instance, validated_data):
+        dataset_id = validated_data.pop('dataset_id', None)
+        if dataset_id is not None:
+            instance.dataset_id = dataset_id
+        return super().update(instance, validated_data)
+
+
+class LessonCreateSerializer(serializers.ModelSerializer):
+    dataset_id = serializers.UUIDField(required=False, allow_null=True)
+
+    class Meta:
+        model = Lesson
+        fields = [
+            'title', 'description', 'lesson_type', 'order',
+            'theory_content', 'practice_description', 'practice_initial_code',
+            'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
+            'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
+            'hints', 'dataset_id', 'is_published'
+        ]
+
+    def create(self, validated_data):
+        dataset_id = validated_data.pop('dataset_id', None)
+        lesson = Lesson.objects.create(**validated_data)
+        if dataset_id:
+            lesson.dataset_id = dataset_id
+            lesson.save()
+        return lesson
