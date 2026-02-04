@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
 
-from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet
+from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet
 from assignments.views import AssignmentViewSet
 from submissions.views import SubmissionViewSet, UserResultViewSet
 
@@ -16,10 +16,14 @@ router.register(r'results', UserResultViewSet, basename='result')
 courses_router = routers.NestedDefaultRouter(router, r'courses', lookup='course')
 courses_router.register(r'datasets', DatasetViewSet, basename='course-dataset')
 courses_router.register(r'assignments', AssignmentViewSet, basename='course-assignment')
+courses_router.register(r'lessons', LessonViewSet, basename='course-lesson')
 
 assignments_router = routers.NestedDefaultRouter(courses_router, r'assignments', lookup='assignment')
 assignments_router.register(r'submissions', SubmissionViewSet, basename='assignment-submission')
 assignments_router.register(r'results', UserResultViewSet, basename='assignment-result')
+
+lessons_router = routers.NestedDefaultRouter(courses_router, r'lessons', lookup='lesson')
+lessons_router.register(r'submissions', SubmissionViewSet, basename='lesson-submission')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,4 +31,5 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/', include(courses_router.urls)),
     path('api/', include(assignments_router.urls)),
+    path('api/', include(lessons_router.urls)),
 ]
