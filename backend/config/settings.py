@@ -156,7 +156,7 @@ SANDBOX_CONFIG = {
     'POOL_SIZE': int(os.getenv('SANDBOX_POOL_SIZE', '3')),
     'CONTAINER_TIMEOUT': int(os.getenv('SANDBOX_TIMEOUT', '30')),
     'MAX_QUERY_TIME': int(os.getenv('MAX_QUERY_TIME', '10')),
-    'DOCKER_NETWORK': os.getenv('DOCKER_NETWORK', 'sql-learning-sandbox'),
+    'DOCKER_NETWORK': os.getenv('DOCKER_NETWORK', 'sql-learning-platform_sql-learning-sandbox'),
 }
 
 # Database images for sandbox
