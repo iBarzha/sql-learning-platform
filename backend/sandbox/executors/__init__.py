@@ -2,7 +2,8 @@
 
 from .base import BaseExecutor, QueryResult
 from .postgresql import PostgreSQLExecutor
-from .mysql import MySQLExecutor
+from .sqlite import SQLiteExecutor
+from .mysql import MySQLExecutor  # Used for MariaDB (MySQL-compatible)
 from .mongodb import MongoDBExecutor
 from .redis_executor import RedisExecutor
 
@@ -10,6 +11,7 @@ __all__ = [
     'BaseExecutor',
     'QueryResult',
     'PostgreSQLExecutor',
+    'SQLiteExecutor',
     'MySQLExecutor',
     'MongoDBExecutor',
     'RedisExecutor',
@@ -20,7 +22,7 @@ def get_executor(database_type: str) -> type[BaseExecutor]:
     """Get the executor class for a database type."""
     executors = {
         'postgresql': PostgreSQLExecutor,
-        'mysql': MySQLExecutor,
+        'sqlite': SQLiteExecutor,
         'mariadb': MySQLExecutor,  # MariaDB uses MySQL protocol
         'mongodb': MongoDBExecutor,
         'redis': RedisExecutor,
