@@ -8,9 +8,9 @@ from uuid import UUID
 from django.conf import settings
 from django.utils import timezone
 
-from .pool import get_warm_pool, WarmPool
-from .executors import QueryResult, get_executor
-from .models import SandboxContainer, ExecutionLog, ContainerStatus
+from .pool import get_sandbox_pool, SandboxPool
+from .executors import QueryResult
+from .models import ExecutionLog
 from .exceptions import (
     SandboxError,
     QueryTimeoutError,
@@ -18,9 +18,6 @@ from .exceptions import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Database types that don't need containers (file-based)
-CONTAINERLESS_DATABASES = {'sqlite'}
 
 
 @dataclass
@@ -59,19 +56,19 @@ class ExecutionResponse:
 
 class QueryExecutionService:
     """
-    Service for executing SQL queries in sandbox containers.
+    Service for executing SQL queries in sandbox databases.
 
     Provides a high-level API for query execution with automatic
-    container management, dataset initialization, and result handling.
+    database management, dataset initialization, and result handling.
     """
 
-    def __init__(self, pool: Optional[WarmPool] = None):
-        self._pool = pool or get_warm_pool()
-        self._max_query_time = settings.SANDBOX_CONFIG.get('MAX_QUERY_TIME', 10)
+    def __init__(self, pool: Optional[SandboxPool] = None):
+        self._pool = pool or get_sandbox_pool()
+        self._max_query_time = settings.SANDBOX_CONFIG.get('MAX_QUERY_TIME', 30)
 
     def execute(self, request: ExecutionRequest) -> ExecutionResponse:
         """
-        Execute a query in a sandbox container.
+        Execute a query in a sandbox database.
 
         Args:
             request: ExecutionRequest with query details
@@ -79,113 +76,20 @@ class QueryExecutionService:
         Returns:
             ExecutionResponse with results or error
         """
-        # Handle containerless databases (like SQLite) separately
-        if request.database_type in CONTAINERLESS_DATABASES:
-            return self._execute_containerless(request)
-
-        return self._execute_with_container(request)
-
-    def _execute_containerless(self, request: ExecutionRequest) -> ExecutionResponse:
-        """Execute query for databases that don't need containers (SQLite)."""
-        executor = None
-
         try:
-            # Create executor directly
-            executor_class = get_executor(request.database_type)
-            executor = executor_class()
-            executor.connect()
-
-            # Initialize dataset if provided
-            if request.schema_sql or request.seed_sql:
-                self._initialize_dataset(
-                    executor,
-                    request.schema_sql,
-                    request.seed_sql,
-                )
-
-            # Execute the query
             timeout = min(request.timeout, self._max_query_time)
-            result = executor.execute_query(request.query, timeout=timeout)
 
-            # Log execution (without container)
-            self._log_execution_simple(
+            result = self._pool.execute_query(
                 database_type=request.database_type,
                 query=request.query,
-                result=result,
-                user_id=request.user_id,
-                submission_id=request.submission_id,
+                schema_sql=request.schema_sql,
+                seed_sql=request.seed_sql,
+                timeout=timeout,
             )
-
-            return ExecutionResponse(
-                success=result.success,
-                result=result,
-                error_message=result.error_message,
-                execution_time_ms=result.execution_time_ms,
-                container_id='local',
-            )
-
-        except QueryTimeoutError as e:
-            logger.warning(f'Query timeout: {e}')
-            return ExecutionResponse(
-                success=False,
-                error_message=str(e),
-                container_id='local',
-            )
-
-        except SandboxError as e:
-            logger.error(f'Sandbox error: {e}')
-            return ExecutionResponse(
-                success=False,
-                error_message=str(e),
-                container_id='local',
-            )
-
-        except Exception as e:
-            logger.exception(f'Unexpected error during query execution: {e}')
-            return ExecutionResponse(
-                success=False,
-                error_message='Internal error during query execution',
-                container_id='local',
-            )
-
-        finally:
-            if executor:
-                try:
-                    executor.disconnect()
-                except Exception:
-                    pass
-
-    def _execute_with_container(self, request: ExecutionRequest) -> ExecutionResponse:
-        """Execute query using a container from the pool."""
-        container_info = None
-        executor = None
-
-        try:
-            # Acquire container from pool
-            container_info = self._pool.acquire(
-                database_type=request.database_type,
-                timeout=settings.SANDBOX_CONFIG.get('CONTAINER_TIMEOUT', 30),
-            )
-
-            # Get executor for this container
-            executor = self._pool.get_executor(container_info)
-
-            # Initialize dataset if provided
-            if request.schema_sql or request.seed_sql:
-                self._initialize_dataset(
-                    executor,
-                    request.schema_sql,
-                    request.seed_sql,
-                )
-                container_info.dataset_id = str(request.dataset_id) if request.dataset_id else None
-
-            # Execute the query
-            timeout = min(request.timeout, self._max_query_time)
-            result = executor.execute_query(request.query, timeout=timeout)
 
             # Log execution
             self._log_execution(
-                container_info=container_info,
+                database_type=request.database_type,
                 query=request.query,
                 result=result,
                 user_id=request.user_id,
@@ -197,7 +101,7 @@ class QueryExecutionService:
                 result=result,
                 error_message=result.error_message,
                 execution_time_ms=result.execution_time_ms,
-                container_id=container_info.container_id[:12],
+                container_id=request.database_type,
             )
 
         except QueryTimeoutError as e:
@@ -205,7 +109,6 @@ class QueryExecutionService:
             return ExecutionResponse(
                 success=False,
                 error_message=str(e),
-                container_id=container_info.container_id[:12] if container_info else '',
             )
 
         except SandboxError as e:
@@ -213,7 +116,6 @@ class QueryExecutionService:
             return ExecutionResponse(
                 success=False,
                 error_message=str(e),
-                container_id=container_info.container_id[:12] if container_info else '',
             )
 
         except Exception as e:
@@ -221,80 +123,11 @@ class QueryExecutionService:
             return ExecutionResponse(
                 success=False,
                 error_message='Internal error during query execution',
-                container_id=container_info.container_id[:12] if container_info else '',
             )
 
-        finally:
-            # Cleanup
-            if executor:
-                try:
-                    executor.disconnect()
-                except Exception:
-                    pass
-
-            if container_info:
-                self._pool.release(container_info, reset=True)
-
-    def _initialize_dataset(self, executor, schema_sql: str, seed_sql: str) -> None:
-        """Initialize dataset in the container."""
-        # Reset first
-        executor.reset()
-
-        # Apply schema
-        if schema_sql:
-            result = executor.initialize_schema(schema_sql)
-            if not result.success:
-                raise DatasetInitializationError(
-                    f'Schema initialization failed: {result.error_message}'
-                )
-
-        # Load seed data
-        if seed_sql:
-            result = executor.load_data(seed_sql)
-            if not result.success:
-                raise DatasetInitializationError(
-                    f'Data loading failed: {result.error_message}'
-                )
-
-    def _log_execution(self, container_info, query: str, result: QueryResult,
+    def _log_execution(self, database_type: str, query: str, result: QueryResult,
                        user_id: Optional[UUID], submission_id: Optional[UUID]) -> None:
         """Log query execution to database."""
-        try:
-            # Get or create container record
-            container_record, _ = SandboxContainer.objects.update_or_create(
-                container_id=container_info.container_id,
-                defaults={
-                    'database_type': container_info.database_type,
-                    'status': ContainerStatus.BUSY,
-                    'host': container_info.host,
-                    'port': container_info.port,
-                    'dataset_id': container_info.dataset_id,
-                    'last_used_at': timezone.now(),
-                }
-            )
-
-            # Increment execution count
-            SandboxContainer.objects.filter(
-                container_id=container_info.container_id
-            ).update(executions_count=container_record.executions_count + 1)
-
-            # Create execution log
-            ExecutionLog.objects.create(
-                container=container_record,
-                user_id=user_id,
-                submission_id=submission_id,
-                query=query[:10000],  # Limit query length
-                execution_time_ms=result.execution_time_ms,
-                success=result.success,
-                error_message=result.error_message[:1000] if result.error_message else '',
-            )
-
-        except Exception as e:
-            logger.warning(f'Failed to log execution: {e}')
-
-    def _log_execution_simple(self, database_type: str, query: str, result: QueryResult,
-                              user_id: Optional[UUID], submission_id: Optional[UUID]) -> None:
-        """Log query execution for containerless databases."""
         try:
             ExecutionLog.objects.create(
                 container=None,
@@ -312,25 +145,19 @@ class QueryExecutionService:
         """Get service statistics."""
         pool_stats = self._pool.get_stats()
 
-        # Add database stats
         try:
-            container_count = SandboxContainer.objects.filter(
-                status__in=[ContainerStatus.READY, ContainerStatus.BUSY]
-            ).count()
-
             recent_executions = ExecutionLog.objects.filter(
                 created_at__gte=timezone.now() - timezone.timedelta(hours=1)
             ).count()
 
-            success_rate = ExecutionLog.objects.filter(
+            success_count = ExecutionLog.objects.filter(
                 created_at__gte=timezone.now() - timezone.timedelta(hours=1),
                 success=True
             ).count()
 
             pool_stats['db_stats'] = {
-                'tracked_containers': container_count,
                 'executions_last_hour': recent_executions,
-                'success_rate': success_rate / recent_executions if recent_executions > 0 else 1.0,
+                'success_rate': success_count / recent_executions if recent_executions > 0 else 1.0,
             }
         except Exception as e:
             logger.warning(f'Failed to get DB stats: {e}')
@@ -361,7 +188,7 @@ def execute_query(
     dataset_id: Optional[UUID] = None,
 ) -> ExecutionResponse:
     """
-    Execute a query in a sandbox container.
+    Execute a query in a sandbox database.
 
     Convenience function that uses the global service instance.
     """

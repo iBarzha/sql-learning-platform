@@ -5,71 +5,29 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 
-from .pool import get_warm_pool
-from .services import get_query_service, ExecutionRequest
+from .pool import get_sandbox_pool
+from courses.models import Dataset
 
 
-class PoolStatsView(APIView):
-    """Get warm pool statistics."""
-    permission_classes = [IsAuthenticated, IsAdminUser]
-
-    def get(self, request):
-        """Return current pool statistics."""
-        service = get_query_service()
-        stats = service.get_stats()
-        return Response(stats)
-
-
-class PoolHealthView(APIView):
-    """Health check endpoint for the warm pool."""
-    permission_classes = []  # Public endpoint for load balancer
-
-    def get(self, request):
-        """Check if pool is healthy."""
-        try:
-            pool = get_warm_pool()
-            stats = pool.get_stats()
-
-            if not stats['running']:
-                return Response(
-                    {'status': 'unhealthy', 'reason': 'Pool not running'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-
-            # Check if at least one database type has available containers
-            has_containers = any(
-                p['available'] > 0 or p['busy'] < 10
-                for p in stats['pools'].values()
-            )
-
-            if not has_containers:
-                return Response(
-                    {'status': 'degraded', 'reason': 'No containers available'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-
-            return Response({
-                'status': 'healthy',
-                'pools': stats['pools'],
-            })
-
-        except Exception as e:
-            return Response(
-                {'status': 'unhealthy', 'reason': str(e)},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-
-
-class TestQueryView(APIView):
-    """Test endpoint for executing queries (admin only)."""
-    permission_classes = [IsAuthenticated, IsAdminUser]
+class ExecuteQueryView(APIView):
+    """Execute query in sandbox - available for all authenticated users."""
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        """Execute a test query."""
-        database_type = request.data.get('database_type', 'postgresql')
+        """Execute a query in the sandbox."""
+        database_type = request.data.get('database_type', 'sqlite')
         query = request.data.get('query', '')
         schema_sql = request.data.get('schema_sql', '')
         seed_sql = request.data.get('seed_sql', '')
+        dataset_id = request.data.get('dataset_id')
+
+        # Validate database type
+        valid_types = ['sqlite', 'postgresql', 'mariadb', 'mongodb', 'redis']
+        if database_type not in valid_types:
+            return Response(
+                {'error': f'Invalid database type. Must be one of: {", ".join(valid_types)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if not query:
             return Response(
@@ -77,50 +35,139 @@ class TestQueryView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        service = get_query_service()
-        req = ExecutionRequest(
+        # If dataset_id provided, load schema and seed from it
+        if dataset_id:
+            try:
+                dataset = Dataset.objects.get(id=dataset_id)
+                schema_sql = dataset.schema_sql
+                seed_sql = dataset.seed_sql
+            except Dataset.DoesNotExist:
+                return Response(
+                    {'error': 'Dataset not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        # Execute query using the sandbox pool
+        pool = get_sandbox_pool()
+
+        # Check availability for non-SQLite databases
+        if database_type != 'sqlite' and not pool.is_available(database_type):
+            return Response(
+                {'error': f'{database_type} sandbox is not available. Please try again later.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        result = pool.execute_query(
             database_type=database_type,
             query=query,
             schema_sql=schema_sql,
             seed_sql=seed_sql,
-            user_id=request.user.id,
+            timeout=30,
         )
 
-        response = service.execute(req)
-
-        return Response(response.to_dict())
+        return Response(result.to_dict())
 
 
-class WarmPoolControlView(APIView):
-    """Control the warm pool (admin only)."""
+class DatabaseTypesView(APIView):
+    """Get available database types."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Return list of available database types with availability status."""
+        pool = get_sandbox_pool()
+
+        types = [
+            {
+                'value': 'sqlite',
+                'label': 'SQLite',
+                'description': 'Lightweight in-memory database. Great for learning SQL basics.',
+                'available': True,
+            },
+            {
+                'value': 'postgresql',
+                'label': 'PostgreSQL',
+                'description': 'Advanced open-source database with rich features.',
+                'available': pool.is_available('postgresql'),
+            },
+            {
+                'value': 'mariadb',
+                'label': 'MariaDB',
+                'description': 'MySQL-compatible database with additional features.',
+                'available': pool.is_available('mariadb'),
+            },
+            {
+                'value': 'mongodb',
+                'label': 'MongoDB',
+                'description': 'Document-oriented NoSQL database.',
+                'available': pool.is_available('mongodb'),
+            },
+            {
+                'value': 'redis',
+                'label': 'Redis',
+                'description': 'In-memory key-value store.',
+                'available': pool.is_available('redis'),
+            },
+        ]
+        return Response(types)
+
+
+class PublicDatasetsView(APIView):
+    """Get public datasets for sandbox practice."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Return list of public datasets grouped by database type."""
+        database_type = request.query_params.get('database_type')
+
+        # Get datasets from published courses
+        queryset = Dataset.objects.filter(
+            course__is_published=True
+        ).select_related('course')
+
+        if database_type:
+            queryset = queryset.filter(course__database_type=database_type)
+
+        datasets = []
+        for dataset in queryset:
+            datasets.append({
+                'id': str(dataset.id),
+                'name': dataset.name,
+                'description': dataset.description,
+                'course_title': dataset.course.title,
+                'database_type': dataset.course.database_type,
+                'schema_sql': dataset.schema_sql,
+                'seed_sql': dataset.seed_sql,
+            })
+
+        return Response(datasets)
+
+
+class PoolHealthView(APIView):
+    """Health check endpoint for the sandbox pool."""
+    permission_classes = []  # Public endpoint
+
+    def get(self, request):
+        """Check pool health and database availability."""
+        pool = get_sandbox_pool()
+        stats = pool.get_stats()
+
+        if not stats['running']:
+            return Response(
+                {'status': 'unhealthy', 'reason': 'Pool not running'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        return Response({
+            'status': 'healthy',
+            'databases': stats['pools'],
+        })
+
+
+class PoolStatsView(APIView):
+    """Get pool statistics (admin only)."""
     permission_classes = [IsAuthenticated, IsAdminUser]
 
-    def post(self, request):
-        """Control warm pool operations."""
-        action = request.data.get('action')
-        pool = get_warm_pool()
-
-        if action == 'start':
-            pool.start()
-            return Response({'status': 'started'})
-
-        elif action == 'stop':
-            pool.stop()
-            return Response({'status': 'stopped'})
-
-        elif action == 'warm':
-            db_type = request.data.get('database_type')
-            if db_type:
-                pool._warm_pool(db_type)
-                return Response({'status': f'warmed {db_type}'})
-            else:
-                return Response(
-                    {'error': 'database_type required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        else:
-            return Response(
-                {'error': 'Invalid action. Use: start, stop, warm'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    def get(self, request):
+        """Return pool statistics."""
+        pool = get_sandbox_pool()
+        return Response(pool.get_stats())

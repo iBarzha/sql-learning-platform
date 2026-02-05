@@ -3,17 +3,22 @@
 from django.urls import path
 
 from .views import (
-    PoolStatsView,
+    ExecuteQueryView,
+    DatabaseTypesView,
+    PublicDatasetsView,
     PoolHealthView,
-    TestQueryView,
-    WarmPoolControlView,
+    PoolStatsView,
 )
 
 app_name = 'sandbox'
 
 urlpatterns = [
+    # Main endpoints
+    path('execute/', ExecuteQueryView.as_view(), name='execute-query'),
+    path('database-types/', DatabaseTypesView.as_view(), name='database-types'),
+    path('datasets/', PublicDatasetsView.as_view(), name='public-datasets'),
+
+    # Health and stats
     path('health/', PoolHealthView.as_view(), name='pool-health'),
     path('stats/', PoolStatsView.as_view(), name='pool-stats'),
-    path('test/', TestQueryView.as_view(), name='test-query'),
-    path('control/', WarmPoolControlView.as_view(), name='pool-control'),
 ]

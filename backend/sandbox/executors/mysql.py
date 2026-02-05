@@ -58,8 +58,15 @@ class MySQLExecutor(BaseExecutor):
 
         try:
             with self._connection.cursor() as cur:
-                # Set query timeout (max_execution_time in milliseconds)
-                cur.execute(f'SET max_execution_time = {timeout * 1000}')
+                # Set query timeout (MariaDB uses max_statement_time in seconds)
+                try:
+                    cur.execute(f'SET max_statement_time = {timeout}')
+                except pymysql.Error:
+                    # Fallback for MySQL (uses max_execution_time in milliseconds)
+                    try:
+                        cur.execute(f'SET max_execution_time = {timeout * 1000}')
+                    except pymysql.Error:
+                        pass  # If neither works, proceed without timeout
 
                 result, elapsed_ms = self._measure_time(cur.execute, query)
 
