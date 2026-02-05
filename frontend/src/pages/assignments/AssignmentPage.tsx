@@ -18,6 +18,7 @@ import {
 import assignmentsApi from '@/api/assignments';
 import submissionsApi from '@/api/submissions';
 import type { Assignment, Submission } from '@/types';
+import { getApiErrorMessage } from '@/lib/utils';
 
 export function AssignmentPage() {
   const { courseId, assignmentId } = useParams<{
@@ -56,8 +57,7 @@ export function AssignmentPage() {
       if (submissionsData.length > 0) {
         setQuery(submissionsData[0].query);
       }
-    } catch (err) {
-      console.error('Failed to load assignment:', err);
+    } catch {
       setError('Failed to load assignment');
     } finally {
       setLoading(false);
@@ -79,9 +79,7 @@ export function AssignmentPage() {
       setCurrentSubmission(submission);
       setSubmissions((prev) => [submission, ...prev]);
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to submit query';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to submit query'));
     } finally {
       setSubmitting(false);
     }
