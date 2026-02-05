@@ -11,29 +11,33 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { user, logout } = useAuthStore();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-14 items-center px-4 gap-4">
+    <header className="sticky top-0 z-50 w-full h-16 bg-card/80 backdrop-blur-xl border-b border-border/50 shadow-warm-sm">
+      <div className="flex h-full items-center px-6 gap-4">
         <Button
           variant="ghost"
           size="icon"
-          className="md:hidden"
+          className="md:hidden rounded-xl"
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
         </Button>
 
-        <Link to="/" className="flex items-center gap-2 font-semibold">
-          <Database className="h-5 w-5 text-primary" />
-          <span className="hidden sm:inline">SQL Learning</span>
+        <Link to="/" className="flex items-center gap-3 font-semibold text-lg">
+          <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-warm-sm">
+            <Database className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <span className="hidden sm:inline text-foreground">SQL Learning</span>
         </Link>
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Link to="/profile">
-            <Button variant="ghost" size="sm" className="gap-2">
-              <User className="h-4 w-4" />
-              <span className="hidden sm:inline">{user?.full_name || user?.email}</span>
+            <Button variant="ghost" size="sm" className="gap-2 rounded-xl hover:bg-secondary">
+              <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <span className="hidden sm:inline font-medium">{user?.full_name || user?.email}</span>
             </Button>
           </Link>
           <Button
@@ -41,6 +45,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             size="icon"
             onClick={() => logout()}
             title="Sign out"
+            className="rounded-xl hover:bg-destructive/10 hover:text-destructive"
           >
             <LogOut className="h-4 w-4" />
           </Button>

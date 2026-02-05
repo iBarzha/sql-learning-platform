@@ -34,6 +34,7 @@ export interface Course {
   end_date?: string;
   student_count: number;
   assignment_count: number;
+  lesson_count: number;
   is_enrolled?: boolean;
   datasets?: Dataset[];
   created_at: string;
