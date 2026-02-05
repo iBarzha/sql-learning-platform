@@ -94,19 +94,6 @@ services:
     profiles:
       - sandbox
 
-  sandbox-mysql:
-    image: mysql:8.0
-    container_name: sql-sandbox-mysql
-    environment:
-      MYSQL_DATABASE: sandbox
-      MYSQL_USER: sandbox
-      MYSQL_PASSWORD: sandbox
-      MYSQL_ROOT_PASSWORD: rootpassword
-    networks:
-      - sql-learning-sandbox
-    profiles:
-      - sandbox
-
   sandbox-mariadb:
     image: mariadb:10.11
     container_name: sql-sandbox-mariadb
