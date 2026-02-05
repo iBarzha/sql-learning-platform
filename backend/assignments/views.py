@@ -54,10 +54,14 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
+        from rest_framework.exceptions import NotFound, PermissionDenied
         course_id = self.kwargs.get('course_pk')
-        course = Course.objects.get(id=course_id)
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            raise NotFound('Course not found')
         if course.instructor != self.request.user:
-            raise PermissionError('Not authorized to add assignments to this course')
+            raise PermissionDenied('Not authorized to add assignments to this course')
         serializer.save(course=course)
 
     @action(detail=True, methods=['get'])

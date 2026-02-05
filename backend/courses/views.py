@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status, generics
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -155,9 +155,14 @@ class DatasetViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         course_id = self.kwargs.get('course_pk')
-        course = Course.objects.get(id=course_id)
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound('Course not found')
         if course.instructor != self.request.user:
-            raise PermissionError('Not authorized to add datasets to this course')
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Not authorized to add datasets to this course')
         serializer.save(course_id=course_id)
 
 
@@ -200,13 +205,19 @@ class LessonViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         course_id = self.kwargs.get('course_pk')
-        course = Course.objects.get(id=course_id)
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound('Course not found')
         if course.instructor != self.request.user and not self.request.user.is_superuser:
-            raise PermissionError('Not authorized to add lessons to this course')
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Not authorized to add lessons to this course')
 
         # Auto-set order if not provided
         if not serializer.validated_data.get('order'):
-            max_order = Lesson.objects.filter(course_id=course_id).count()
+            from django.db.models import Max
+            max_order = Lesson.objects.filter(course_id=course_id).aggregate(Max('order'))['order__max'] or 0
             serializer.save(course_id=course_id, order=max_order + 1)
         else:
             serializer.save(course_id=course_id)
