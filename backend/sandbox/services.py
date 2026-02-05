@@ -9,16 +9,18 @@ from django.conf import settings
 from django.utils import timezone
 
 from .pool import get_warm_pool, WarmPool
-from .executors import QueryResult
+from .executors import QueryResult, get_executor
 from .models import SandboxContainer, ExecutionLog, ContainerStatus
 from .exceptions import (
     SandboxError,
-    QueryExecutionError,
     QueryTimeoutError,
     DatasetInitializationError,
 )
 
 logger = logging.getLogger(__name__)
+
+# Database types that don't need containers (file-based)
+CONTAINERLESS_DATABASES = {'sqlite'}
 
 
 @dataclass
@@ -77,6 +79,84 @@ class QueryExecutionService:
         Returns:
             ExecutionResponse with results or error
         """
+        # Handle containerless databases (like SQLite) separately
+        if request.database_type in CONTAINERLESS_DATABASES:
+            return self._execute_containerless(request)
+
+        return self._execute_with_container(request)
+
+    def _execute_containerless(self, request: ExecutionRequest) -> ExecutionResponse:
+        """Execute query for databases that don't need containers (SQLite)."""
+        executor = None
+
+        try:
+            # Create executor directly
+            executor_class = get_executor(request.database_type)
+            executor = executor_class()
+            executor.connect()
+
+            # Initialize dataset if provided
+            if request.schema_sql or request.seed_sql:
+                self._initialize_dataset(
+                    executor,
+                    request.schema_sql,
+                    request.seed_sql,
+                )
+
+            # Execute the query
+            timeout = min(request.timeout, self._max_query_time)
+            result = executor.execute_query(request.query, timeout=timeout)
+
+            # Log execution (without container)
+            self._log_execution_simple(
+                database_type=request.database_type,
+                query=request.query,
+                result=result,
+                user_id=request.user_id,
+                submission_id=request.submission_id,
+            )
+
+            return ExecutionResponse(
+                success=result.success,
+                result=result,
+                error_message=result.error_message,
+                execution_time_ms=result.execution_time_ms,
+                container_id='local',
+            )
+
+        except QueryTimeoutError as e:
+            logger.warning(f'Query timeout: {e}')
+            return ExecutionResponse(
+                success=False,
+                error_message=str(e),
+                container_id='local',
+            )
+
+        except SandboxError as e:
+            logger.error(f'Sandbox error: {e}')
+            return ExecutionResponse(
+                success=False,
+                error_message=str(e),
+                container_id='local',
+            )
+
+        except Exception as e:
+            logger.exception(f'Unexpected error during query execution: {e}')
+            return ExecutionResponse(
+                success=False,
+                error_message='Internal error during query execution',
+                container_id='local',
+            )
+
+        finally:
+            if executor:
+                try:
+                    executor.disconnect()
+                except Exception:
+                    pass
+
+    def _execute_with_container(self, request: ExecutionRequest) -> ExecutionResponse:
+        """Execute query using a container from the pool."""
         container_info = None
         executor = None
 
@@ -209,6 +289,22 @@ class QueryExecutionService:
                 error_message=result.error_message[:1000] if result.error_message else '',
             )
 
+        except Exception as e:
+            logger.warning(f'Failed to log execution: {e}')
+
+    def _log_execution_simple(self, database_type: str, query: str, result: QueryResult,
+                              user_id: Optional[UUID], submission_id: Optional[UUID]) -> None:
+        """Log query execution for containerless databases."""
+        try:
+            ExecutionLog.objects.create(
+                container=None,
+                user_id=user_id,
+                submission_id=submission_id,
+                query=query[:10000],
+                execution_time_ms=result.execution_time_ms,
+                success=result.success,
+                error_message=result.error_message[:1000] if result.error_message else '',
+            )
         except Exception as e:
             logger.warning(f'Failed to log execution: {e}')
 

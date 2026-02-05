@@ -6,7 +6,7 @@ from django.conf import settings
 class Course(models.Model):
     class DatabaseType(models.TextChoices):
         POSTGRESQL = 'postgresql', 'PostgreSQL'
-        MYSQL = 'mysql', 'MySQL'
+        SQLITE = 'sqlite', 'SQLite'
         MARIADB = 'mariadb', 'MariaDB'
         MONGODB = 'mongodb', 'MongoDB'
         REDIS = 'redis', 'Redis'

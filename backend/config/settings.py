@@ -159,10 +159,9 @@ SANDBOX_CONFIG = {
     'DOCKER_NETWORK': os.getenv('DOCKER_NETWORK', 'sql-learning-platform_sql-learning-sandbox'),
 }
 
-# Database images for sandbox
+# Database images for sandbox (SQLite runs locally, no container needed)
 SANDBOX_IMAGES = {
     'postgresql': 'postgres:15-alpine',
-    'mysql': 'mysql:8.0',
     'mariadb': 'mariadb:10.11',
     'mongodb': 'mongo:7.0',
     'redis': 'redis:7-alpine',

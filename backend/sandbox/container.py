@@ -33,7 +33,7 @@ class ContainerConfig:
     cpu_quota: int = 50000  # 50% of one CPU
 
 
-# Database-specific configurations
+# Database-specific configurations (SQLite handled separately - no container needed)
 CONTAINER_CONFIGS = {
     'postgresql': ContainerConfig(
         database_type='postgresql',
@@ -46,19 +46,6 @@ CONTAINER_CONFIGS = {
         },
         port=5432,
         healthcheck_query='SELECT 1',
-    ),
-    'mysql': ContainerConfig(
-        database_type='mysql',
-        image='mysql:8.0',
-        env={
-            'MYSQL_DATABASE': 'sandbox',
-            'MYSQL_USER': 'sandbox',
-            'MYSQL_PASSWORD': 'sandbox',
-            'MYSQL_ROOT_PASSWORD': 'rootpassword',
-        },
-        port=3306,
-        healthcheck_query='SELECT 1',
-        startup_timeout=90,  # MySQL takes longer to start
     ),
     'mariadb': ContainerConfig(
         database_type='mariadb',
