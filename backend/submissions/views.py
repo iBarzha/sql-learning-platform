@@ -60,12 +60,24 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         course = None
 
         if assignment_id:
-            assignment = Assignment.objects.get(id=assignment_id)
+            try:
+                assignment = Assignment.objects.get(id=assignment_id)
+            except Assignment.DoesNotExist:
+                return Response(
+                    {'detail': 'Assignment not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
             course = assignment.course
             max_attempts = assignment.max_attempts
             is_published = assignment.is_published
         elif lesson_id:
-            lesson = Lesson.objects.get(id=lesson_id)
+            try:
+                lesson = Lesson.objects.get(id=lesson_id)
+            except Lesson.DoesNotExist:
+                return Response(
+                    {'detail': 'Lesson not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
             course = lesson.course
             max_attempts = lesson.max_attempts
             is_published = lesson.is_published
