@@ -1,324 +1,251 @@
-"""Warm pool manager for sandbox containers."""
+"""Sandbox pool manager for database containers."""
 
 import logging
 import threading
 import time
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
-from queue import Queue, Empty
 
 from django.conf import settings
 
-from .container import (
-    ContainerManager,
-    ContainerInfo,
-    get_container_manager,
-    CONTAINER_CONFIGS,
-)
-from .executors import get_executor, BaseExecutor
+from .executors import get_executor, BaseExecutor, QueryResult
 from .exceptions import (
     NoAvailableContainerError,
-    ContainerError,
+    DatabaseConnectionError,
 )
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PoolConfig:
-    """Configuration for the warm pool."""
-    pool_size: int = 3  # Containers per database type
-    max_container_age: int = 3600  # 1 hour
-    max_executions: int = 100  # Recycle after N executions
-    health_check_interval: int = 30  # seconds
-    acquire_timeout: int = 30  # seconds to wait for container
+class DatabaseConfig:
+    """Configuration for a sandbox database."""
+    host: str
+    port: int
+    database: str = 'sandbox'
+    user: str = 'sandbox'
+    password: str = 'sandbox'
 
 
-class WarmPool:
+# Static sandbox container configurations (from docker-compose)
+SANDBOX_DATABASES = {
+    'postgresql': DatabaseConfig(
+        host='sql-sandbox-postgres',
+        port=5432,
+        database='sandbox',
+        user='sandbox',
+        password='sandbox',
+    ),
+    'mariadb': DatabaseConfig(
+        host='sql-sandbox-mariadb',
+        port=3306,
+        database='sandbox',
+        user='sandbox',
+        password='sandbox',
+    ),
+    'mongodb': DatabaseConfig(
+        host='sql-sandbox-mongodb',
+        port=27017,
+        database='sandbox',
+    ),
+    'redis': DatabaseConfig(
+        host='sql-sandbox-redis',
+        port=6379,
+    ),
+}
+
+
+class SandboxPool:
     """
-    Manages a pool of pre-initialized database containers.
+    Manages connections to sandbox database containers.
 
-    The pool maintains a configurable number of ready-to-use containers
-    for each database type, reducing cold start latency for query execution.
+    Uses static docker-compose containers instead of dynamic creation.
+    Each query gets a fresh connection with isolated state.
     """
 
-    def __init__(self, config: Optional[PoolConfig] = None):
-        self.config = config or PoolConfig(
-            pool_size=settings.SANDBOX_CONFIG.get('POOL_SIZE', 3),
-            acquire_timeout=settings.SANDBOX_CONFIG.get('CONTAINER_TIMEOUT', 30),
-        )
-        self._manager = get_container_manager()
-        self._pools: dict[str, Queue[ContainerInfo]] = defaultdict(Queue)
-        self._busy: dict[str, ContainerInfo] = {}
+    def __init__(self):
         self._lock = threading.RLock()
         self._running = False
-        self._maintenance_thread: Optional[threading.Thread] = None
+        self._available: dict[str, bool] = {}
+        self._check_thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
-        """Start the warm pool and initialize containers."""
+        """Start the pool and check database availability."""
         if self._running:
             return
 
         self._running = True
-        logger.info('Starting warm pool...')
+        logger.info('Starting sandbox pool...')
 
-        # Start maintenance thread
-        self._maintenance_thread = threading.Thread(
-            target=self._maintenance_loop,
+        # Initial availability check
+        self._check_availability()
+
+        # Start background health check
+        self._check_thread = threading.Thread(
+            target=self._health_check_loop,
             daemon=True,
-            name='warm-pool-maintenance',
+            name='sandbox-pool-health',
         )
-        self._maintenance_thread.start()
+        self._check_thread.start()
 
-        # Pre-warm containers for each database type
-        for db_type in CONTAINER_CONFIGS:
-            self._warm_pool(db_type)
-
-        logger.info('Warm pool started')
+        logger.info('Sandbox pool started')
 
     def stop(self) -> None:
-        """Stop the warm pool and cleanup containers."""
+        """Stop the pool."""
         self._running = False
+        logger.info('Sandbox pool stopped')
 
-        logger.info('Stopping warm pool...')
-
-        # Stop all containers
-        with self._lock:
-            for db_type, pool in self._pools.items():
-                while not pool.empty():
-                    try:
-                        info = pool.get_nowait()
-                        self._manager.stop_container(info.container_id)
-                    except Empty:
-                        break
-
-            for info in self._busy.values():
-                self._manager.stop_container(info.container_id)
-
-            self._pools.clear()
-            self._busy.clear()
-
-        logger.info('Warm pool stopped')
-
-    def acquire(self, database_type: str, timeout: Optional[int] = None) -> ContainerInfo:
-        """
-        Acquire a container from the pool.
-
-        Args:
-            database_type: Type of database (postgresql, mysql, etc.)
-            timeout: Maximum time to wait for a container
-
-        Returns:
-            ContainerInfo for the acquired container
-
-        Raises:
-            NoAvailableContainerError: If no container available within timeout
-        """
-        timeout = timeout or self.config.acquire_timeout
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            with self._lock:
-                pool = self._pools[database_type]
-
-                # Try to get from pool
-                try:
-                    info = pool.get_nowait()
-
-                    # Verify container is still running
-                    if self._manager.is_running(info.container_id):
-                        self._busy[info.id] = info
-                        info.touch()
-                        logger.debug(f'Acquired container {info.container_id[:12]} from pool')
-                        return info
-                    else:
-                        logger.debug(f'Container {info.container_id[:12]} is dead, discarding')
-                        continue
-                except Empty:
-                    pass
-
-            # No container available, try to create one
+    def _check_availability(self) -> None:
+        """Check which databases are available."""
+        for db_type, config in SANDBOX_DATABASES.items():
             try:
-                info = self._manager.create_container(database_type)
-                with self._lock:
-                    self._busy[info.id] = info
-                logger.debug(f'Created new container {info.container_id[:12]}')
-                return info
-            except ContainerError as e:
-                logger.warning(f'Failed to create container: {e}')
-                time.sleep(1)
-
-        raise NoAvailableContainerError(
-            f'No {database_type} container available within {timeout}s'
-        )
-
-    def release(self, info: ContainerInfo, reset: bool = True) -> None:
-        """
-        Release a container back to the pool.
-
-        Args:
-            info: Container info to release
-            reset: Whether to reset the database state
-        """
-        with self._lock:
-            if info.id in self._busy:
-                del self._busy[info.id]
-
-        # Check if container should be recycled
-        should_recycle = (
-            info.executions_count >= self.config.max_executions or
-            time.time() - info.created_at > self.config.max_container_age
-        )
-
-        if should_recycle:
-            logger.debug(f'Recycling container {info.container_id[:12]}')
-            self._manager.stop_container(info.container_id)
-            self._warm_pool(info.database_type, count=1)
-            return
-
-        # Reset database state if needed
-        if reset:
-            try:
-                executor_class = get_executor(info.database_type)
-                executor = executor_class(host=info.host, port=info.port)
+                executor_class = get_executor(db_type)
+                executor = executor_class(
+                    host=config.host,
+                    port=config.port,
+                    database=config.database,
+                    user=config.user,
+                    password=config.password,
+                )
                 executor.connect()
-                executor.reset()
                 executor.disconnect()
+                self._available[db_type] = True
+                logger.info(f'{db_type} sandbox is available')
             except Exception as e:
-                logger.warning(f'Failed to reset container {info.container_id[:12]}: {e}')
-                self._manager.stop_container(info.container_id)
-                self._warm_pool(info.database_type, count=1)
-                return
+                self._available[db_type] = False
+                logger.warning(f'{db_type} sandbox is not available: {e}')
 
-        # Return to pool
-        with self._lock:
-            pool = self._pools[info.database_type]
-            if pool.qsize() < self.config.pool_size:
-                pool.put(info)
-                logger.debug(f'Released container {info.container_id[:12]} to pool')
-            else:
-                # Pool is full, stop this container
-                self._manager.stop_container(info.container_id)
+    def _health_check_loop(self) -> None:
+        """Background health check loop."""
+        while self._running:
+            time.sleep(60)  # Check every minute
+            try:
+                self._check_availability()
+            except Exception as e:
+                logger.error(f'Health check error: {e}')
 
-    def get_executor(self, info: ContainerInfo) -> BaseExecutor:
-        """Get an executor for a container."""
-        executor_class = get_executor(info.database_type)
-        executor = executor_class(host=info.host, port=info.port)
+    def is_available(self, database_type: str) -> bool:
+        """Check if a database type is available."""
+        # SQLite is always available (in-memory)
+        if database_type == 'sqlite':
+            return True
+        return self._available.get(database_type, False)
+
+    def get_executor(self, database_type: str) -> BaseExecutor:
+        """Get an executor for the specified database type."""
+        if database_type == 'sqlite':
+            executor_class = get_executor(database_type)
+            executor = executor_class()
+            executor.connect()
+            return executor
+
+        if database_type not in SANDBOX_DATABASES:
+            raise ValueError(f'Unknown database type: {database_type}')
+
+        config = SANDBOX_DATABASES[database_type]
+        executor_class = get_executor(database_type)
+        executor = executor_class(
+            host=config.host,
+            port=config.port,
+            database=config.database,
+            user=config.user,
+            password=config.password,
+        )
         executor.connect()
         return executor
 
-    def _warm_pool(self, database_type: str, count: Optional[int] = None) -> None:
-        """Pre-warm the pool with containers."""
-        count = count or self.config.pool_size
+    def execute_query(
+        self,
+        database_type: str,
+        query: str,
+        schema_sql: str = '',
+        seed_sql: str = '',
+        timeout: int = 30,
+    ) -> QueryResult:
+        """Execute a query in the sandbox."""
+        executor = None
+        try:
+            executor = self.get_executor(database_type)
 
-        with self._lock:
-            current_size = self._pools[database_type].qsize()
-            needed = count - current_size
+            # Reset and initialize schema/data
+            executor.reset()
 
-        if needed <= 0:
-            return
+            if schema_sql:
+                result = executor.initialize_schema(schema_sql)
+                if not result.success:
+                    return result
 
-        logger.info(f'Warming {needed} {database_type} containers')
+            if seed_sql:
+                result = executor.load_data(seed_sql)
+                if not result.success:
+                    return result
 
-        for _ in range(needed):
-            try:
-                info = self._manager.create_container(database_type)
-                with self._lock:
-                    self._pools[database_type].put(info)
-            except ContainerError as e:
-                logger.error(f'Failed to warm container: {e}')
+            # Execute the actual query
+            return executor.execute_query(query, timeout=timeout)
 
-    def _maintenance_loop(self) -> None:
-        """Background maintenance loop."""
-        while self._running:
-            try:
-                self._health_check()
-                self._cleanup_old_containers()
-            except Exception as e:
-                logger.error(f'Maintenance error: {e}')
+        except Exception as e:
+            logger.error(f'Query execution error: {e}')
+            return QueryResult(
+                success=False,
+                error_message=str(e),
+            )
 
-            time.sleep(self.config.health_check_interval)
-
-    def _health_check(self) -> None:
-        """Check health of pooled containers."""
-        with self._lock:
-            for db_type, pool in list(self._pools.items()):
-                healthy = Queue()
-                dead_count = 0
-
-                while not pool.empty():
-                    try:
-                        info = pool.get_nowait()
-                        if self._manager.is_running(info.container_id):
-                            healthy.put(info)
-                        else:
-                            dead_count += 1
-                    except Empty:
-                        break
-
-                self._pools[db_type] = healthy
-
-                if dead_count > 0:
-                    logger.info(f'Found {dead_count} dead {db_type} containers')
-
-        # Replenish pools
-        for db_type in CONTAINER_CONFIGS:
-            self._warm_pool(db_type)
-
-    def _cleanup_old_containers(self) -> None:
-        """Cleanup orphaned containers."""
-        self._manager.cleanup_old_containers(
-            max_age_seconds=self.config.max_container_age * 2
-        )
+        finally:
+            if executor:
+                try:
+                    executor.disconnect()
+                except Exception:
+                    pass
 
     def get_stats(self) -> dict:
         """Get pool statistics."""
-        with self._lock:
-            pool_stats = {}
-            for db_type in CONTAINER_CONFIGS:
-                pool_stats[db_type] = {
-                    'available': self._pools[db_type].qsize(),
-                    'busy': sum(1 for i in self._busy.values()
-                               if i.database_type == db_type),
+        return {
+            'running': self._running,
+            'pools': {
+                db_type: {
+                    'available': 1 if self._available.get(db_type, False) else 0,
+                    'busy': 0,
                 }
-
-            return {
-                'running': self._running,
-                'pools': pool_stats,
-                'total_busy': len(self._busy),
-                'config': {
-                    'pool_size': self.config.pool_size,
-                    'max_age': self.config.max_container_age,
-                    'max_executions': self.config.max_executions,
-                },
-            }
+                for db_type in SANDBOX_DATABASES
+            },
+            'sqlite': {'available': 1, 'busy': 0},
+        }
 
 
 # Global pool instance
-_warm_pool: Optional[WarmPool] = None
+_sandbox_pool: Optional[SandboxPool] = None
 _pool_lock = threading.Lock()
 
 
-def get_warm_pool() -> WarmPool:
-    """Get the global warm pool instance."""
-    global _warm_pool
+def get_sandbox_pool() -> SandboxPool:
+    """Get the global sandbox pool instance."""
+    global _sandbox_pool
     with _pool_lock:
-        if _warm_pool is None:
-            _warm_pool = WarmPool()
-        return _warm_pool
+        if _sandbox_pool is None:
+            _sandbox_pool = SandboxPool()
+        return _sandbox_pool
 
 
-def start_warm_pool() -> None:
-    """Start the global warm pool."""
-    pool = get_warm_pool()
+def get_warm_pool() -> SandboxPool:
+    """Alias for get_sandbox_pool (backwards compatibility)."""
+    return get_sandbox_pool()
+
+
+def start_sandbox_pool() -> None:
+    """Start the global sandbox pool."""
+    pool = get_sandbox_pool()
     pool.start()
 
 
-def stop_warm_pool() -> None:
-    """Stop the global warm pool."""
-    global _warm_pool
+def stop_sandbox_pool() -> None:
+    """Stop the global sandbox pool."""
+    global _sandbox_pool
     with _pool_lock:
-        if _warm_pool is not None:
-            _warm_pool.stop()
-            _warm_pool = None
+        if _sandbox_pool is not None:
+            _sandbox_pool.stop()
+            _sandbox_pool = None
+
+
+# Backwards compatibility
+start_warm_pool = start_sandbox_pool
+stop_warm_pool = stop_sandbox_pool

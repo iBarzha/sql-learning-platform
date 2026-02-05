@@ -7,6 +7,7 @@ import {
   GraduationCap,
   Users,
   Settings,
+  Database,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,11 @@ const navItems: NavItem[] = [
     to: '/courses',
     icon: <BookOpen className="h-5 w-5" />,
     label: 'Courses',
+  },
+  {
+    to: '/sandbox',
+    icon: <Database className="h-5 w-5" />,
+    label: 'SQL Sandbox',
   },
   {
     to: '/my-courses',

@@ -35,16 +35,22 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - DOCKER_NETWORK=sql-learning-platform_sql-learning-sandbox
+      - SANDBOX_POOL_START=true
     volumes:
       - ./backend:/app
-      - //var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      sandbox-postgres:
+        condition: service_healthy
+      sandbox-mariadb:
+        condition: service_healthy
+      sandbox-mongodb:
+        condition: service_started
+      sandbox-redis:
+        condition: service_started
     networks:
       - sql-learning-network
       - sql-learning-sandbox
@@ -81,7 +87,10 @@ services:
     profiles:
       - production
 
+  # ============================================
   # Sandbox databases for query execution
+  # ============================================
+
   sandbox-postgres:
     image: postgres:15-alpine
     container_name: sql-sandbox-postgres
@@ -89,10 +98,13 @@ services:
       POSTGRES_DB: sandbox
       POSTGRES_USER: sandbox
       POSTGRES_PASSWORD: sandbox
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sandbox -d sandbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - sql-learning-sandbox
-    profiles:
-      - sandbox
 
   sandbox-mariadb:
     image: mariadb:10.11
@@ -102,10 +114,13 @@ services:
       MARIADB_USER: sandbox
       MARIADB_PASSWORD: sandbox
       MARIADB_ROOT_PASSWORD: rootpassword
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - sql-learning-sandbox
-    profiles:
-      - sandbox
 
   sandbox-mongodb:
     image: mongo:7.0
@@ -114,16 +129,12 @@ services:
       MONGO_INITDB_DATABASE: sandbox
     networks:
       - sql-learning-sandbox
-    profiles:
-      - sandbox
 
   sandbox-redis:
     image: redis:7-alpine
     container_name: sql-sandbox-redis
     networks:
       - sql-learning-sandbox
-    profiles:
-      - sandbox
 
 networks:
   sql-learning-network:

@@ -71,7 +71,7 @@ class MongoDBExecutor(BaseExecutor):
         - db.users.insertOne({name: "John"})
         - db.users.aggregate([{$match: {age: {$gt: 18}}}])
         """
-        if not self._db:
+        if self._db is None:
             raise DatabaseConnectionError('Not connected to database')
 
         try:
@@ -235,7 +235,7 @@ class MongoDBExecutor(BaseExecutor):
 
     def reset(self) -> None:
         """Reset MongoDB by dropping all collections."""
-        if not self._db:
+        if self._db is None:
             return
 
         try:
