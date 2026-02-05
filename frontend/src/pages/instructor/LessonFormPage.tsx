@@ -7,9 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeft, Save, Plus, X } from 'lucide-react';
-import lessonsApi, { type CreateLessonData } from '@/api/lessons';
+import lessonsApi, { type CreateLessonData, type LessonType } from '@/api/lessons';
 import coursesApi from '@/api/courses';
 import type { Dataset } from '@/types';
+import { getApiErrorMessage } from '@/lib/utils';
 
 const LESSON_TYPES = [
   { value: 'theory', label: 'Theory', description: 'Educational content only' },
@@ -95,9 +96,7 @@ export function LessonFormPage() {
       }
       navigate(`/courses/${courseId}/manage`);
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to save lesson';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to save lesson'));
     } finally {
       setSaving(false);
     }
@@ -199,7 +198,7 @@ export function LessonFormPage() {
                       value={type.value}
                       checked={formData.lesson_type === type.value}
                       onChange={(e) =>
-                        setFormData({ ...formData, lesson_type: e.target.value as any })
+                        setFormData({ ...formData, lesson_type: e.target.value as LessonType })
                       }
                       className="sr-only"
                     />

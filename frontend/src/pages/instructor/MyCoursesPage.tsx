@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import { Plus, Users, BookOpen, Settings, Eye, EyeOff } from 'lucide-react';
+import { Plus, Users, BookOpen, Settings, Eye, EyeOff, GraduationCap, Layers } from 'lucide-react';
 import coursesApi from '@/api/courses';
 import type { Course } from '@/types';
 
@@ -21,8 +21,8 @@ export function MyCoursesPage() {
       setLoading(true);
       const response = await coursesApi.list();
       setCourses(response.results);
-    } catch (error) {
-      console.error('Failed to load courses:', error);
+    } catch {
+      // Error loading courses - silently fail, UI shows empty state
     } finally {
       setLoading(false);
     }
@@ -30,80 +30,91 @@ export function MyCoursesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-24">
         <Spinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">My Courses</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-3xl font-bold tracking-tight">My Courses</h1>
+          <p className="text-muted-foreground mt-1">
             Manage your courses and lessons
           </p>
         </div>
         <Link to="/courses/new">
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
+          <Button className="gap-2">
+            <Plus className="h-4 w-4" />
             New Course
           </Button>
         </Link>
       </div>
 
       {courses.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="font-medium text-lg mb-2">No courses yet</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Create your first course to start teaching
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+              <BookOpen className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="font-semibold text-lg mb-2">No courses yet</h3>
+            <p className="text-muted-foreground text-center mb-6 max-w-sm">
+              Create your first course to start teaching students
             </p>
             <Link to="/courses/new">
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
                 Create Course
               </Button>
             </Link>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {courses.map((course) => (
-            <Card key={course.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="line-clamp-1">{course.title}</CardTitle>
+            <Card key={course.id} className="group transition-all duration-200 hover:shadow-warm-lg hover:border-primary/20">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                    <GraduationCap className="h-5 w-5 text-primary" />
+                  </div>
                   {course.is_published ? (
-                    <Badge variant="default" className="shrink-0">
-                      <Eye className="h-3 w-3 mr-1" />
+                    <Badge className="bg-accent/10 text-accent gap-1">
+                      <Eye className="h-3 w-3" />
                       Published
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="shrink-0">
-                      <EyeOff className="h-3 w-3 mr-1" />
+                    <Badge variant="secondary" className="gap-1">
+                      <EyeOff className="h-3 w-3" />
                       Draft
                     </Badge>
                   )}
                 </div>
-                <CardDescription className="line-clamp-2">
+                <CardTitle className="text-lg mt-3 line-clamp-1">{course.title}</CardTitle>
+                <CardDescription className="line-clamp-2 mt-1">
                   {course.description || 'No description'}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
-                  <div className="flex items-center gap-1">
+              <CardContent className="pt-0">
+                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
+                  <div className="flex items-center gap-1.5">
                     <Users className="h-4 w-4" />
-                    <span>{course.student_count} students</span>
+                    <span>{course.student_count || 0}</span>
                   </div>
-                  <Badge variant="outline">{course.database_type}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Layers className="h-4 w-4" />
+                    <span>{course.lesson_count || 0} lessons</span>
+                  </div>
+                  <Badge variant="outline" className="ml-auto">
+                    {course.database_type}
+                  </Badge>
                 </div>
                 <div className="flex gap-2">
                   <Link to={`/courses/${course.id}/manage`} className="flex-1">
-                    <Button variant="outline" className="w-full">
-                      <Settings className="h-4 w-4 mr-2" />
+                    <Button variant="outline" className="w-full gap-2">
+                      <Settings className="h-4 w-4" />
                       Manage
                     </Button>
                   </Link>

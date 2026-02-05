@@ -18,17 +18,19 @@ import {
 } from 'lucide-react';
 import lessonsApi, { type Lesson } from '@/api/lessons';
 import ReactMarkdown from 'react-markdown';
+import type { Submission } from '@/types';
+import { getApiErrorMessage } from '@/lib/utils';
 
 export function LessonPage() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
   const navigate = useNavigate();
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [currentSubmission, setCurrentSubmission] = useState<any>(null);
+  const [currentSubmission, setCurrentSubmission] = useState<Submission | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [hintIndex, setHintIndex] = useState(0);
   const [error, setError] = useState('');
@@ -65,8 +67,7 @@ export function LessonPage() {
       if (lessonData.lesson_type === 'practice') {
         setActiveTab('practice');
       }
-    } catch (err) {
-      console.error('Failed to load lesson:', err);
+    } catch {
       setError('Failed to load lesson');
     } finally {
       setLoading(false);
@@ -85,9 +86,7 @@ export function LessonPage() {
       setCurrentSubmission(submission);
       setSubmissions((prev) => [submission, ...prev]);
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to submit query';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to submit query'));
     } finally {
       setSubmitting(false);
     }
@@ -371,7 +370,7 @@ export function LessonPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {currentSubmission.result.rows.slice(0, 10).map((row: any[], i: number) => (
+                          {currentSubmission.result.rows.slice(0, 10).map((row: unknown[], i: number) => (
                             <tr key={i} className="border-b">
                               {row.map((cell, j) => (
                                 <td key={j} className="px-2 py-1">
