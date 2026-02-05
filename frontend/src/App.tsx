@@ -8,6 +8,7 @@ import { DashboardPage } from '@/pages/dashboard';
 import { CoursesListPage, CourseDetailPage } from '@/pages/courses';
 import { LessonPage } from '@/pages/lessons';
 import { ProfilePage } from '@/pages/profile';
+import { SandboxPage } from '@/pages/sandbox';
 import {
   MyCoursesPage,
   CourseFormPage,
@@ -62,6 +63,7 @@ function AppRoutes() {
         <Route path="courses" element={<CoursesListPage />} />
         <Route path="courses/:courseId" element={<CourseDetailPage />} />
         <Route path="courses/:courseId/lessons/:lessonId" element={<LessonPage />} />
+        <Route path="sandbox" element={<SandboxPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="change-password" element={<ChangePasswordPage />} />
 
