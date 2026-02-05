@@ -26,29 +26,29 @@ interface NavItem {
 const navItems: NavItem[] = [
   {
     to: '/',
-    icon: <LayoutDashboard className="h-4 w-4" />,
+    icon: <LayoutDashboard className="h-5 w-5" />,
     label: 'Dashboard',
   },
   {
     to: '/courses',
-    icon: <BookOpen className="h-4 w-4" />,
+    icon: <BookOpen className="h-5 w-5" />,
     label: 'Courses',
   },
   {
     to: '/my-courses',
-    icon: <GraduationCap className="h-4 w-4" />,
+    icon: <GraduationCap className="h-5 w-5" />,
     label: 'My Courses',
     roles: ['instructor'],
   },
   {
     to: '/students',
-    icon: <Users className="h-4 w-4" />,
+    icon: <Users className="h-5 w-5" />,
     label: 'Students',
     roles: ['instructor', 'admin'],
   },
   {
     to: '/settings',
-    icon: <Settings className="h-4 w-4" />,
+    icon: <Settings className="h-5 w-5" />,
     label: 'Settings',
     roles: ['admin'],
   },
@@ -66,7 +66,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-sm md:hidden"
           onClick={onClose}
         />
       )}
@@ -74,31 +74,32 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-64 border-r bg-background transition-transform duration-200 md:translate-x-0',
+          'fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-72 bg-card border-r border-border/50 transition-transform duration-300 ease-out md:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="flex h-full flex-col">
           {/* Mobile close button */}
-          <div className="flex items-center justify-end p-2 md:hidden">
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="h-4 w-4" />
+          <div className="flex items-center justify-end p-4 md:hidden">
+            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-xl">
+              <X className="h-5 w-5" />
             </Button>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-1 p-2">
+          <nav className="flex-1 px-4 py-6 space-y-2">
             {filteredItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 onClick={onClose}
+                end={item.to === '/'}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                    'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
                     isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-warm'
+                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
                   )
                 }
               >
@@ -109,10 +110,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </nav>
 
           {/* User info */}
-          <div className="border-t p-4">
-            <div className="text-sm">
-              <p className="font-medium">{user?.full_name}</p>
-              <p className="text-muted-foreground capitalize">{user?.role}</p>
+          <div className="border-t border-border/50 p-6">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <span className="text-sm font-semibold text-primary">
+                  {user?.first_name?.[0]}{user?.last_name?.[0]}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{user?.full_name}</p>
+                <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
+              </div>
             </div>
           </div>
         </div>
