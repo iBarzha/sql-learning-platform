@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import authApi from '@/api/auth';
+import { getApiErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,9 +54,7 @@ export function ChangePasswordPage() {
       await fetchUser();
       navigate('/', { replace: true });
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to change password';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to change password'));
     } finally {
       setIsLoading(false);
     }

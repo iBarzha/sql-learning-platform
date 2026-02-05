@@ -20,7 +20,16 @@ class Submission(models.Model):
     assignment = models.ForeignKey(
         'assignments.Assignment',
         on_delete=models.CASCADE,
-        related_name='submissions'
+        related_name='submissions',
+        null=True,
+        blank=True
+    )
+    lesson = models.ForeignKey(
+        'courses.Lesson',
+        on_delete=models.CASCADE,
+        related_name='submissions',
+        null=True,
+        blank=True
     )
     query = models.TextField(help_text='The submitted SQL query')
     status = models.CharField(
@@ -54,11 +63,14 @@ class Submission(models.Model):
         ordering = ['-submitted_at']
         indexes = [
             models.Index(fields=['student', 'assignment']),
+            models.Index(fields=['student', 'lesson']),
             models.Index(fields=['assignment', 'is_correct']),
+            models.Index(fields=['lesson', 'is_correct']),
         ]
 
     def __str__(self):
-        return f'{self.student.email} - {self.assignment.title} (Attempt {self.attempt_number})'
+        target = self.lesson.title if self.lesson else (self.assignment.title if self.assignment else 'Unknown')
+        return f'{self.student.email} - {target} (Attempt {self.attempt_number})'
 
 
 class UserResult(models.Model):
@@ -72,7 +84,16 @@ class UserResult(models.Model):
     assignment = models.ForeignKey(
         'assignments.Assignment',
         on_delete=models.CASCADE,
-        related_name='user_results'
+        related_name='user_results',
+        null=True,
+        blank=True
+    )
+    lesson = models.ForeignKey(
+        'courses.Lesson',
+        on_delete=models.CASCADE,
+        related_name='user_results',
+        null=True,
+        blank=True
     )
     best_submission = models.ForeignKey(
         Submission,
@@ -90,11 +111,15 @@ class UserResult(models.Model):
 
     class Meta:
         db_table = 'user_results'
-        unique_together = ['student', 'assignment']
         ordering = ['-last_attempt_at']
+        indexes = [
+            models.Index(fields=['student', 'assignment']),
+            models.Index(fields=['student', 'lesson']),
+        ]
 
     def __str__(self):
-        return f'{self.student.email} - {self.assignment.title}: {self.best_score}'
+        target = self.lesson.title if self.lesson else (self.assignment.title if self.assignment else 'Unknown')
+        return f'{self.student.email} - {target}: {self.best_score}'
 
     def update_from_submission(self, submission):
         """Update result based on a new submission."""

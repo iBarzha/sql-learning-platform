@@ -2,42 +2,25 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { MainLayout } from '@/components/layout';
 import { LoginPage, RegisterPage, ChangePasswordPage } from '@/pages/auth';
+import { DashboardPage } from '@/pages/dashboard';
+import { CoursesListPage, CourseDetailPage } from '@/pages/courses';
+import { LessonPage } from '@/pages/lessons';
+import { ProfilePage } from '@/pages/profile';
+import {
+  MyCoursesPage,
+  CourseFormPage,
+  CourseManagePage,
+  LessonFormPage,
+  StudentsPage,
+  AllStudentsPage,
+} from '@/pages/instructor';
+import { SettingsPage } from '@/pages/admin';
 import { Spinner } from '@/components/ui/spinner';
 
-function HomePage() {
-  const { user, logout } = useAuthStore();
-
-  return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">SQL Learning Platform</h1>
-          <button
-            onClick={() => logout()}
-            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            Sign out
-          </button>
-        </div>
-        <div className="bg-card rounded-lg border p-6">
-          <h2 className="text-xl font-semibold mb-4">
-            Welcome, {user?.full_name || user?.email}!
-          </h2>
-          <p className="text-muted-foreground mb-4">
-            Role: <span className="capitalize">{user?.role}</span>
-          </p>
-          <p className="text-muted-foreground">
-            Dashboard and course content will be added in the next phase.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function AppRoutes() {
-  const { isAuthenticated, isLoading, fetchUser } = useAuthStore();
+  const { isAuthenticated, isLoading, fetchUser, user } = useAuthStore();
 
   useEffect(() => {
     fetchUser();
@@ -51,8 +34,12 @@ function AppRoutes() {
     );
   }
 
+  const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
+
   return (
     <Routes>
+      {/* Public routes */}
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
@@ -61,22 +48,65 @@ function AppRoutes() {
         path="/register"
         element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterPage />}
       />
+
+      {/* Protected routes with layout */}
       <Route
-        path="/change-password"
         element={
           <ProtectedRoute>
-            <ChangePasswordPage />
+            <MainLayout />
           </ProtectedRoute>
         }
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <HomePage />
-          </ProtectedRoute>
-        }
-      />
+      >
+        {/* Common routes */}
+        <Route index element={<DashboardPage />} />
+        <Route path="courses" element={<CoursesListPage />} />
+        <Route path="courses/:courseId" element={<CourseDetailPage />} />
+        <Route path="courses/:courseId/lessons/:lessonId" element={<LessonPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="change-password" element={<ChangePasswordPage />} />
+
+        {/* Instructor routes */}
+        <Route
+          path="my-courses"
+          element={isInstructor ? <MyCoursesPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="courses/new"
+          element={isInstructor ? <CourseFormPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="courses/:courseId/edit"
+          element={isInstructor ? <CourseFormPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="courses/:courseId/manage"
+          element={isInstructor ? <CourseManagePage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="courses/:courseId/lessons/new"
+          element={isInstructor ? <LessonFormPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="courses/:courseId/lessons/:lessonId/edit"
+          element={isInstructor ? <LessonFormPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="courses/:courseId/students"
+          element={isInstructor ? <StudentsPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="students"
+          element={isInstructor ? <AllStudentsPage /> : <Navigate to="/" replace />}
+        />
+
+        {/* Admin routes */}
+        <Route
+          path="settings"
+          element={isAdmin ? <SettingsPage /> : <Navigate to="/" replace />}
+        />
+      </Route>
+
+      {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
