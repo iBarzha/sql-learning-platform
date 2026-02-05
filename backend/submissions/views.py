@@ -1,8 +1,10 @@
+"""Views for submission handling with sandbox execution and grading."""
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Sum, Avg, Count
+from django.utils import timezone
 
 from .models import Submission, UserResult
 from .serializers import (
@@ -13,7 +15,8 @@ from .serializers import (
 )
 from assignments.models import Assignment
 from courses.models import Lesson
-from config.permissions import IsSubmissionOwner
+from sandbox.services import execute_query
+from grading.models import get_grading_service
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
@@ -61,7 +64,9 @@ class SubmissionViewSet(viewsets.ModelViewSet):
 
         if assignment_id:
             try:
-                assignment = Assignment.objects.get(id=assignment_id)
+                assignment = Assignment.objects.select_related(
+                    'course', 'dataset'
+                ).get(id=assignment_id)
             except Assignment.DoesNotExist:
                 return Response(
                     {'detail': 'Assignment not found'},
@@ -70,9 +75,21 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             course = assignment.course
             max_attempts = assignment.max_attempts
             is_published = assignment.is_published
+            dataset = assignment.dataset
+            expected_query = assignment.expected_query
+            expected_result = assignment.expected_result
+            required_keywords = assignment.required_keywords or []
+            forbidden_keywords = assignment.forbidden_keywords or []
+            order_matters = assignment.order_matters
+            partial_match = getattr(assignment, 'partial_match', False)
+            max_score = assignment.max_score
+            time_limit = assignment.time_limit_seconds or 30
+
         elif lesson_id:
             try:
-                lesson = Lesson.objects.get(id=lesson_id)
+                lesson = Lesson.objects.select_related(
+                    'course', 'dataset'
+                ).get(id=lesson_id)
             except Lesson.DoesNotExist:
                 return Response(
                     {'detail': 'Lesson not found'},
@@ -81,6 +98,15 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             course = lesson.course
             max_attempts = lesson.max_attempts
             is_published = lesson.is_published
+            dataset = lesson.dataset
+            expected_query = lesson.expected_query
+            expected_result = lesson.expected_result
+            required_keywords = lesson.required_keywords or []
+            forbidden_keywords = lesson.forbidden_keywords or []
+            order_matters = lesson.order_matters
+            partial_match = False
+            max_score = lesson.max_score
+            time_limit = lesson.time_limit_seconds or 60
 
             if lesson.lesson_type == 'theory':
                 return Response(
@@ -127,14 +153,79 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             )
 
         attempt_number = user_result.total_attempts + 1
+        student_query = serializer.validated_data['query']
 
+        # Create submission with pending status
         submission = Submission.objects.create(
             student=request.user,
             assignment=assignment,
             lesson=lesson,
-            query=serializer.validated_data['query'],
-            attempt_number=attempt_number
+            query=student_query,
+            attempt_number=attempt_number,
+            status=Submission.Status.RUNNING,
         )
+
+        # Execute query in sandbox
+        schema_sql = dataset.schema_sql if dataset else ''
+        seed_sql = dataset.seed_sql if dataset else ''
+
+        execution_response = execute_query(
+            database_type=course.database_type,
+            query=student_query,
+            schema_sql=schema_sql,
+            seed_sql=seed_sql,
+            timeout=time_limit,
+            user_id=request.user.id,
+            submission_id=submission.id,
+            dataset_id=dataset.id if dataset else None,
+        )
+
+        # Update submission with execution result
+        submission.execution_time_ms = execution_response.execution_time_ms
+
+        if execution_response.success and execution_response.result:
+            submission.status = Submission.Status.COMPLETED
+            submission.result = execution_response.result.to_dict()
+        else:
+            submission.status = Submission.Status.ERROR
+            submission.error_message = execution_response.error_message
+            submission.result = {'success': False, 'error_message': execution_response.error_message}
+
+        # Grade the submission
+        grading_service = get_grading_service()
+
+        # Execute expected query to get expected result if not stored
+        if expected_query and not expected_result:
+            expected_response = execute_query(
+                database_type=course.database_type,
+                query=expected_query,
+                schema_sql=schema_sql,
+                seed_sql=seed_sql,
+                timeout=time_limit,
+            )
+            if expected_response.success and expected_response.result:
+                expected_result = expected_response.result.to_dict()
+
+        grading_result = grading_service.grade(
+            student_result=submission.result or {},
+            expected_result=expected_result,
+            expected_query=expected_query,
+            required_keywords=required_keywords,
+            forbidden_keywords=forbidden_keywords,
+            order_matters=order_matters,
+            partial_match=partial_match,
+            max_score=max_score,
+            student_query=student_query,
+        )
+
+        submission.score = grading_result.score
+        submission.is_correct = grading_result.is_correct
+        submission.feedback = grading_result.feedback
+        submission.graded_at = timezone.now()
+        submission.save()
+
+        # Update user result
+        user_result.update_from_submission(submission)
 
         result_serializer = SubmissionResultSerializer(submission)
         return Response(result_serializer.data, status=status.HTTP_201_CREATED)
@@ -201,7 +292,6 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
 
         courses_data = {}
         for result in results:
-            # Get course from assignment or lesson
             course = None
             if result.assignment:
                 course = result.assignment.course
@@ -212,7 +302,6 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
                 continue
 
             if course.id not in courses_data:
-                # Count published assignments and practice lessons
                 total_assignments = course.assignments.filter(is_published=True).count()
                 total_practice_lessons = course.lessons.filter(
                     is_published=True,
@@ -228,7 +317,6 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
                     'max_possible_score': 0,
                 }
 
-            # Calculate max score
             if result.assignment:
                 max_score = result.assignment.max_score
             elif result.lesson:
