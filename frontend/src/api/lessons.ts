@@ -1,13 +1,15 @@
 import apiClient from './client';
 import type { PaginatedResponse } from '@/types';
 
+export type LessonType = 'theory' | 'practice' | 'mixed';
+
 export interface Lesson {
   id: string;
   course: string;
   course_title?: string;
   title: string;
   description: string;
-  lesson_type: 'theory' | 'practice' | 'mixed';
+  lesson_type: LessonType;
   order: number;
   theory_content?: string;
   practice_description?: string;

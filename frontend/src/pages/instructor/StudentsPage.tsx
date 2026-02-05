@@ -33,8 +33,8 @@ export function StudentsPage() {
       ]);
       setCourse(courseData);
       setEnrollments(enrollmentsData);
-    } catch (err) {
-      console.error('Failed to load data:', err);
+    } catch {
+      // Error loading data - silently fail, UI shows empty state
     } finally {
       setLoading(false);
     }

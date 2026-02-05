@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeft, Save } from 'lucide-react';
 import coursesApi, { type CreateCourseData } from '@/api/courses';
+import { getApiErrorMessage } from '@/lib/utils';
 
 const DATABASE_TYPES = [
   { value: 'postgresql', label: 'PostgreSQL' },
@@ -83,9 +84,7 @@ export function CourseFormPage() {
         navigate(`/courses/${course.id}/manage`);
       }
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to save course';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to save course'));
     } finally {
       setSaving(false);
     }

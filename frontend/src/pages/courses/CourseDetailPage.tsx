@@ -22,6 +22,7 @@ import {
 import coursesApi from '@/api/courses';
 import lessonsApi, { type Lesson } from '@/api/lessons';
 import type { Course } from '@/types';
+import { getApiErrorMessage } from '@/lib/utils';
 
 const LESSON_TYPE_ICONS = {
   theory: BookOpen,
@@ -60,8 +61,7 @@ export function CourseDetailPage() {
       ]);
       setCourse(courseData);
       setLessons(lessonsData.results || []);
-    } catch (error) {
-      console.error('Failed to load course:', error);
+    } catch {
       setError('Failed to load course');
     } finally {
       setLoading(false);
@@ -77,9 +77,7 @@ export function CourseDetailPage() {
       await coursesApi.enroll(courseId, enrollmentKey || undefined);
       await loadCourseData();
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to enroll';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to enroll'));
     } finally {
       setEnrolling(false);
     }
@@ -92,9 +90,7 @@ export function CourseDetailPage() {
       await coursesApi.unenroll(courseId);
       await loadCourseData();
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail || 'Failed to unenroll';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to unenroll'));
     }
   }
 

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
 import authApi, { type LoginData, type RegisterData } from '@/api/auth';
+import { getApiErrorMessage } from '@/lib/utils';
 
 interface AuthState {
   user: User | null;
@@ -38,9 +39,7 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
           });
         } catch (error) {
-          const message = (error as { response?: { data?: { detail?: string } } })
-            ?.response?.data?.detail || 'Login failed';
-          set({ error: message, isLoading: false });
+          set({ error: getApiErrorMessage(error, 'Login failed'), isLoading: false });
           throw error;
         }
       },
@@ -57,9 +56,7 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
           });
         } catch (error) {
-          const message = (error as { response?: { data?: { detail?: string } } })
-            ?.response?.data?.detail || 'Registration failed';
-          set({ error: message, isLoading: false });
+          set({ error: getApiErrorMessage(error, 'Registration failed'), isLoading: false });
           throw error;
         }
       },
@@ -103,9 +100,7 @@ export const useAuthStore = create<AuthState>()(
           const user = await authApi.updateMe(data);
           set({ user, isLoading: false });
         } catch (error) {
-          const message = (error as { response?: { data?: { detail?: string } } })
-            ?.response?.data?.detail || 'Update failed';
-          set({ error: message, isLoading: false });
+          set({ error: getApiErrorMessage(error, 'Update failed'), isLoading: false });
           throw error;
         }
       },
