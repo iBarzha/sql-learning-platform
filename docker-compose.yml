@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Main PostgreSQL database
   db:
@@ -37,9 +35,11 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DOCKER_NETWORK=sql-learning-platform_sql-learning-sandbox
     volumes:
       - ./backend:/app
-      - /var/run/docker.sock:/var/run/docker.sock
+      - //var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
     depends_on:
