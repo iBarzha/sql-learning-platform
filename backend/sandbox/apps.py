@@ -28,9 +28,10 @@ class SandboxConfig(AppConfig):
             self._start_sandbox_pool()
 
     def _start_sandbox_pool(self):
-        """Start the sandbox pool in background."""
+        """Start the sandbox pool and session manager in background."""
         try:
             from .pool import start_sandbox_pool
+            from .session_manager import start_session_manager
             import threading
 
             # Start pool in background thread to not block startup
@@ -40,7 +41,16 @@ class SandboxConfig(AppConfig):
                 daemon=True,
             )
             thread.start()
-            logger.info('Sandbox pool startup initiated')
+
+            # Start session manager (cleanup thread)
+            session_thread = threading.Thread(
+                target=start_session_manager,
+                name='session-manager-startup',
+                daemon=True,
+            )
+            session_thread.start()
+
+            logger.info('Sandbox pool and session manager startup initiated')
 
         except Exception as e:
             logger.warning(f'Failed to start sandbox pool: {e}')

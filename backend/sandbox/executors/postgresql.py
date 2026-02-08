@@ -60,8 +60,12 @@ class PostgreSQLExecutor(BaseExecutor):
 
         try:
             with self._connection.cursor() as cur:
-                # Set statement timeout
-                cur.execute(f'SET statement_timeout = {timeout * 1000}')
+                # statement_timeout is set at ROLE level (sandbox_student)
+                # Only set as fallback when connecting as admin user
+                try:
+                    cur.execute(f'SET statement_timeout = {timeout * 1000}')
+                except Exception:
+                    pass  # ROLE-level timeout takes precedence
 
                 result, elapsed_ms = self._measure_time(cur.execute, query)
 

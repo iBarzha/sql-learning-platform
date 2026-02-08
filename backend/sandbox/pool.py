@@ -13,6 +13,12 @@ from .exceptions import (
     NoAvailableContainerError,
     DatabaseConnectionError,
 )
+from .query_validator import (
+    validate_sql,
+    validate_mongodb,
+    validate_redis,
+    QueryBlockedError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +42,28 @@ SANDBOX_DATABASES = {
         user='sandbox',
         password='sandbox',
     ),
+    # Restricted role for student query execution (defense-in-depth)
+    'postgresql_student': DatabaseConfig(
+        host='sql-sandbox-postgres',
+        port=5432,
+        database='sandbox',
+        user='sandbox_student',
+        password='sandbox_student',
+    ),
     'mariadb': DatabaseConfig(
         host='sql-sandbox-mariadb',
         port=3306,
         database='sandbox',
         user='sandbox',
         password='sandbox',
+    ),
+    # Restricted user for student query execution
+    'mariadb_student': DatabaseConfig(
+        host='sql-sandbox-mariadb',
+        port=3306,
+        database='sandbox',
+        user='sandbox_student',
+        password='sandbox_student',
     ),
     'mongodb': DatabaseConfig(
         host='sql-sandbox-mongodb',
@@ -95,9 +117,15 @@ class SandboxPool:
         self._running = False
         logger.info('Sandbox pool stopped')
 
+    # Primary database types to health-check (excludes _student variants)
+    _PRIMARY_DB_TYPES = ('postgresql', 'mariadb', 'mongodb', 'redis')
+
     def _check_availability(self) -> None:
         """Check which databases are available."""
-        for db_type, config in SANDBOX_DATABASES.items():
+        for db_type in self._PRIMARY_DB_TYPES:
+            config = SANDBOX_DATABASES.get(db_type)
+            if not config:
+                continue
             try:
                 executor_class = get_executor(db_type)
                 executor = executor_class(
@@ -163,6 +191,20 @@ class SandboxPool:
         timeout: int = 30,
     ) -> QueryResult:
         """Execute a query in the sandbox."""
+        # ── Security: validate query before execution ───────
+        try:
+            if database_type in ('sqlite', 'postgresql', 'mariadb'):
+                validate_sql(query)
+            elif database_type == 'mongodb':
+                validate_mongodb(query)
+            elif database_type == 'redis':
+                validate_redis(query)
+        except QueryBlockedError as e:
+            return QueryResult(
+                success=False,
+                error_message=e.message,
+            )
+
         executor = None
         try:
             executor = self.get_executor(database_type)
@@ -197,6 +239,61 @@ class SandboxPool:
                 except Exception:
                     pass
 
+    # ── Session-based execution ────────────────────────────────
+
+    def execute_query_in_session(
+        self,
+        session_id: str,
+        database_type: str,
+        query: str,
+        schema_sql: str = '',
+        seed_sql: str = '',
+        timeout: int = 30,
+        user_id: Optional[int] = None,
+    ) -> QueryResult:
+        """Execute a query in a persistent session."""
+        from .session_manager import get_session_manager
+
+        # Security: validate query (same as stateless path)
+        try:
+            if database_type in ('sqlite', 'postgresql', 'mariadb'):
+                validate_sql(query)
+            elif database_type == 'mongodb':
+                validate_mongodb(query)
+            elif database_type == 'redis':
+                validate_redis(query)
+        except QueryBlockedError as e:
+            return QueryResult(
+                success=False,
+                error_message=e.message,
+            )
+
+        try:
+            manager = get_session_manager()
+            manager.get_or_create(
+                session_id, database_type, schema_sql, seed_sql,
+                user_id=user_id,
+            )
+            return manager.execute(
+                session_id, query, timeout=timeout, user_id=user_id,
+            )
+        except Exception as e:
+            logger.error(f'Session query error: {e}')
+            return QueryResult(
+                success=False,
+                error_message=str(e),
+            )
+
+    def reset_session(self, session_id: str) -> None:
+        """Reset (destroy) a session."""
+        from .session_manager import get_session_manager
+        manager = get_session_manager()
+        manager.destroy(session_id)
+
+    def destroy_session(self, session_id: str) -> None:
+        """Destroy a session (alias for reset_session)."""
+        self.reset_session(session_id)
+
     def get_stats(self) -> dict:
         """Get pool statistics."""
         return {
@@ -206,7 +303,7 @@ class SandboxPool:
                     'available': 1 if self._available.get(db_type, False) else 0,
                     'busy': 0,
                 }
-                for db_type in SANDBOX_DATABASES
+                for db_type in self._PRIMARY_DB_TYPES
             },
             'sqlite': {'available': 1, 'busy': 0},
         }

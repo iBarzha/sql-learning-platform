@@ -1,5 +1,7 @@
 """API views for sandbox management."""
 
+from django.db.models import Q
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -20,6 +22,7 @@ class ExecuteQueryView(APIView):
         schema_sql = request.data.get('schema_sql', '')
         seed_sql = request.data.get('seed_sql', '')
         dataset_id = request.data.get('dataset_id')
+        session_id = request.data.get('session_id')
 
         # Validate database type
         valid_types = ['sqlite', 'postgresql', 'mariadb', 'mongodb', 'redis']
@@ -57,6 +60,22 @@ class ExecuteQueryView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
 
+        # Session-based execution
+        if session_id:
+            result = pool.execute_query_in_session(
+                session_id=session_id,
+                database_type=database_type,
+                query=query,
+                schema_sql=schema_sql,
+                seed_sql=seed_sql,
+                timeout=30,
+                user_id=request.user.id,
+            )
+            response_data = result.to_dict()
+            response_data['session_id'] = session_id
+            return Response(response_data)
+
+        # Stateless execution (backward compat)
         result = pool.execute_query(
             database_type=database_type,
             query=query,
@@ -66,6 +85,24 @@ class ExecuteQueryView(APIView):
         )
 
         return Response(result.to_dict())
+
+
+class SessionResetView(APIView):
+    """Reset/destroy a sandbox session."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Destroy a session so the next query starts fresh."""
+        session_id = request.data.get('session_id')
+        if not session_id:
+            return Response(
+                {'error': 'session_id is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pool = get_sandbox_pool()
+        pool.reset_session(session_id)
+        return Response({'status': 'reset'})
 
 
 class DatabaseTypesView(APIView):
@@ -119,13 +156,13 @@ class PublicDatasetsView(APIView):
         """Return list of public datasets grouped by database type."""
         database_type = request.query_params.get('database_type')
 
-        # Get datasets from published courses
+        # Get standalone datasets (no course) + datasets from published courses
         queryset = Dataset.objects.filter(
-            course__is_published=True
+            Q(course__isnull=True) | Q(course__is_published=True)
         ).select_related('course')
 
         if database_type:
-            queryset = queryset.filter(course__database_type=database_type)
+            queryset = queryset.filter(database_type=database_type)
 
         datasets = []
         for dataset in queryset:
@@ -133,8 +170,8 @@ class PublicDatasetsView(APIView):
                 'id': str(dataset.id),
                 'name': dataset.name,
                 'description': dataset.description,
-                'course_title': dataset.course.title,
-                'database_type': dataset.course.database_type,
+                'course_title': dataset.course.title if dataset.course else None,
+                'database_type': dataset.database_type,
                 'schema_sql': dataset.schema_sql,
                 'seed_sql': dataset.seed_sql,
             })
