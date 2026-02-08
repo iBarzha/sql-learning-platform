@@ -51,6 +51,8 @@ services:
         condition: service_started
       sandbox-redis:
         condition: service_started
+      session-redis:
+        condition: service_started
     networks:
       - sql-learning-network
       - sql-learning-sandbox
@@ -98,6 +100,8 @@ services:
       POSTGRES_DB: sandbox
       POSTGRES_USER: sandbox
       POSTGRES_PASSWORD: sandbox
+    volumes:
+      - ./docker/sandbox-postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sandbox -d sandbox"]
       interval: 5s
@@ -114,6 +118,8 @@ services:
       MARIADB_USER: sandbox
       MARIADB_PASSWORD: sandbox
       MARIADB_ROOT_PASSWORD: rootpassword
+    volumes:
+      - ./docker/sandbox-mariadb-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -133,6 +139,13 @@ services:
   sandbox-redis:
     image: redis:7-alpine
     container_name: sql-sandbox-redis
+    networks:
+      - sql-learning-sandbox
+
+  # Redis for session metadata (cross-worker recovery)
+  session-redis:
+    image: redis:7-alpine
+    container_name: sql-session-redis
     networks:
       - sql-learning-sandbox
 
