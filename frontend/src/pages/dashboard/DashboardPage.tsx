@@ -1,37 +1,19 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { BookOpen, CheckCircle, Clock, TrendingUp, ArrowRight, Sparkles } from 'lucide-react';
-import coursesApi from '@/api/courses';
-import submissionsApi from '@/api/submissions';
-import type { Course, CourseProgress } from '@/types';
+import { useCourses } from '@/hooks/queries/useCourses';
+import { useMyProgress } from '@/hooks/queries/useSubmissions';
 
 export function DashboardPage() {
   const { user } = useAuthStore();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [progress, setProgress] = useState<CourseProgress[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: coursesData, isLoading: coursesLoading } = useCourses({ is_published: true });
+  const { data: progress = [], isLoading: progressLoading } = useMyProgress();
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [coursesRes, progressRes] = await Promise.all([
-          coursesApi.list({ is_published: true }),
-          submissionsApi.getMyProgress().catch(() => []),
-        ]);
-        setCourses(coursesRes.results);
-        setProgress(progressRes);
-      } catch {
-        // Error loading dashboard - silently fail, UI shows empty state
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
+  const loading = coursesLoading || progressLoading;
+  const courses = coursesData?.results ?? [];
 
   if (loading) {
     return (

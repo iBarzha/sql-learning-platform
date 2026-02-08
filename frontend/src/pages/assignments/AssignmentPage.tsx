@@ -15,10 +15,13 @@ import {
   ChevronRight,
   ChevronLeft,
 } from 'lucide-react';
-import assignmentsApi from '@/api/assignments';
-import submissionsApi from '@/api/submissions';
 import type { Assignment, Submission } from '@/types';
+import { useAssignment } from '@/hooks/queries/useAssignments';
+import { useMySubmissions, useSubmitAssignment } from '@/hooks/queries/useSubmissions';
 import { getApiErrorMessage } from '@/lib/utils';
+import { SqlEditor } from '@/components/editor/SqlEditor';
+import { useSqlite } from '@/hooks/useSqlite';
+import type { LocalQueryResult } from '@/lib/sqljs';
 
 export function AssignmentPage() {
   const { courseId, assignmentId } = useParams<{
@@ -27,75 +30,63 @@ export function AssignmentPage() {
   }>();
   const navigate = useNavigate();
 
-  const [assignment, setAssignment] = useState<Assignment | null>(null);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const { data: assignment, isLoading: assignmentLoading } = useAssignment(courseId, assignmentId);
+  const { data: submissions = [], isLoading: subsLoading } = useMySubmissions(courseId, assignmentId);
+  const submitMutation = useSubmitAssignment(courseId!, assignmentId!);
+  const loading = assignmentLoading || subsLoading;
+
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [queryInitialized, setQueryInitialized] = useState(false);
   const [currentSubmission, setCurrentSubmission] = useState<Submission | null>(null);
+  const [localResult, setLocalResult] = useState<LocalQueryResult | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [hintIndex, setHintIndex] = useState(0);
   const [error, setError] = useState('');
 
+  // Client-side SQLite for instant preview
+  const sqlite = useSqlite();
+
+  // Set initial query from last submission
   useEffect(() => {
-    if (courseId && assignmentId) {
-      loadAssignment();
-    }
-  }, [courseId, assignmentId]);
-
-  async function loadAssignment() {
-    try {
-      setLoading(true);
-      const [assignmentData, submissionsData] = await Promise.all([
-        assignmentsApi.get(courseId!, assignmentId!),
-        submissionsApi.getMySubmissions(courseId!, assignmentId!).catch(() => []),
-      ]);
-      setAssignment(assignmentData);
-      setSubmissions(submissionsData);
-
-      // Set initial query from last submission if exists
-      if (submissionsData.length > 0) {
-        setQuery(submissionsData[0].query);
+    if (!queryInitialized && !loading && assignment) {
+      if (submissions.length > 0) {
+        setQuery(submissions[0].query);
       }
-    } catch {
-      setError('Failed to load assignment');
-    } finally {
-      setLoading(false);
+      setQueryInitialized(true);
     }
-  }
+  }, [loading, assignment, submissions, queryInitialized]);
+
+  // Initialize local SQLite DB for SQLite courses
+  const isSqlite = assignment?.database_type === 'sqlite';
+  useEffect(() => {
+    if (assignment && isSqlite && assignment.dataset) {
+      sqlite.initDatabase(assignment.dataset.schema_sql, assignment.dataset.seed_sql);
+    }
+  }, [assignment?.id, isSqlite]);
 
   const handleSubmit = useCallback(async () => {
     if (!courseId || !assignmentId || !query.trim()) return;
 
+    // For SQLite: show local results immediately
+    if (isSqlite && sqlite.isReady) {
+      const result = sqlite.execute(query.trim());
+      setLocalResult(result);
+    }
+
+    // Always submit to server for grading
     try {
-      setSubmitting(true);
       setError('');
       setCurrentSubmission(null);
-
-      const submission = await submissionsApi.submit(courseId, assignmentId, {
+      const submission = await submitMutation.mutateAsync({
         query: query.trim(),
       });
-
       setCurrentSubmission(submission);
-      setSubmissions((prev) => [submission, ...prev]);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to submit query'));
-    } finally {
-      setSubmitting(false);
     }
-  }, [courseId, assignmentId, query]);
+  }, [courseId, assignmentId, query, isSqlite, sqlite, submitMutation]);
 
-  // Keyboard shortcut for submit
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleSubmit();
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSubmit]);
+  // Ctrl+Enter is handled by Monaco editor's onExecute prop
 
   if (loading) {
     return (
@@ -265,12 +256,13 @@ export function AssignmentPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <textarea
+              <SqlEditor
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={setQuery}
+                height="192px"
+                readOnly={!canSubmit}
+                onExecute={handleSubmit}
                 placeholder={`-- Write your ${assignment.query_type.toUpperCase()} query here`}
-                className="w-full h-48 p-3 font-mono text-sm bg-muted rounded-md border-0 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-                disabled={!canSubmit}
               />
               <div className="flex items-center justify-between mt-4">
                 <span className="text-xs text-muted-foreground">
@@ -278,9 +270,9 @@ export function AssignmentPage() {
                 </span>
                 <Button
                   onClick={handleSubmit}
-                  disabled={submitting || !query.trim() || !canSubmit}
+                  disabled={submitMutation.isPending || !query.trim() || !canSubmit}
                 >
-                  {submitting ? (
+                  {submitMutation.isPending ? (
                     <Spinner size="sm" className="mr-2" />
                   ) : (
                     <Play className="h-4 w-4 mr-2" />
@@ -291,7 +283,65 @@ export function AssignmentPage() {
             </CardContent>
           </Card>
 
-          {/* Current submission result */}
+          {/* Local SQLite preview (instant) */}
+          {isSqlite && localResult && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Query Output</CardTitle>
+                  <Badge variant="outline">
+                    {localResult.execution_time_ms}ms (local)
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {localResult.error_message && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertDescription className="font-mono text-xs">
+                      {localResult.error_message}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {localResult.success && localResult.columns.length > 0 && (
+                  <div className="overflow-auto max-h-48 border rounded-md">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          {localResult.columns.map((col, i) => (
+                            <th key={i} className="px-2 py-1 text-left font-medium border-b">
+                              {col}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {localResult.rows.slice(0, 10).map((row, i) => (
+                          <tr key={i} className="border-b">
+                            {(row as unknown[]).map((cell, j) => (
+                              <td key={j} className="px-2 py-1 font-mono text-xs">
+                                {cell === null ? (
+                                  <span className="text-muted-foreground italic">NULL</span>
+                                ) : (
+                                  String(cell)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {localResult.success && localResult.affected_rows > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {localResult.affected_rows} row(s) affected
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Grading result */}
           {currentSubmission && (
             <Card>
               <CardHeader>
