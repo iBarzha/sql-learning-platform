@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Search, Users, Mail, BookOpen } from 'lucide-react';
 import coursesApi from '@/api/courses';
 import type { Course, Enrollment } from '@/types';
+import { useCourses } from '@/hooks/queries/useCourses';
 
 interface StudentWithCourses {
   student: Enrollment['student'];
@@ -14,42 +16,30 @@ interface StudentWithCourses {
 }
 
 export function AllStudentsPage() {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [allEnrollments, setAllEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const { data: coursesData, isLoading: coursesLoading } = useCourses();
+  const courses = coursesData?.results ?? [];
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    try {
-      setLoading(true);
-      // First get instructor's courses
-      const coursesRes = await coursesApi.list();
-      setCourses(coursesRes.results);
-
-      // Then get enrollments for each course
-      const enrollmentsPromises = coursesRes.results.map((course) =>
-        coursesApi.getEnrollments(course.id).catch(() => [])
+  const { data: allEnrollments = [], isLoading: enrollmentsLoading } = useQuery({
+    queryKey: ['all-instructor-enrollments', courses.map((c) => c.id)],
+    queryFn: async () => {
+      const results = await Promise.all(
+        courses.map((course) =>
+          coursesApi.getEnrollments(course.id).catch(() => [])
+        )
       );
-      const enrollmentsResults = await Promise.all(enrollmentsPromises);
-
-      // Flatten and add course info
       const allEnrolls: Enrollment[] = [];
-      enrollmentsResults.forEach((enrollments, index) => {
+      results.forEach((enrollments, index) => {
         enrollments.forEach((e: Enrollment) => {
-          allEnrolls.push({ ...e, course: coursesRes.results[index].id, course_title: coursesRes.results[index].title });
+          allEnrolls.push({ ...e, course: courses[index].id, course_title: courses[index].title });
         });
       });
-      setAllEnrollments(allEnrolls);
-    } catch {
-      // Error loading data - silently fail, UI shows empty state
-    } finally {
-      setLoading(false);
-    }
-  }
+      return allEnrolls;
+    },
+    enabled: courses.length > 0,
+  });
+
+  const loading = coursesLoading || enrollmentsLoading;
+  const [search, setSearch] = useState('');
 
   // Group enrollments by student
   const studentMap = new Map<string, StudentWithCourses>();

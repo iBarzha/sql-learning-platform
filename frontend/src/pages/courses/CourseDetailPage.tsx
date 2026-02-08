@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,10 +19,12 @@ import {
   Code,
   Layers,
 } from 'lucide-react';
-import coursesApi from '@/api/courses';
-import lessonsApi, { type Lesson } from '@/api/lessons';
-import type { Course } from '@/types';
+import type { Lesson } from '@/api/lessons';
+import type { Module } from '@/api/modules';
 import { getApiErrorMessage } from '@/lib/utils';
+import { useCourse, useEnrollCourse, useUnenrollCourse } from '@/hooks/queries/useCourses';
+import { useLessons } from '@/hooks/queries/useLessons';
+import { useModules } from '@/hooks/queries/useModules';
 
 const LESSON_TYPE_ICONS = {
   theory: BookOpen,
@@ -30,43 +32,159 @@ const LESSON_TYPE_ICONS = {
   mixed: Layers,
 };
 
+function LessonRow({ lesson, index, courseId }: { lesson: Lesson; index: number; courseId: string }) {
+  const TypeIcon = LESSON_TYPE_ICONS[lesson.lesson_type];
+  const hasPractice = lesson.lesson_type === 'practice' || lesson.lesson_type === 'mixed';
+
+  return (
+    <Link
+      to={`/courses/${courseId}/lessons/${lesson.id}`}
+      className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+    >
+      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
+        {index + 1}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium truncate">{lesson.title}</h3>
+          <Badge variant="outline">
+            <TypeIcon className="h-3 w-3 mr-1" />
+            {lesson.lesson_type === 'theory'
+              ? 'Theory'
+              : lesson.lesson_type === 'practice'
+              ? 'Practice'
+              : 'Mixed'}
+          </Badge>
+        </div>
+        {lesson.description && (
+          <p className="text-sm text-muted-foreground truncate">
+            {lesson.description}
+          </p>
+        )}
+      </div>
+      <div className="shrink-0">
+        {hasPractice && lesson.user_completed ? (
+          <CheckCircle className="h-5 w-5 text-green-500" />
+        ) : hasPractice && lesson.user_best_score !== null ? (
+          <Clock className="h-5 w-5 text-yellow-500" />
+        ) : (
+          <Play className="h-5 w-5 text-muted-foreground" />
+        )}
+      </div>
+    </Link>
+  );
+}
+
+function LessonsList({
+  lessons,
+  modules,
+  courseId,
+}: {
+  lessons: Lesson[];
+  modules: Module[];
+  courseId: string;
+}) {
+  // No modules — flat list
+  if (modules.length === 0) {
+    return (
+      <div className="space-y-2">
+        {lessons.map((lesson, index) => (
+          <LessonRow key={lesson.id} lesson={lesson} index={index} courseId={courseId} />
+        ))}
+      </div>
+    );
+  }
+
+  // Group lessons by module
+  const lessonsByModule = new Map<string | null, Lesson[]>();
+  for (const lesson of lessons) {
+    const key = lesson.module ?? null;
+    if (!lessonsByModule.has(key)) {
+      lessonsByModule.set(key, []);
+    }
+    lessonsByModule.get(key)!.push(lesson);
+  }
+
+  const sortedModules = [...modules].sort((a, b) => a.order - b.order);
+  const uncategorized = lessonsByModule.get(null) ?? [];
+  let globalIndex = 0;
+
+  return (
+    <div className="space-y-6">
+      {sortedModules.map((mod) => {
+        const modLessons = lessonsByModule.get(mod.id) ?? [];
+        if (modLessons.length === 0) return null;
+        return (
+          <div key={mod.id}>
+            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-2">
+              {mod.title}
+            </h3>
+            {mod.description && (
+              <p className="text-sm text-muted-foreground mb-3">{mod.description}</p>
+            )}
+            <div className="space-y-2">
+              {modLessons.map((lesson) => {
+                globalIndex++;
+                return (
+                  <LessonRow
+                    key={lesson.id}
+                    lesson={lesson}
+                    index={globalIndex}
+                    courseId={courseId}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {uncategorized.length > 0 && (
+        <div>
+          {sortedModules.length > 0 && (
+            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-2">
+              Other Lessons
+            </h3>
+          )}
+          <div className="space-y-2">
+            {uncategorized.map((lesson) => {
+              globalIndex++;
+              return (
+                <LessonRow
+                  key={lesson.id}
+                  lesson={lesson}
+                  index={globalIndex}
+                  courseId={courseId}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
 
-  const [course, setCourse] = useState<Course | null>(null);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: course, isLoading: courseLoading } = useCourse(courseId);
+  const { data: lessonsData, isLoading: lessonsLoading } = useLessons(courseId);
+  const { data: modules = [], isLoading: modulesLoading } = useModules(courseId);
+  const lessons = lessonsData?.results ?? [];
+  const loading = courseLoading || lessonsLoading || modulesLoading;
+
   const [enrolling, setEnrolling] = useState(false);
   const [enrollmentKey, setEnrollmentKey] = useState('');
   const [error, setError] = useState('');
 
+  const enrollMutation = useEnrollCourse(courseId!);
+  const unenrollMutation = useUnenrollCourse(courseId!);
+
   const isInstructor = course?.instructor?.id === user?.id;
   const isAdmin = user?.role === 'admin';
   const canManage = isInstructor || isAdmin;
-
-  useEffect(() => {
-    if (courseId) {
-      loadCourseData();
-    }
-  }, [courseId]);
-
-  async function loadCourseData() {
-    try {
-      setLoading(true);
-      const [courseData, lessonsData] = await Promise.all([
-        coursesApi.get(courseId!),
-        lessonsApi.list(courseId!).catch(() => ({ results: [] })),
-      ]);
-      setCourse(courseData);
-      setLessons(lessonsData.results || []);
-    } catch {
-      setError('Failed to load course');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleEnroll() {
     if (!courseId) return;
@@ -74,8 +192,7 @@ export function CourseDetailPage() {
     try {
       setEnrolling(true);
       setError('');
-      await coursesApi.enroll(courseId, enrollmentKey || undefined);
-      await loadCourseData();
+      await enrollMutation.mutateAsync(enrollmentKey || undefined);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to enroll'));
     } finally {
@@ -87,8 +204,7 @@ export function CourseDetailPage() {
     if (!courseId || !confirm('Are you sure you want to unenroll from this course?')) return;
 
     try {
-      await coursesApi.unenroll(courseId);
-      await loadCourseData();
+      await unenrollMutation.mutateAsync();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to unenroll'));
     }
@@ -180,52 +296,11 @@ export function CourseDetailPage() {
                   No lessons yet
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {lessons.map((lesson, index) => {
-                    const TypeIcon = LESSON_TYPE_ICONS[lesson.lesson_type];
-                    const hasPractice =
-                      lesson.lesson_type === 'practice' || lesson.lesson_type === 'mixed';
-
-                    return (
-                      <Link
-                        key={lesson.id}
-                        to={`/courses/${courseId}/lessons/${lesson.id}`}
-                        className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
-                          {index + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-medium truncate">{lesson.title}</h3>
-                            <Badge variant="outline">
-                              <TypeIcon className="h-3 w-3 mr-1" />
-                              {lesson.lesson_type === 'theory'
-                                ? 'Theory'
-                                : lesson.lesson_type === 'practice'
-                                ? 'Practice'
-                                : 'Mixed'}
-                            </Badge>
-                          </div>
-                          {lesson.description && (
-                            <p className="text-sm text-muted-foreground truncate">
-                              {lesson.description}
-                            </p>
-                          )}
-                        </div>
-                        <div className="shrink-0">
-                          {hasPractice && lesson.user_completed ? (
-                            <CheckCircle className="h-5 w-5 text-green-500" />
-                          ) : hasPractice && lesson.user_best_score !== null ? (
-                            <Clock className="h-5 w-5 text-yellow-500" />
-                          ) : (
-                            <Play className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+                <LessonsList
+                  lessons={lessons}
+                  modules={modules}
+                  courseId={courseId!}
+                />
               )}
             </CardContent>
           </Card>

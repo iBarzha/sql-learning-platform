@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuthStore } from '@/store/authStore';
 import authApi from '@/api/auth';
 import { getApiErrorMessage } from '@/lib/utils';
@@ -9,62 +11,51 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/schemas';
 
 export function ChangePasswordPage() {
   const navigate = useNavigate();
   const { user, fetchUser } = useAuthStore();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [formData, setFormData] = useState({
-    old_password: '',
-    new_password: '',
-    new_password_confirm: '',
-  });
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const mustChangePassword = user?.must_change_password;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ChangePasswordFormData>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: {
+      old_password: '',
+      new_password: '',
+      new_password_confirm: '',
+    },
+  });
 
-    if (formData.new_password !== formData.new_password_confirm) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    if (formData.new_password.length < 8) {
-      setError('Password must be at least 8 characters');
-      return;
-    }
-
+  const onSubmit = async (data: ChangePasswordFormData) => {
+    setApiError(null);
     setIsLoading(true);
 
     try {
       if (mustChangePassword) {
         await authApi.setPassword({
-          new_password: formData.new_password,
-          new_password_confirm: formData.new_password_confirm,
+          new_password: data.new_password,
+          new_password_confirm: data.new_password_confirm,
         });
       } else {
-        await authApi.changePassword(formData);
+        await authApi.changePassword(data);
       }
 
       await fetchUser();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to change password'));
+      setApiError(getApiErrorMessage(err, 'Failed to change password'));
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
   };
 
   return (
@@ -80,11 +71,11 @@ export function ChangePasswordPage() {
               : 'Enter your current and new password'}
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
-            {error && (
+            {apiError && (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{apiError}</AlertDescription>
               </Alert>
             )}
             {!mustChangePassword && (
@@ -92,10 +83,8 @@ export function ChangePasswordPage() {
                 <Label htmlFor="old_password">Current password</Label>
                 <Input
                   id="old_password"
-                  name="old_password"
                   type="password"
-                  value={formData.old_password}
-                  onChange={handleChange}
+                  {...register('old_password')}
                   required={!mustChangePassword}
                   autoComplete="current-password"
                 />
@@ -105,25 +94,25 @@ export function ChangePasswordPage() {
               <Label htmlFor="new_password">New password</Label>
               <Input
                 id="new_password"
-                name="new_password"
                 type="password"
-                value={formData.new_password}
-                onChange={handleChange}
-                required
+                {...register('new_password')}
                 autoComplete="new-password"
               />
+              {errors.new_password && (
+                <p className="text-sm text-destructive">{errors.new_password.message}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="new_password_confirm">Confirm new password</Label>
               <Input
                 id="new_password_confirm"
-                name="new_password_confirm"
                 type="password"
-                value={formData.new_password_confirm}
-                onChange={handleChange}
-                required
+                {...register('new_password_confirm')}
                 autoComplete="new-password"
               />
+              {errors.new_password_confirm && (
+                <p className="text-sm text-destructive">{errors.new_password_confirm.message}</p>
+              )}
             </div>
           </CardContent>
           <CardFooter>
