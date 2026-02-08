@@ -13,17 +13,46 @@ from ..exceptions import (
 
 
 class RedisExecutor(BaseExecutor):
-    """Executor for Redis databases."""
+    """Executor for Redis databases.
+
+    Supports key-prefix isolation: when ``key_prefix`` is set, all key
+    arguments are transparently prefixed so multiple sessions can share
+    DB 0 without collision.  This removes the 15-session cap imposed by
+    the old DB-number approach.
+    """
+
+    # ── Command categorisation for key prefixing ─────────────────
+    _NO_KEY_COMMANDS = frozenset({
+        'PING', 'ECHO', 'INFO', 'DBSIZE', 'TIME', 'CONFIG',
+        'CLIENT', 'COMMAND', 'MULTI', 'EXEC', 'DISCARD',
+        'SELECT', 'QUIT', 'AUTH', 'RANDOMKEY', 'WAIT',
+        'FLUSHDB', 'FLUSHALL',
+    })
+    _ALL_KEYS_COMMANDS = frozenset({
+        'DEL', 'EXISTS', 'UNLINK', 'MGET', 'PFCOUNT',
+        'SDIFF', 'SINTER', 'SUNION', 'WATCH',
+    })
+    _KV_PAIR_COMMANDS = frozenset({'MSET', 'MSETNX'})
+    _TWO_KEY_COMMANDS = frozenset({
+        'RENAME', 'RENAMENX', 'RPOPLPUSH', 'LMOVE', 'SMOVE',
+        'SDIFFSTORE', 'SINTERSTORE', 'SUNIONSTORE',
+    })
 
     def __init__(self, host: str, port: int, database: str = '0',
-                 user: str = '', password: str = ''):
+                 user: str = '', password: str = '',
+                 key_prefix: str = ''):
         super().__init__(host, port, database, user, password)
         self._client = None
+        self._key_prefix = key_prefix
 
     def connect(self) -> None:
         """Establish connection to Redis."""
         try:
-            db_number = int(self.database) if self.database.isdigit() else 0
+            # When using key_prefix all sessions share DB 0
+            if self._key_prefix:
+                db_number = 0
+            else:
+                db_number = int(self.database) if self.database.isdigit() else 0
             self._client = redis.Redis(
                 host=self.host,
                 port=self.port,
@@ -113,13 +142,75 @@ class RedisExecutor(BaseExecutor):
             # Fallback to simple split if shlex fails
             return query.split()
 
+    # ── Key-prefix helpers ──────────────────────────────────────
+
+    def _prefix_key(self, key: str) -> str:
+        """Add session key prefix."""
+        if self._key_prefix:
+            return f'{self._key_prefix}:{key}'
+        return key
+
+    def _prefix_args(self, command: str, args: list) -> list:
+        """Prefix key arguments based on command type."""
+        if not self._key_prefix or not args:
+            return args
+
+        cmd = command.upper()
+
+        if cmd in self._NO_KEY_COMMANDS:
+            return args
+
+        if cmd == 'KEYS':
+            # Prefix the glob pattern
+            return [f'{self._key_prefix}:{args[0]}'] + list(args[1:])
+
+        if cmd in self._ALL_KEYS_COMMANDS:
+            return [self._prefix_key(str(a)) for a in args]
+
+        if cmd in self._KV_PAIR_COMMANDS:
+            # Even indices are keys: MSET k1 v1 k2 v2
+            new_args = list(args)
+            for i in range(0, len(new_args), 2):
+                new_args[i] = self._prefix_key(str(new_args[i]))
+            return new_args
+
+        if cmd in self._TWO_KEY_COMMANDS:
+            new_args = list(args)
+            if len(new_args) >= 1:
+                new_args[0] = self._prefix_key(str(new_args[0]))
+            if len(new_args) >= 2:
+                new_args[1] = self._prefix_key(str(new_args[1]))
+            return new_args
+
+        # Default: first argument is the key
+        new_args = list(args)
+        new_args[0] = self._prefix_key(str(new_args[0]))
+        return new_args
+
+    def _strip_prefix_from_keys(self, keys: list) -> list:
+        """Strip key prefix from result key names."""
+        if not self._key_prefix:
+            return keys
+        prefix = f'{self._key_prefix}:'
+        plen = len(prefix)
+        return [
+            k[plen:] if isinstance(k, str) and k.startswith(prefix) else k
+            for k in keys
+        ]
+
     def _execute_command(self, command: str, args: list, timeout: int):
-        """Execute a Redis command."""
+        """Execute a Redis command with key-prefix isolation."""
         # Set socket timeout for this command
         self._client.connection_pool.connection_kwargs['socket_timeout'] = timeout
 
-        # Execute the command
-        return self._client.execute_command(command, *args)
+        prefixed_args = self._prefix_args(command, args)
+        result = self._client.execute_command(command, *prefixed_args)
+
+        # Strip prefixes from KEYS output so users see clean key names
+        if self._key_prefix and command.upper() == 'KEYS' and isinstance(result, list):
+            result = self._strip_prefix_from_keys(result)
+
+        return result
 
     def _format_result(self, result, elapsed_ms: int) -> QueryResult:
         """Format Redis command result."""
@@ -244,11 +335,27 @@ class RedisExecutor(BaseExecutor):
             )
 
     def reset(self) -> None:
-        """Reset Redis by flushing the database."""
+        """Reset Redis state for this session.
+
+        When using key_prefix: SCAN + DEL only this session's keys.
+        Without prefix: FLUSHDB (legacy behaviour).
+        """
         if not self._client:
             return
 
         try:
-            self._client.flushdb()
+            if self._key_prefix:
+                cursor = 0
+                pattern = f'{self._key_prefix}:*'
+                while True:
+                    cursor, keys = self._client.scan(
+                        cursor, match=pattern, count=100,
+                    )
+                    if keys:
+                        self._client.delete(*keys)
+                    if cursor == 0:
+                        break
+            else:
+                self._client.flushdb()
         except redis.RedisError:
             pass  # Ignore reset errors

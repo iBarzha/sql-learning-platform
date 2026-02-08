@@ -30,6 +30,7 @@ class SQLiteExecutor(BaseExecutor):
                 ':memory:',
                 timeout=30,
                 isolation_level=None,  # Autocommit mode
+                check_same_thread=False,  # Allow cross-thread access for sessions
             )
             self._connection.row_factory = sqlite3.Row
         except sqlite3.Error as e:
