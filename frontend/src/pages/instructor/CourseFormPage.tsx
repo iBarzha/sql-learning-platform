@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,11 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeft, Save } from 'lucide-react';
-import coursesApi, { type CreateCourseData } from '@/api/courses';
+import { courseSchema, type CourseFormData } from '@/lib/schemas';
 import { getApiErrorMessage } from '@/lib/utils';
+import { useCourse, useCreateCourse, useUpdateCourse } from '@/hooks/queries/useCourses';
 
 const DATABASE_TYPES = [
   { value: 'postgresql', label: 'PostgreSQL' },
+  { value: 'sqlite', label: 'SQLite (runs in browser)' },
   { value: 'mysql', label: 'MySQL' },
   { value: 'mariadb', label: 'MariaDB' },
   { value: 'mongodb', label: 'MongoDB' },
@@ -23,70 +27,67 @@ export function CourseFormPage() {
   const navigate = useNavigate();
   const isEditing = Boolean(courseId);
 
-  const [loading, setLoading] = useState(isEditing);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const { data: existingCourse, isLoading: loading } = useCourse(isEditing ? courseId : undefined);
+  const createCourse = useCreateCourse();
+  const updateCourseMutation = useUpdateCourse(courseId!);
 
-  const [formData, setFormData] = useState<CreateCourseData>({
-    title: '',
-    description: '',
-    database_type: 'postgresql',
-    enrollment_key: '',
-    max_students: undefined,
-    start_date: '',
-    end_date: '',
+  const [apiError, setApiError] = useState('');
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<CourseFormData>({
+    resolver: zodResolver(courseSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      database_type: 'postgresql',
+      enrollment_key: '',
+      max_students: undefined,
+      start_date: '',
+      end_date: '',
+    },
   });
 
+  // Populate form when course data loads
   useEffect(() => {
-    if (isEditing && courseId) {
-      loadCourse();
-    }
-  }, [courseId, isEditing]);
-
-  async function loadCourse() {
-    try {
-      const course = await coursesApi.get(courseId!);
-      setFormData({
-        title: course.title,
-        description: course.description,
-        database_type: course.database_type,
-        enrollment_key: course.enrollment_key || '',
-        max_students: course.max_students,
-        start_date: course.start_date || '',
-        end_date: course.end_date || '',
+    if (existingCourse) {
+      reset({
+        title: existingCourse.title,
+        description: existingCourse.description,
+        database_type: existingCourse.database_type,
+        enrollment_key: existingCourse.enrollment_key || '',
+        max_students: existingCourse.max_students ?? undefined,
+        start_date: existingCourse.start_date || '',
+        end_date: existingCourse.end_date || '',
       });
-    } catch (err) {
-      setError('Failed to load course');
-    } finally {
-      setLoading(false);
     }
-  }
+  }, [existingCourse, reset]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setSaving(true);
-
+  async function onSubmit(data: CourseFormData) {
+    setApiError('');
     try {
-      const data = {
-        ...formData,
-        enrollment_key: formData.enrollment_key || undefined,
-        max_students: formData.max_students || undefined,
-        start_date: formData.start_date || undefined,
-        end_date: formData.end_date || undefined,
+      const payload = {
+        ...data,
+        enrollment_key: data.enrollment_key || undefined,
+        max_students: data.max_students || undefined,
+        start_date: data.start_date || undefined,
+        end_date: data.end_date || undefined,
       };
 
       if (isEditing) {
-        await coursesApi.update(courseId!, data);
+        await updateCourseMutation.mutateAsync(payload);
         navigate(`/courses/${courseId}/manage`);
       } else {
-        const course = await coursesApi.create(data);
+        const course = await createCourse.mutateAsync(payload);
         navigate(`/courses/${course.id}/manage`);
       }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to save course'));
-    } finally {
-      setSaving(false);
+      setApiError(getApiErrorMessage(err, 'Failed to save course'));
     }
   }
 
@@ -114,13 +115,13 @@ export function CourseFormPage() {
         </div>
       </div>
 
-      {error && (
+      {apiError && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{apiError}</AlertDescription>
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit(onSubmit)}>
         <Card>
           <CardHeader>
             <CardTitle>Course Details</CardTitle>
@@ -131,19 +132,19 @@ export function CourseFormPage() {
               <Label htmlFor="title">Title *</Label>
               <Input
                 id="title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                {...register('title')}
                 placeholder="e.g., Introduction to SQL"
-                required
               />
+              {errors.title && (
+                <p className="text-sm text-destructive">{errors.title.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <textarea
                 id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                {...register('description')}
                 placeholder="What will students learn in this course?"
                 className="w-full h-24 p-3 text-sm bg-background border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
               />
@@ -153,8 +154,7 @@ export function CourseFormPage() {
               <Label htmlFor="database_type">Database Type *</Label>
               <select
                 id="database_type"
-                value={formData.database_type}
-                onChange={(e) => setFormData({ ...formData, database_type: e.target.value })}
+                {...register('database_type')}
                 className="w-full p-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {DATABASE_TYPES.map((type) => (
@@ -163,26 +163,19 @@ export function CourseFormPage() {
                   </option>
                 ))}
               </select>
+              {errors.database_type && (
+                <p className="text-sm text-destructive">{errors.database_type.message}</p>
+              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="start_date">Start Date</Label>
-                <Input
-                  id="start_date"
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                />
+                <Input id="start_date" type="date" {...register('start_date')} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="end_date">End Date</Label>
-                <Input
-                  id="end_date"
-                  type="date"
-                  value={formData.end_date}
-                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                />
+                <Input id="end_date" type="date" {...register('end_date')} />
               </div>
             </div>
           </CardContent>
@@ -198,8 +191,7 @@ export function CourseFormPage() {
               <Label htmlFor="enrollment_key">Enrollment Key</Label>
               <Input
                 id="enrollment_key"
-                value={formData.enrollment_key}
-                onChange={(e) => setFormData({ ...formData, enrollment_key: e.target.value })}
+                {...register('enrollment_key')}
                 placeholder="Leave empty for open enrollment"
               />
               <p className="text-xs text-muted-foreground">
@@ -213,12 +205,12 @@ export function CourseFormPage() {
                 id="max_students"
                 type="number"
                 min="1"
-                value={formData.max_students || ''}
+                value={watch('max_students') ?? ''}
                 onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    max_students: e.target.value ? parseInt(e.target.value) : undefined,
-                  })
+                  setValue(
+                    'max_students',
+                    e.target.value ? parseInt(e.target.value) : undefined
+                  )
                 }
                 placeholder="Unlimited"
               />
@@ -230,8 +222,12 @@ export function CourseFormPage() {
           <Button type="button" variant="outline" onClick={() => navigate(-1)}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? <Spinner size="sm" className="mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <Spinner size="sm" className="mr-2" />
+            ) : (
+              <Save className="h-4 w-4 mr-2" />
+            )}
             {isEditing ? 'Save Changes' : 'Create Course'}
           </Button>
         </div>

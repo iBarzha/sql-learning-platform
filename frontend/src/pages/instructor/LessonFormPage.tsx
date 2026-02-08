@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,10 +9,12 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeft, Save, Plus, X } from 'lucide-react';
-import lessonsApi, { type CreateLessonData, type LessonType } from '@/api/lessons';
-import coursesApi from '@/api/courses';
-import type { Dataset } from '@/types';
+import { useLesson, useCreateLesson, useUpdateLesson } from '@/hooks/queries/useLessons';
+import { useCourseDatasets } from '@/hooks/queries/useCourses';
+import { useModules } from '@/hooks/queries/useModules';
+import { lessonSchema, type LessonFormData } from '@/lib/schemas';
 import { getApiErrorMessage } from '@/lib/utils';
+import { SqlEditor } from '@/components/editor/SqlEditor';
 
 const LESSON_TYPES = [
   { value: 'theory', label: 'Theory', description: 'Educational content only' },
@@ -23,104 +27,107 @@ export function LessonFormPage() {
   const navigate = useNavigate();
   const isEditing = Boolean(lessonId);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const { data: existingLesson, isLoading: lessonLoading } = useLesson(
+    isEditing ? courseId : undefined,
+    isEditing ? lessonId : undefined
+  );
+  const { data: datasets = [], isLoading: datasetsLoading } = useCourseDatasets(courseId);
+  const { data: modules = [] } = useModules(courseId);
+  const createLesson = useCreateLesson(courseId!);
+  const updateLessonMutation = useUpdateLesson(courseId!, lessonId ?? '');
+  const loading = (isEditing ? lessonLoading : false) || datasetsLoading;
 
-  const [formData, setFormData] = useState<CreateLessonData>({
-    title: '',
-    description: '',
-    lesson_type: 'mixed',
-    theory_content: '',
-    practice_description: '',
-    practice_initial_code: '',
-    expected_query: '',
-    max_score: 100,
-    time_limit_seconds: 60,
-    hints: [],
-    dataset_id: undefined,
-    is_published: false,
-  });
-
+  const [apiError, setApiError] = useState('');
   const [newHint, setNewHint] = useState('');
 
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<LessonFormData>({
+    resolver: zodResolver(lessonSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      lesson_type: 'mixed',
+      theory_content: '',
+      practice_description: '',
+      practice_initial_code: '',
+      expected_query: '',
+      required_keywords: [],
+      forbidden_keywords: [],
+      order_matters: false,
+      max_score: 100,
+      time_limit_seconds: 60,
+      max_attempts: undefined,
+      hints: [],
+      dataset_id: undefined,
+      module_id: undefined,
+      is_published: false,
+    },
+  });
+
+  const lessonType = watch('lesson_type');
+  const hints = watch('hints') ?? [];
+  const theoryContent = watch('theory_content') ?? '';
+  const practiceInitialCode = watch('practice_initial_code') ?? '';
+  const expectedQuery = watch('expected_query') ?? '';
+
+  // Populate form when lesson data loads
   useEffect(() => {
-    loadData();
-  }, [courseId, lessonId]);
-
-  async function loadData() {
-    try {
-      setLoading(true);
-      const datasetsData = await coursesApi.getDatasets(courseId!);
-      setDatasets(datasetsData);
-
-      if (isEditing && lessonId) {
-        const lesson = await lessonsApi.get(courseId!, lessonId);
-        setFormData({
-          title: lesson.title,
-          description: lesson.description || '',
-          lesson_type: lesson.lesson_type,
-          theory_content: lesson.theory_content || '',
-          practice_description: lesson.practice_description || '',
-          practice_initial_code: lesson.practice_initial_code || '',
-          expected_query: lesson.expected_query || '',
-          required_keywords: lesson.required_keywords || [],
-          forbidden_keywords: lesson.forbidden_keywords || [],
-          order_matters: lesson.order_matters || false,
-          max_score: lesson.max_score,
-          time_limit_seconds: lesson.time_limit_seconds || 60,
-          max_attempts: lesson.max_attempts,
-          hints: lesson.hints || [],
-          dataset_id: lesson.dataset?.id,
-          is_published: lesson.is_published,
-        });
-      }
-    } catch (err) {
-      setError('Failed to load data');
-    } finally {
-      setLoading(false);
+    if (existingLesson) {
+      reset({
+        title: existingLesson.title,
+        description: existingLesson.description || '',
+        lesson_type: existingLesson.lesson_type,
+        theory_content: existingLesson.theory_content || '',
+        practice_description: existingLesson.practice_description || '',
+        practice_initial_code: existingLesson.practice_initial_code || '',
+        expected_query: existingLesson.expected_query || '',
+        required_keywords: existingLesson.required_keywords || [],
+        forbidden_keywords: existingLesson.forbidden_keywords || [],
+        order_matters: existingLesson.order_matters || false,
+        max_score: existingLesson.max_score,
+        time_limit_seconds: existingLesson.time_limit_seconds || 60,
+        max_attempts: existingLesson.max_attempts ?? undefined,
+        hints: existingLesson.hints || [],
+        dataset_id: existingLesson.dataset?.id ?? undefined,
+        module_id: existingLesson.module ?? undefined,
+        is_published: existingLesson.is_published,
+      });
     }
-  }
+  }, [existingLesson, reset]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setSaving(true);
-
+  async function onSubmit(data: LessonFormData) {
+    setApiError('');
     try {
       if (isEditing) {
-        await lessonsApi.update(courseId!, lessonId!, formData);
+        await updateLessonMutation.mutateAsync(data);
       } else {
-        await lessonsApi.create(courseId!, formData);
+        await createLesson.mutateAsync(data);
       }
       navigate(`/courses/${courseId}/manage`);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to save lesson'));
-    } finally {
-      setSaving(false);
+      setApiError(getApiErrorMessage(err, 'Failed to save lesson'));
     }
   }
 
   function addHint() {
     if (newHint.trim()) {
-      setFormData({
-        ...formData,
-        hints: [...(formData.hints || []), newHint.trim()],
-      });
+      setValue('hints', [...hints, newHint.trim()]);
       setNewHint('');
     }
   }
 
   function removeHint(index: number) {
-    setFormData({
-      ...formData,
-      hints: formData.hints?.filter((_, i) => i !== index),
-    });
+    setValue('hints', hints.filter((_, i) => i !== index));
   }
 
-  const showTheory = formData.lesson_type === 'theory' || formData.lesson_type === 'mixed';
-  const showPractice = formData.lesson_type === 'practice' || formData.lesson_type === 'mixed';
+  const showTheory = lessonType === 'theory' || lessonType === 'mixed';
+  const showPractice = lessonType === 'practice' || lessonType === 'mixed';
 
   if (loading) {
     return (
@@ -146,13 +153,13 @@ export function LessonFormPage() {
         </div>
       </div>
 
-      {error && (
+      {apiError && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{apiError}</AlertDescription>
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Basic Info */}
         <Card>
           <CardHeader>
@@ -163,19 +170,19 @@ export function LessonFormPage() {
               <Label htmlFor="title">Title *</Label>
               <Input
                 id="title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                {...register('title')}
                 placeholder="e.g., Introduction to SELECT"
-                required
               />
+              {errors.title && (
+                <p className="text-sm text-destructive">{errors.title.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">Short Description</Label>
               <Input
                 id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                {...register('description')}
                 placeholder="Brief description shown on the card"
               />
             </div>
@@ -187,19 +194,15 @@ export function LessonFormPage() {
                   <label
                     key={type.value}
                     className={`flex flex-col p-3 rounded-lg border cursor-pointer transition-colors ${
-                      formData.lesson_type === type.value
+                      lessonType === type.value
                         ? 'border-primary bg-primary/5'
                         : 'hover:bg-muted'
                     }`}
                   >
                     <input
                       type="radio"
-                      name="lesson_type"
                       value={type.value}
-                      checked={formData.lesson_type === type.value}
-                      onChange={(e) =>
-                        setFormData({ ...formData, lesson_type: e.target.value as LessonType })
-                      }
+                      {...register('lesson_type')}
                       className="sr-only"
                     />
                     <span className="font-medium">{type.label}</span>
@@ -208,6 +211,27 @@ export function LessonFormPage() {
                 ))}
               </div>
             </div>
+
+            {modules.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="module_id">Module</Label>
+                <select
+                  id="module_id"
+                  value={watch('module_id') ?? ''}
+                  onChange={(e) =>
+                    setValue('module_id', e.target.value || undefined)
+                  }
+                  className="w-full p-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">No module</option>
+                  {modules.map((mod) => (
+                    <option key={mod.id} value={mod.id}>
+                      {mod.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -221,12 +245,12 @@ export function LessonFormPage() {
             <CardContent>
               <div className="space-y-2">
                 <Label htmlFor="theory_content">Content (Markdown supported)</Label>
-                <textarea
-                  id="theory_content"
-                  value={formData.theory_content}
-                  onChange={(e) => setFormData({ ...formData, theory_content: e.target.value })}
+                <SqlEditor
+                  value={theoryContent}
+                  onChange={(v) => setValue('theory_content', v)}
+                  language="markdown"
+                  height="256px"
                   placeholder="# Lesson Title&#10;&#10;Write your lesson content here using Markdown..."
-                  className="w-full h-64 p-3 font-mono text-sm bg-background border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
             </CardContent>
@@ -245,9 +269,9 @@ export function LessonFormPage() {
                 <Label htmlFor="dataset_id">Dataset</Label>
                 <select
                   id="dataset_id"
-                  value={formData.dataset_id || ''}
+                  value={watch('dataset_id') ?? ''}
                   onChange={(e) =>
-                    setFormData({ ...formData, dataset_id: e.target.value || undefined })
+                    setValue('dataset_id', e.target.value || undefined)
                   }
                   className="w-full p-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                 >
@@ -264,10 +288,7 @@ export function LessonFormPage() {
                 <Label htmlFor="practice_description">Task Description</Label>
                 <textarea
                   id="practice_description"
-                  value={formData.practice_description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, practice_description: e.target.value })
-                  }
+                  {...register('practice_description')}
                   placeholder="Describe what the student needs to do..."
                   className="w-full h-24 p-3 text-sm bg-background border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                 />
@@ -275,25 +296,21 @@ export function LessonFormPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="practice_initial_code">Initial Code (optional)</Label>
-                <textarea
-                  id="practice_initial_code"
-                  value={formData.practice_initial_code}
-                  onChange={(e) =>
-                    setFormData({ ...formData, practice_initial_code: e.target.value })
-                  }
+                <SqlEditor
+                  value={practiceInitialCode}
+                  onChange={(v) => setValue('practice_initial_code', v)}
+                  height="96px"
                   placeholder="-- Start writing your query here"
-                  className="w-full h-24 p-3 font-mono text-sm bg-background border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="expected_query">Expected Query (for grading)</Label>
-                <textarea
-                  id="expected_query"
-                  value={formData.expected_query}
-                  onChange={(e) => setFormData({ ...formData, expected_query: e.target.value })}
+                <SqlEditor
+                  value={expectedQuery}
+                  onChange={(v) => setValue('expected_query', v)}
+                  height="96px"
                   placeholder="SELECT * FROM users WHERE active = true;"
-                  className="w-full h-24 p-3 font-mono text-sm bg-background border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
@@ -304,9 +321,9 @@ export function LessonFormPage() {
                     id="max_score"
                     type="number"
                     min="1"
-                    value={formData.max_score}
+                    value={watch('max_score')}
                     onChange={(e) =>
-                      setFormData({ ...formData, max_score: parseInt(e.target.value) || 100 })
+                      setValue('max_score', parseInt(e.target.value) || 100)
                     }
                   />
                 </div>
@@ -316,12 +333,9 @@ export function LessonFormPage() {
                     id="time_limit_seconds"
                     type="number"
                     min="1"
-                    value={formData.time_limit_seconds}
+                    value={watch('time_limit_seconds')}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        time_limit_seconds: parseInt(e.target.value) || 60,
-                      })
+                      setValue('time_limit_seconds', parseInt(e.target.value) || 60)
                     }
                   />
                 </div>
@@ -331,12 +345,12 @@ export function LessonFormPage() {
                     id="max_attempts"
                     type="number"
                     min="1"
-                    value={formData.max_attempts || ''}
+                    value={watch('max_attempts') ?? ''}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        max_attempts: e.target.value ? parseInt(e.target.value) : undefined,
-                      })
+                      setValue(
+                        'max_attempts',
+                        e.target.value ? parseInt(e.target.value) : undefined
+                      )
                     }
                     placeholder="Unlimited"
                   />
@@ -355,7 +369,7 @@ export function LessonFormPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                {formData.hints?.map((hint, index) => (
+                {hints.map((hint, index) => (
                   <div key={index} className="flex items-center gap-2 p-2 bg-muted rounded-md">
                     <span className="flex-1 text-sm">{hint}</span>
                     <Button
@@ -394,8 +408,7 @@ export function LessonFormPage() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={formData.is_published}
-              onChange={(e) => setFormData({ ...formData, is_published: e.target.checked })}
+              {...register('is_published')}
               className="rounded"
             />
             <span className="text-sm">Publish immediately</span>
@@ -404,8 +417,12 @@ export function LessonFormPage() {
             <Button type="button" variant="outline" onClick={() => navigate(-1)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? <Spinner size="sm" className="mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <Spinner size="sm" className="mr-2" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
               {isEditing ? 'Save Changes' : 'Create Lesson'}
             </Button>
           </div>
