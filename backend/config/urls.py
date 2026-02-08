@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
 
-from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet
+from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet, ModuleViewSet
 from assignments.views import AssignmentViewSet
 from submissions.views import SubmissionViewSet, UserResultViewSet
 
@@ -17,6 +17,7 @@ courses_router = routers.NestedDefaultRouter(router, r'courses', lookup='course'
 courses_router.register(r'datasets', DatasetViewSet, basename='course-dataset')
 courses_router.register(r'assignments', AssignmentViewSet, basename='course-assignment')
 courses_router.register(r'lessons', LessonViewSet, basename='course-lesson')
+courses_router.register(r'modules', ModuleViewSet, basename='course-module')
 
 assignments_router = routers.NestedDefaultRouter(courses_router, r'assignments', lookup='assignment')
 assignments_router.register(r'submissions', SubmissionViewSet, basename='assignment-submission')

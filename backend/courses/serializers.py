@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Course, Enrollment, Dataset, Lesson
+from .models import Course, Enrollment, Dataset, Lesson, Module
 from users.serializers import UserSerializer
 
 
@@ -100,7 +100,7 @@ class LessonListSerializer(serializers.ModelSerializer):
         model = Lesson
         fields = [
             'id', 'title', 'description', 'lesson_type', 'order',
-            'is_published', 'max_score', 'dataset_name',
+            'module', 'is_published', 'max_score', 'dataset_name',
             'user_completed', 'user_best_score', 'created_at'
         ]
 
@@ -127,28 +127,48 @@ class LessonListSerializer(serializers.ModelSerializer):
 class LessonDetailSerializer(serializers.ModelSerializer):
     dataset = DatasetSerializer(read_only=True)
     dataset_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    module_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     course_title = serializers.CharField(source='course.title', read_only=True)
+    database_type = serializers.CharField(source='course.database_type', read_only=True)
+    user_completed = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
         fields = [
-            'id', 'course', 'course_title', 'title', 'description', 'lesson_type', 'order',
+            'id', 'course', 'course_title', 'database_type', 'title', 'description',
+            'lesson_type', 'order', 'module', 'module_id',
             'theory_content', 'practice_description', 'practice_initial_code',
             'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
             'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
-            'hints', 'dataset', 'dataset_id', 'is_published', 'created_at', 'updated_at'
+            'hints', 'dataset', 'dataset_id', 'is_published',
+            'user_completed', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'course', 'created_at', 'updated_at']
 
+    def get_user_completed(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and obj.lesson_type != 'theory':
+            from submissions.models import UserResult
+            return UserResult.objects.filter(
+                student=request.user,
+                lesson=obj,
+                is_completed=True
+            ).exists()
+        return None
+
     def update(self, instance, validated_data):
         dataset_id = validated_data.pop('dataset_id', None)
+        module_id = validated_data.pop('module_id', None)
         if dataset_id is not None:
             instance.dataset_id = dataset_id
+        if module_id is not None:
+            instance.module_id = module_id
         return super().update(instance, validated_data)
 
 
 class LessonCreateSerializer(serializers.ModelSerializer):
     dataset_id = serializers.UUIDField(required=False, allow_null=True)
+    module_id = serializers.UUIDField(required=False, allow_null=True)
 
     class Meta:
         model = Lesson
@@ -157,13 +177,55 @@ class LessonCreateSerializer(serializers.ModelSerializer):
             'theory_content', 'practice_description', 'practice_initial_code',
             'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
             'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
-            'hints', 'dataset_id', 'is_published'
+            'hints', 'dataset_id', 'module_id', 'is_published'
         ]
 
     def create(self, validated_data):
         dataset_id = validated_data.pop('dataset_id', None)
+        module_id = validated_data.pop('module_id', None)
         lesson = Lesson.objects.create(**validated_data)
+        changed = False
         if dataset_id:
             lesson.dataset_id = dataset_id
+            changed = True
+        if module_id:
+            lesson.module_id = module_id
+            changed = True
+        if changed:
             lesson.save()
         return lesson
+
+
+class ModuleListSerializer(serializers.ModelSerializer):
+    lesson_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Module
+        fields = [
+            'id', 'title', 'description', 'order',
+            'lesson_count', 'is_published', 'created_at',
+        ]
+
+    def get_lesson_count(self, obj):
+        return obj.lessons.count()
+
+
+class ModuleDetailSerializer(serializers.ModelSerializer):
+    lesson_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Module
+        fields = [
+            'id', 'title', 'description', 'order', 'is_published',
+            'lesson_count', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_lesson_count(self, obj):
+        return obj.lessons.count()
+
+
+class ModuleCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Module
+        fields = ['title', 'description', 'order', 'is_published']
