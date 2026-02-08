@@ -1,32 +1,14 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { Plus, Users, BookOpen, Settings, Eye, EyeOff, GraduationCap, Layers } from 'lucide-react';
-import coursesApi from '@/api/courses';
-import type { Course } from '@/types';
+import { useCourses } from '@/hooks/queries/useCourses';
 
 export function MyCoursesPage() {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadCourses();
-  }, []);
-
-  async function loadCourses() {
-    try {
-      setLoading(true);
-      const response = await coursesApi.list();
-      setCourses(response.results);
-    } catch {
-      // Error loading courses - silently fail, UI shows empty state
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { data: coursesData, isLoading: loading } = useCourses();
+  const courses = coursesData?.results ?? [];
 
   if (loading) {
     return (

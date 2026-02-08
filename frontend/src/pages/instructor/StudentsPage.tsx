@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,39 +6,16 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowLeft, Search, Users, Mail, Calendar } from 'lucide-react';
-import coursesApi from '@/api/courses';
-import type { Course, Enrollment } from '@/types';
+import { useCourse, useCourseEnrollments } from '@/hooks/queries/useCourses';
 
 export function StudentsPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
 
-  const [course, setCourse] = useState<Course | null>(null);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: course, isLoading: courseLoading } = useCourse(courseId);
+  const { data: enrollments = [], isLoading: enrollmentsLoading } = useCourseEnrollments(courseId);
+  const loading = courseLoading || enrollmentsLoading;
   const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    if (courseId) {
-      loadData();
-    }
-  }, [courseId]);
-
-  async function loadData() {
-    try {
-      setLoading(true);
-      const [courseData, enrollmentsData] = await Promise.all([
-        coursesApi.get(courseId!),
-        coursesApi.getEnrollments(courseId!),
-      ]);
-      setCourse(courseData);
-      setEnrollments(enrollmentsData);
-    } catch {
-      // Error loading data - silently fail, UI shows empty state
-    } finally {
-      setLoading(false);
-    }
-  }
 
   const filteredEnrollments = enrollments.filter(
     (e) =>

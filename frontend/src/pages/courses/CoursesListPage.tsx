@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,30 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { Plus, Search, Users, BookOpen, GraduationCap, CheckCircle } from 'lucide-react';
-import coursesApi from '@/api/courses';
-import type { Course } from '@/types';
+import { useCourses } from '@/hooks/queries/useCourses';
 
 export function CoursesListPage() {
   const { user } = useAuthStore();
-  const [courses, setCourses] = useState<Course[]>([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadCourses();
-  }, []);
-
-  async function loadCourses() {
-    try {
-      setLoading(true);
-      const response = await coursesApi.list({ is_published: true });
-      setCourses(response.results);
-    } catch {
-      // Error loading courses - silently fail, UI shows empty state
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { data: coursesData, isLoading: loading } = useCourses({ is_published: true });
+  const courses = coursesData?.results ?? [];
 
   const filteredCourses = courses.filter(
     (course) =>

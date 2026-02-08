@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
@@ -18,10 +19,14 @@ import {
   Layers,
   Edit,
   Users,
+  FolderPlus,
 } from 'lucide-react';
-import coursesApi from '@/api/courses';
 import lessonsApi, { type Lesson } from '@/api/lessons';
-import type { Course } from '@/types';
+import modulesApi from '@/api/modules';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCourse, useUpdateCourse } from '@/hooks/queries/useCourses';
+import { useLessons, useDeleteLesson } from '@/hooks/queries/useLessons';
+import { useModules, useCreateModule, useDeleteModule } from '@/hooks/queries/useModules';
 
 const LESSON_TYPE_ICONS = {
   theory: BookOpen,
@@ -39,41 +44,29 @@ export function CourseManagePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
 
-  const [course, setCourse] = useState<Course | null>(null);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: course, isLoading: courseLoading } = useCourse(courseId);
+  const { data: lessonsData, isLoading: lessonsLoading } = useLessons(courseId);
+  const { data: modules = [], isLoading: modulesLoading } = useModules(courseId);
+  const lessons = lessonsData?.results ?? [];
+  const loading = courseLoading || lessonsLoading || modulesLoading;
+
+  const queryClient = useQueryClient();
+  const updateCourse = useUpdateCourse(courseId!);
+  const deleteLessonMutation = useDeleteLesson(courseId!);
+  const createModuleMutation = useCreateModule(courseId!);
+  const deleteModuleMutation = useDeleteModule(courseId!);
+
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (courseId) {
-      loadData();
-    }
-  }, [courseId]);
-
-  async function loadData() {
-    try {
-      setLoading(true);
-      const [courseData, lessonsData] = await Promise.all([
-        coursesApi.get(courseId!),
-        lessonsApi.list(courseId!),
-      ]);
-      setCourse(courseData);
-      setLessons(lessonsData.results || []);
-    } catch (err) {
-      setError('Failed to load course data');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [newModuleTitle, setNewModuleTitle] = useState('');
+  const [showAddModule, setShowAddModule] = useState(false);
 
   async function togglePublish() {
     if (!course) return;
     try {
       setPublishing(true);
-      await coursesApi.update(courseId!, { is_published: !course.is_published });
-      setCourse({ ...course, is_published: !course.is_published });
-    } catch (err) {
+      await updateCourse.mutateAsync({ is_published: !course.is_published });
+    } catch {
       setError('Failed to update course');
     } finally {
       setPublishing(false);
@@ -83,10 +76,8 @@ export function CourseManagePage() {
   async function toggleLessonPublish(lesson: Lesson) {
     try {
       await lessonsApi.update(courseId!, lesson.id, { is_published: !lesson.is_published });
-      setLessons(lessons.map(l =>
-        l.id === lesson.id ? { ...l, is_published: !l.is_published } : l
-      ));
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: ['course', courseId, 'lessons'] });
+    } catch {
       setError('Failed to update lesson');
     }
   }
@@ -94,10 +85,41 @@ export function CourseManagePage() {
   async function deleteLesson(lessonId: string) {
     if (!confirm('Are you sure you want to delete this lesson?')) return;
     try {
-      await lessonsApi.delete(courseId!, lessonId);
-      setLessons(lessons.filter(l => l.id !== lessonId));
-    } catch (err) {
+      await deleteLessonMutation.mutateAsync(lessonId);
+    } catch {
       setError('Failed to delete lesson');
+    }
+  }
+
+  async function handleAddModule() {
+    if (!newModuleTitle.trim()) return;
+    try {
+      await createModuleMutation.mutateAsync({
+        title: newModuleTitle.trim(),
+        is_published: true,
+      });
+      setNewModuleTitle('');
+      setShowAddModule(false);
+    } catch {
+      setError('Failed to create module');
+    }
+  }
+
+  async function handleDeleteModule(moduleId: string) {
+    if (!confirm('Delete this module? Lessons will be moved to uncategorized.')) return;
+    try {
+      await deleteModuleMutation.mutateAsync(moduleId);
+    } catch {
+      setError('Failed to delete module');
+    }
+  }
+
+  async function toggleModulePublish(mod: { id: string; is_published: boolean }) {
+    try {
+      await modulesApi.update(courseId!, mod.id, { is_published: !mod.is_published });
+      queryClient.invalidateQueries({ queryKey: ['course', courseId, 'modules'] });
+    } catch {
+      setError('Failed to update module');
     }
   }
 
@@ -169,6 +191,94 @@ export function CourseManagePage() {
         </Alert>
       )}
 
+      {/* Modules */}
+      {modules.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Modules</CardTitle>
+                <CardDescription>
+                  {modules.length} modules in this course
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowAddModule(!showAddModule)}
+              >
+                <FolderPlus className="h-4 w-4 mr-2" />
+                Add Module
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {showAddModule && (
+              <div className="flex gap-2 mb-4">
+                <Input
+                  placeholder="Module title..."
+                  value={newModuleTitle}
+                  onChange={(e) => setNewModuleTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddModule();
+                    }
+                  }}
+                />
+                <Button onClick={handleAddModule} disabled={!newModuleTitle.trim()}>
+                  Add
+                </Button>
+              </div>
+            )}
+            <div className="space-y-2">
+              {modules.map((mod) => (
+                <div
+                  key={mod.id}
+                  className="flex items-center gap-4 p-3 rounded-lg border"
+                >
+                  <div className="text-muted-foreground cursor-move">
+                    <GripVertical className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{mod.title}</span>
+                      <Badge variant="outline">{mod.lesson_count} lessons</Badge>
+                      {!mod.is_published && (
+                        <Badge variant="secondary">Draft</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => toggleModulePublish(mod)}
+                      title={mod.is_published ? 'Unpublish' : 'Publish'}
+                    >
+                      {mod.is_published ? (
+                        <Eye className="h-4 w-4" />
+                      ) : (
+                        <EyeOff className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteModule(mod.id)}
+                      title="Delete"
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Lessons */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -178,15 +288,44 @@ export function CourseManagePage() {
                 {lessons.length} lessons in this course
               </CardDescription>
             </div>
-            <Link to={`/courses/${courseId}/lessons/new`}>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Lesson
-              </Button>
-            </Link>
+            <div className="flex gap-2">
+              {modules.length === 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAddModule(!showAddModule)}
+                >
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  Add Module
+                </Button>
+              )}
+              <Link to={`/courses/${courseId}/lessons/new`}>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Lesson
+                </Button>
+              </Link>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
+          {modules.length === 0 && showAddModule && (
+            <div className="flex gap-2 mb-4">
+              <Input
+                placeholder="Module title..."
+                value={newModuleTitle}
+                onChange={(e) => setNewModuleTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddModule();
+                  }
+                }}
+              />
+              <Button onClick={handleAddModule} disabled={!newModuleTitle.trim()}>
+                Add
+              </Button>
+            </div>
+          )}
           {lessons.length === 0 ? (
             <div className="text-center py-12">
               <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
