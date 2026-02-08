@@ -1,5 +1,6 @@
-import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,36 +9,32 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { Database } from 'lucide-react';
+import { loginSchema, type LoginFormData } from '@/lib/schemas';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isLoading, error, clearError } = useAuthStore();
 
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
   });
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: LoginFormData) => {
     clearError();
-
     try {
-      await login(formData);
+      await login(data);
       navigate(from, { replace: true });
     } catch {
       // Error is handled in store
     }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
   };
 
   return (
@@ -58,7 +55,7 @@ export function LoginPage() {
               Enter your credentials to access your account
             </CardDescription>
           </CardHeader>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
               {error && (
                 <Alert variant="destructive" className="rounded-xl">
@@ -69,28 +66,28 @@ export function LoginPage() {
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
-                  name="email"
                   type="email"
                   placeholder="you@example.com"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
+                  {...register('email')}
                   autoComplete="email"
                   className="h-11"
                 />
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
-                  name="password"
                   type="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  required
+                  {...register('password')}
                   autoComplete="current-password"
                   className="h-11"
                 />
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password.message}</p>
+                )}
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4 pt-2">
