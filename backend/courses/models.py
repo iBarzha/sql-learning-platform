@@ -80,6 +80,28 @@ class Enrollment(models.Model):
         return self.status == self.Status.ACTIVE
 
 
+class Module(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name='modules'
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    order = models.PositiveIntegerField(default=0)
+    is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'modules'
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.course.title})'
+
+
 class Lesson(models.Model):
     class LessonType(models.TextChoices):
         THEORY = 'theory', 'Theory'
@@ -90,6 +112,13 @@ class Lesson(models.Model):
     course = models.ForeignKey(
         Course,
         on_delete=models.CASCADE,
+        related_name='lessons'
+    )
+    module = models.ForeignKey(
+        Module,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name='lessons'
     )
     title = models.CharField(max_length=255)
@@ -148,8 +177,15 @@ class Dataset(models.Model):
     description = models.TextField(blank=True)
     course = models.ForeignKey(
         Course,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='datasets'
+    )
+    database_type = models.CharField(
+        max_length=20,
+        choices=Course.DatabaseType.choices,
+        default=Course.DatabaseType.SQLITE
     )
     schema_sql = models.TextField(help_text='SQL to create tables and schema')
     seed_sql = models.TextField(blank=True, help_text='SQL to populate initial data')
@@ -162,9 +198,11 @@ class Dataset(models.Model):
         ordering = ['name']
 
     def __str__(self):
-        return f'{self.name} ({self.course.title})'
+        if self.course:
+            return f'{self.name} ({self.course.title})'
+        return self.name
 
     def save(self, *args, **kwargs):
-        if self.is_default:
+        if self.is_default and self.course:
             Dataset.objects.filter(course=self.course, is_default=True).update(is_default=False)
         super().save(*args, **kwargs)

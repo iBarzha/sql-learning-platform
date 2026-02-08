@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { PaginatedResponse } from '@/types';
+import type { PaginatedResponse, Submission } from '@/types';
 
 export type LessonType = 'theory' | 'practice' | 'mixed';
 
@@ -7,10 +7,12 @@ export interface Lesson {
   id: string;
   course: string;
   course_title?: string;
+  database_type?: string;
   title: string;
   description: string;
   lesson_type: LessonType;
   order: number;
+  module?: string;
   theory_content?: string;
   practice_description?: string;
   practice_initial_code?: string;
@@ -56,6 +58,7 @@ export interface CreateLessonData {
   max_attempts?: number;
   hints?: string[];
   dataset_id?: string;
+  module_id?: string;
   is_published?: boolean;
 }
 
@@ -106,7 +109,7 @@ const lessonsApi = {
 
   // Submit practice
   submit: async (courseId: string, lessonId: string, query: string) => {
-    const response = await apiClient.post(
+    const response = await apiClient.post<Submission>(
       `/courses/${courseId}/lessons/${lessonId}/submissions/`,
       { query }
     );
@@ -114,7 +117,7 @@ const lessonsApi = {
   },
 
   getMySubmissions: async (courseId: string, lessonId: string) => {
-    const response = await apiClient.get(
+    const response = await apiClient.get<Submission[]>(
       `/courses/${courseId}/lessons/${lessonId}/submissions/my_submissions/`
     );
     return response.data;

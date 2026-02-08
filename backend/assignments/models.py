@@ -22,6 +22,13 @@ class Assignment(models.Model):
         on_delete=models.CASCADE,
         related_name='assignments'
     )
+    module = models.ForeignKey(
+        'courses.Module',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='assignments'
+    )
     dataset = models.ForeignKey(
         'courses.Dataset',
         on_delete=models.SET_NULL,
