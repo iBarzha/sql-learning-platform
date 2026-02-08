@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count
 
-from .models import Course, Enrollment, Dataset, Lesson
+from .models import Course, Enrollment, Dataset, Lesson, Module
 from .serializers import (
     CourseListSerializer,
     CourseDetailSerializer,
@@ -15,6 +15,9 @@ from .serializers import (
     LessonListSerializer,
     LessonDetailSerializer,
     LessonCreateSerializer,
+    ModuleListSerializer,
+    ModuleDetailSerializer,
+    ModuleCreateSerializer,
 )
 from config.permissions import IsInstructor, IsEnrolledOrInstructor, IsCourseInstructor
 
@@ -229,3 +232,58 @@ class LessonViewSet(viewsets.ModelViewSet):
         for idx, lesson_id in enumerate(lesson_ids):
             Lesson.objects.filter(id=lesson_id, course_id=course_pk).update(order=idx + 1)
         return Response({'detail': 'Lessons reordered successfully'})
+
+
+class ModuleViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        course_id = self.kwargs.get('course_pk')
+        user = self.request.user
+        queryset = Module.objects.filter(course_id=course_id)
+        if not user.is_instructor:
+            queryset = queryset.filter(is_published=True)
+        return queryset.order_by('order', 'created_at')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ModuleListSerializer
+        if self.action == 'create':
+            return ModuleCreateSerializer
+        return ModuleDetailSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsInstructor()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        course_id = self.kwargs.get('course_pk')
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound('Course not found')
+        if course.instructor != self.request.user and not self.request.user.is_superuser:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Not authorized')
+
+        if not serializer.validated_data.get('order'):
+            from django.db.models import Max
+            max_order = Module.objects.filter(
+                course_id=course_id
+            ).aggregate(Max('order'))['order__max'] or 0
+            serializer.save(course_id=course_id, order=max_order + 1)
+        else:
+            serializer.save(course_id=course_id)
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request, course_pk=None):
+        """Reorder modules within a course."""
+        module_ids = request.data.get('module_ids', [])
+        for idx, module_id in enumerate(module_ids):
+            Module.objects.filter(
+                id=module_id, course_id=course_pk
+            ).update(order=idx + 1)
+        return Response({'detail': 'Modules reordered successfully'})

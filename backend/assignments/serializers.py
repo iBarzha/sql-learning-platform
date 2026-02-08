@@ -37,6 +37,7 @@ class AssignmentListSerializer(serializers.ModelSerializer):
 
 class AssignmentDetailSerializer(serializers.ModelSerializer):
     course_title = serializers.CharField(source='course.title', read_only=True)
+    database_type = serializers.CharField(source='course.database_type', read_only=True)
     dataset = DatasetSerializer(read_only=True)
     submission_count = serializers.IntegerField(read_only=True)
     average_score = serializers.DecimalField(
@@ -50,7 +51,7 @@ class AssignmentDetailSerializer(serializers.ModelSerializer):
         model = Assignment
         fields = [
             'id', 'title', 'description', 'instructions', 'course',
-            'course_title', 'dataset', 'query_type', 'difficulty',
+            'course_title', 'database_type', 'dataset', 'query_type', 'difficulty',
             'required_keywords', 'forbidden_keywords', 'order_matters',
             'partial_match', 'max_score', 'time_limit_seconds',
             'max_attempts', 'hints', 'due_date', 'is_published', 'order',

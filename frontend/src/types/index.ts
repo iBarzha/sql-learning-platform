@@ -26,7 +26,7 @@ export interface Course {
   description: string;
   instructor: User;
   instructor_name?: string;
-  database_type: 'postgresql' | 'mysql' | 'mariadb' | 'mongodb' | 'redis';
+  database_type: 'postgresql' | 'sqlite' | 'mysql' | 'mariadb' | 'mongodb' | 'redis';
   is_published: boolean;
   enrollment_key?: string;
   max_students?: number;
@@ -59,6 +59,7 @@ export interface Assignment {
   instructions?: string;
   course: string;
   course_title?: string;
+  database_type?: string;
   dataset?: Dataset;
   dataset_name?: string;
   query_type: 'select' | 'insert' | 'update' | 'delete' | 'ddl' | 'nosql';
