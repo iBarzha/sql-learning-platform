@@ -1,5 +1,6 @@
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,52 +9,36 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { Database } from 'lucide-react';
+import { registerSchema, type RegisterFormData } from '@/lib/schemas';
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register, isLoading, error, clearError } = useAuthStore();
+  const { register: registerUser, isLoading, error, clearError } = useAuthStore();
 
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    password_confirm: '',
-    first_name: '',
-    last_name: '',
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+      password_confirm: '',
+      first_name: '',
+      last_name: '',
+    },
   });
 
-  const [validationError, setValidationError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: RegisterFormData) => {
     clearError();
-    setValidationError(null);
-
-    if (formData.password !== formData.password_confirm) {
-      setValidationError('Passwords do not match');
-      return;
-    }
-
-    if (formData.password.length < 8) {
-      setValidationError('Password must be at least 8 characters');
-      return;
-    }
-
     try {
-      await register(formData);
+      await registerUser(data);
       navigate('/', { replace: true });
     } catch {
       // Error is handled in store
     }
   };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
-  };
-
-  const displayError = validationError || error;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
@@ -73,11 +58,11 @@ export function RegisterPage() {
               Enter your information to get started
             </CardDescription>
           </CardHeader>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
-              {displayError && (
+              {error && (
                 <Alert variant="destructive" className="rounded-xl">
-                  <AlertDescription>{displayError}</AlertDescription>
+                  <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
               <div className="grid grid-cols-2 gap-4">
@@ -85,10 +70,8 @@ export function RegisterPage() {
                   <Label htmlFor="first_name">First name</Label>
                   <Input
                     id="first_name"
-                    name="first_name"
                     placeholder="John"
-                    value={formData.first_name}
-                    onChange={handleChange}
+                    {...register('first_name')}
                     autoComplete="given-name"
                     className="h-11"
                   />
@@ -97,10 +80,8 @@ export function RegisterPage() {
                   <Label htmlFor="last_name">Last name</Label>
                   <Input
                     id="last_name"
-                    name="last_name"
                     placeholder="Doe"
-                    value={formData.last_name}
-                    onChange={handleChange}
+                    {...register('last_name')}
                     autoComplete="family-name"
                     className="h-11"
                   />
@@ -110,41 +91,41 @@ export function RegisterPage() {
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
-                  name="email"
                   type="email"
                   placeholder="you@example.com"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
+                  {...register('email')}
                   autoComplete="email"
                   className="h-11"
                 />
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
-                  name="password"
                   type="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  required
+                  {...register('password')}
                   autoComplete="new-password"
                   className="h-11"
                 />
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password_confirm">Confirm password</Label>
                 <Input
                   id="password_confirm"
-                  name="password_confirm"
                   type="password"
-                  value={formData.password_confirm}
-                  onChange={handleChange}
-                  required
+                  {...register('password_confirm')}
                   autoComplete="new-password"
                   className="h-11"
                 />
+                {errors.password_confirm && (
+                  <p className="text-sm text-destructive">{errors.password_confirm.message}</p>
+                )}
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4 pt-2">
