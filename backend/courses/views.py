@@ -276,7 +276,24 @@ class DatasetViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         course_id = self.kwargs.get('course_pk')
-        return Dataset.objects.filter(course_id=course_id)
+        user = self.request.user
+        queryset = Dataset.objects.filter(course_id=course_id)
+
+        # Restrict access: instructor of this course or enrolled student
+        if not user.is_instructor:
+            queryset = queryset.filter(
+                course__enrollments__student=user,
+                course__enrollments__status='active',
+            )
+        elif not user.is_superuser:
+            queryset = queryset.filter(
+                course__instructor=user
+            ) | queryset.filter(
+                course__enrollments__student=user,
+                course__enrollments__status='active',
+            )
+
+        return queryset.distinct()
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
