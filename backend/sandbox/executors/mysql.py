@@ -157,9 +157,10 @@ class MySQLExecutor(BaseExecutor):
                 cur.execute(f'SHOW TABLES')
                 tables = [row[0] for row in cur.fetchall()]
 
-                # Drop all tables
+                # Drop all tables (identifier from SHOW TABLES, not user input)
                 for table in tables:
-                    cur.execute(f'DROP TABLE IF EXISTS `{table}`')
+                    safe_name = table.replace('`', '``')
+                    cur.execute(f'DROP TABLE IF EXISTS `{safe_name}`')
 
                 # Re-enable foreign key checks
                 cur.execute('SET FOREIGN_KEY_CHECKS = 1')
