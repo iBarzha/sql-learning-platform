@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Course, Enrollment, Dataset, Lesson, Module
+from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
 from users.serializers import UserSerializer
 
 
@@ -229,3 +229,28 @@ class ModuleCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Module
         fields = ['title', 'description', 'order', 'is_published']
+
+
+class AttachmentSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.CharField(
+        source='uploaded_by.full_name', read_only=True
+    )
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attachment
+        fields = [
+            'id', 'lesson', 'assignment', 'file', 'filename',
+            'file_type', 'file_size', 'uploaded_by', 'uploaded_by_name',
+            'download_url', 'created_at',
+        ]
+        read_only_fields = [
+            'id', 'filename', 'file_type', 'file_size',
+            'uploaded_by', 'created_at',
+        ]
+
+    def get_download_url(self, obj):
+        request = self.context.get('request')
+        if request and obj.file:
+            return request.build_absolute_uri(obj.file.url)
+        return None
