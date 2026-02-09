@@ -17,6 +17,7 @@ import {
   Code,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { SqlExerciseBlock } from '@/components/editor/SqlExerciseBlock';
 import type { Submission } from '@/types';
 import { useLesson, useLessonSubmissions, useSubmitLesson } from '@/hooks/queries/useLessons';
 import { useAttachments } from '@/hooks/queries/useAttachments';
@@ -197,7 +198,26 @@ export function LessonPage() {
         <Card>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none pt-6">
             {lesson.theory_content ? (
-              <ReactMarkdown>{lesson.theory_content}</ReactMarkdown>
+              <ReactMarkdown
+                components={{
+                  code({ className, children, ...props }) {
+                    if (className === 'language-sql-exercise') {
+                      try {
+                        const config = JSON.parse(String(children).trim());
+                        return <SqlExerciseBlock config={config} />;
+                      } catch {
+                        return <code className={className} {...props}>{children}</code>;
+                      }
+                    }
+                    return <code className={className} {...props}>{children}</code>;
+                  },
+                  pre({ children }) {
+                    return <>{children}</>;
+                  },
+                }}
+              >
+                {lesson.theory_content}
+              </ReactMarkdown>
             ) : (
               <p className="text-muted-foreground">No theory content available.</p>
             )}
