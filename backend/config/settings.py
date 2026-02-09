@@ -166,3 +166,9 @@ SANDBOX_IMAGES = {
     'mongodb': 'mongo:7.0',
     'redis': 'redis:7-alpine',
 }
+
+# Rate Limiting
+RATELIMIT_VIEW = 'config.ratelimit.ratelimited_response'
+
+# File Upload Limits
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
