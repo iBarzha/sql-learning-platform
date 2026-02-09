@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef
 
 from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
 from .serializers import (
@@ -34,7 +34,14 @@ class CourseViewSet(viewsets.ModelViewSet):
         queryset = Course.objects.annotate(
             student_count=Count('enrollments', distinct=True),
             assignment_count=Count('assignments', distinct=True),
-            lesson_count=Count('lessons', distinct=True)
+            lesson_count=Count('lessons', distinct=True),
+            is_enrolled=Exists(
+                Enrollment.objects.filter(
+                    course=OuterRef('pk'),
+                    student=user,
+                    status='active',
+                )
+            ),
         )
 
         if user.is_instructor:
@@ -75,7 +82,16 @@ class CourseViewSet(viewsets.ModelViewSet):
         ).exclude(
             id__in=enrolled_courses
         ).annotate(
-            student_count=Count('enrollments', distinct=True)
+            student_count=Count('enrollments', distinct=True),
+            assignment_count=Count('assignments', distinct=True),
+            lesson_count=Count('lessons', distinct=True),
+            is_enrolled=Exists(
+                Enrollment.objects.filter(
+                    course=OuterRef('pk'),
+                    student=request.user,
+                    status='active',
+                )
+            ),
         )
 
         serializer = CourseListSerializer(queryset, many=True, context={'request': request})
@@ -336,9 +352,19 @@ class LessonViewSet(viewsets.ModelViewSet):
         else:
             serializer.save(course_id=course_id)
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsInstructor])
     def reorder(self, request, course_pk=None):
-        """Reorder lessons within a course."""
+        """Reorder lessons within a course.
+
+        Request body: {"lesson_ids": ["uuid1", "uuid2", ...]}
+        """
+        try:
+            course = Course.objects.get(id=course_pk)
+        except Course.DoesNotExist:
+            return Response({'detail': 'Course not found'}, status=status.HTTP_404_NOT_FOUND)
+        if course.instructor != request.user and not request.user.is_superuser:
+            return Response({'detail': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
         lesson_ids = request.data.get('lesson_ids', [])
         for idx, lesson_id in enumerate(lesson_ids):
             Lesson.objects.filter(id=lesson_id, course_id=course_pk).update(order=idx + 1)
@@ -352,7 +378,9 @@ class ModuleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         course_id = self.kwargs.get('course_pk')
         user = self.request.user
-        queryset = Module.objects.filter(course_id=course_id)
+        queryset = Module.objects.filter(course_id=course_id).annotate(
+            lesson_count=Count('lessons', distinct=True)
+        )
         if not user.is_instructor:
             queryset = queryset.filter(is_published=True)
         return queryset.order_by('order', 'created_at')
@@ -389,9 +417,19 @@ class ModuleViewSet(viewsets.ModelViewSet):
         else:
             serializer.save(course_id=course_id)
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsInstructor])
     def reorder(self, request, course_pk=None):
-        """Reorder modules within a course."""
+        """Reorder modules within a course.
+
+        Request body: {"module_ids": ["uuid1", "uuid2", ...]}
+        """
+        try:
+            course = Course.objects.get(id=course_pk)
+        except Course.DoesNotExist:
+            return Response({'detail': 'Course not found'}, status=status.HTTP_404_NOT_FOUND)
+        if course.instructor != request.user and not request.user.is_superuser:
+            return Response({'detail': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+
         module_ids = request.data.get('module_ids', [])
         for idx, module_id in enumerate(module_ids):
             Module.objects.filter(
@@ -449,6 +487,13 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             raise ValidationError({'file': 'No file uploaded.'})
 
         ext = os.path.splitext(uploaded_file.name)[1].lower()
+        allowed_extensions = set(EXTENSION_TO_TYPE.keys()) | {'.txt', '.md', '.docx', '.xlsx'}
+        if ext not in allowed_extensions:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'file': f'File type "{ext}" is not allowed. '
+                        f'Allowed: {", ".join(sorted(allowed_extensions))}'
+            })
         file_type = EXTENSION_TO_TYPE.get(ext, 'other')
 
         serializer.save(
