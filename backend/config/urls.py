@@ -3,7 +3,10 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
 
-from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet, ModuleViewSet
+from django.conf import settings
+from django.conf.urls.static import static
+
+from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet, ModuleViewSet, AttachmentViewSet
 from assignments.views import AssignmentViewSet
 from submissions.views import SubmissionViewSet, UserResultViewSet
 
@@ -25,6 +28,7 @@ assignments_router.register(r'results', UserResultViewSet, basename='assignment-
 
 lessons_router = routers.NestedDefaultRouter(courses_router, r'lessons', lookup='lesson')
 lessons_router.register(r'submissions', SubmissionViewSet, basename='lesson-submission')
+lessons_router.register(r'attachments', AttachmentViewSet, basename='lesson-attachment')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -35,3 +39,6 @@ urlpatterns = [
     path('api/', include(lessons_router.urls)),
     path('api/sandbox/', include('sandbox.urls')),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

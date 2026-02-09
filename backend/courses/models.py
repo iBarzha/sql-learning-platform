@@ -206,3 +206,48 @@ class Dataset(models.Model):
         if self.is_default and self.course:
             Dataset.objects.filter(course=self.course, is_default=True).update(is_default=False)
         super().save(*args, **kwargs)
+
+
+class Attachment(models.Model):
+    class FileType(models.TextChoices):
+        PDF = 'pdf', 'PDF'
+        IMAGE = 'image', 'Image'
+        CODE = 'code', 'Code'
+        OTHER = 'other', 'Other'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lesson = models.ForeignKey(
+        Lesson,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='attachments'
+    )
+    assignment = models.ForeignKey(
+        'assignments.Assignment',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='attachments'
+    )
+    file = models.FileField(upload_to='attachments/%Y/%m/')
+    filename = models.CharField(max_length=255)
+    file_type = models.CharField(
+        max_length=20,
+        choices=FileType.choices,
+        default=FileType.OTHER
+    )
+    file_size = models.PositiveIntegerField()
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='uploaded_attachments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'attachments'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return self.filename
