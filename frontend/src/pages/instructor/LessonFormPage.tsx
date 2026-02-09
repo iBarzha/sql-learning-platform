@@ -8,13 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
-import { ArrowLeft, Save, Plus, X } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Paperclip, Trash2 } from 'lucide-react';
 import { useLesson, useCreateLesson, useUpdateLesson } from '@/hooks/queries/useLessons';
 import { useCourseDatasets } from '@/hooks/queries/useCourses';
 import { useModules } from '@/hooks/queries/useModules';
+import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/queries/useAttachments';
 import { lessonSchema, type LessonFormData } from '@/lib/schemas';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
+import FileUpload, { formatFileSize, getFileTypeIcon } from '@/components/ui/FileUpload';
 
 const LESSON_TYPES = [
   { value: 'theory', label: 'Theory', description: 'Educational content only' },
@@ -35,6 +37,12 @@ export function LessonFormPage() {
   const { data: modules = [] } = useModules(courseId);
   const createLesson = useCreateLesson(courseId!);
   const updateLessonMutation = useUpdateLesson(courseId!, lessonId ?? '');
+  const { data: attachments = [] } = useAttachments(
+    isEditing ? courseId : undefined,
+    isEditing ? lessonId : undefined,
+  );
+  const uploadAttachment = useUploadAttachment(courseId!, lessonId ?? '');
+  const deleteAttachment = useDeleteAttachment(courseId!, lessonId ?? '');
   const loading = (isEditing ? lessonLoading : false) || datasetsLoading;
 
   const [apiError, setApiError] = useState('');
@@ -399,6 +407,51 @@ export function LessonFormPage() {
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Attachments (edit mode only) */}
+        {isEditing && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Attachments
+              </CardTitle>
+              <CardDescription>
+                Upload PDFs, images, or code files for students
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {attachments.length > 0 && (
+                <div className="space-y-2">
+                  {attachments.map((att) => (
+                    <div key={att.id} className="flex items-center gap-3 p-2 bg-muted rounded-md">
+                      <span>{getFileTypeIcon(att.file_type)}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{att.filename}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatFileSize(att.file_size)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteAttachment.mutate(att.id)}
+                        disabled={deleteAttachment.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <FileUpload
+                onUpload={(file) => uploadAttachment.mutate(file)}
+                isUploading={uploadAttachment.isPending}
+              />
             </CardContent>
           </Card>
         )}
