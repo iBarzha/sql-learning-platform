@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . .
 
+# Collect static files for nginx to serve
+RUN python manage.py collectstatic --noinput 2>/dev/null || true
+
 # Expose port
 EXPOSE 8000
 
