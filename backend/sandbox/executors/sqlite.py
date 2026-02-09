@@ -145,9 +145,10 @@ class SQLiteExecutor(BaseExecutor):
             """)
             tables = [row[0] for row in cursor.fetchall()]
 
-            # Drop all tables
+            # Drop all tables (identifier from sqlite_master, not user input)
             for table in tables:
-                cursor.execute(f'DROP TABLE IF EXISTS "{table}"')
+                safe_name = table.replace('"', '""')
+                cursor.execute(f'DROP TABLE IF EXISTS "{safe_name}"')
 
         except sqlite3.Error:
             pass  # Ignore reset errors
