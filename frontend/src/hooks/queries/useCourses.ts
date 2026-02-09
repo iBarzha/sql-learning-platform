@@ -83,3 +83,14 @@ export function useUnenrollCourse(courseId: string) {
     },
   });
 }
+
+export function useDuplicateCourse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ courseId, title }: { courseId: string; title?: string }) =>
+      coursesApi.duplicate(courseId, title),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+}

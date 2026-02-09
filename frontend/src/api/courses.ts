@@ -91,6 +91,13 @@ const coursesApi = {
   deleteDataset: async (courseId: string, datasetId: string) => {
     await apiClient.delete(`/courses/${courseId}/datasets/${datasetId}/`);
   },
+
+  duplicate: async (courseId: string, title?: string) => {
+    const response = await apiClient.post<Course>(`/courses/${courseId}/duplicate/`, {
+      title,
+    });
+    return response.data;
+  },
 };
 
 export default coursesApi;
