@@ -18,7 +18,8 @@ export function CoursesListPage() {
   const filteredCourses = courses.filter(
     (course) =>
       course.title.toLowerCase().includes(search.toLowerCase()) ||
-      course.description.toLowerCase().includes(search.toLowerCase())
+      (course.description ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (course.instructor_name ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   const isInstructor = user?.role === 'instructor' || user?.role === 'admin';

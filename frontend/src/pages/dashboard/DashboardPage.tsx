@@ -68,7 +68,7 @@ export function DashboardPage() {
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <h1 className="text-3xl font-bold tracking-tight">
-            Welcome back, {user?.first_name}!
+            Welcome back, {user?.first_name || 'there'}!
           </h1>
           <Sparkles className="h-6 w-6 text-primary" />
         </div>
