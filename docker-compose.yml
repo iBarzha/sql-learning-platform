@@ -38,6 +38,7 @@ services:
       - SANDBOX_POOL_START=true
     volumes:
       - ./backend:/app
+      - backend_media:/app/media
     ports:
       - "8000:8000"
     depends_on:
@@ -157,3 +158,4 @@ networks:
 
 volumes:
   postgres_data:
+  backend_media:

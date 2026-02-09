@@ -1,10 +1,13 @@
+import os
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.db.models import Count
 
-from .models import Course, Enrollment, Dataset, Lesson, Module
+from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
 from .serializers import (
     CourseListSerializer,
     CourseDetailSerializer,
@@ -18,6 +21,7 @@ from .serializers import (
     ModuleListSerializer,
     ModuleDetailSerializer,
     ModuleCreateSerializer,
+    AttachmentSerializer,
 )
 from config.permissions import IsInstructor, IsEnrolledOrInstructor, IsCourseInstructor
 
@@ -287,3 +291,63 @@ class ModuleViewSet(viewsets.ModelViewSet):
                 id=module_id, course_id=course_pk
             ).update(order=idx + 1)
         return Response({'detail': 'Modules reordered successfully'})
+
+
+EXTENSION_TO_TYPE = {
+    '.pdf': 'pdf',
+    '.png': 'image', '.jpg': 'image', '.jpeg': 'image',
+    '.gif': 'image', '.svg': 'image', '.webp': 'image',
+    '.sql': 'code', '.py': 'code', '.js': 'code', '.ts': 'code',
+    '.json': 'code', '.csv': 'code', '.xml': 'code',
+}
+
+
+class AttachmentViewSet(viewsets.ModelViewSet):
+    serializer_class = AttachmentSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    pagination_class = None
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        lesson_pk = self.kwargs.get('lesson_pk')
+        return Attachment.objects.filter(
+            lesson_id=lesson_pk,
+        ).select_related('uploaded_by')
+
+    def get_permissions(self):
+        if self.action in ['create', 'destroy']:
+            return [IsAuthenticated(), IsInstructor()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        lesson_pk = self.kwargs.get('lesson_pk')
+        course_pk = self.kwargs.get('course_pk')
+
+        try:
+            lesson = Lesson.objects.select_related('course').get(
+                id=lesson_pk, course_id=course_pk,
+            )
+        except Lesson.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound('Lesson not found')
+
+        if lesson.course.instructor != self.request.user:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Not authorized')
+
+        uploaded_file = self.request.FILES.get('file')
+        if not uploaded_file:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'file': 'No file uploaded.'})
+
+        ext = os.path.splitext(uploaded_file.name)[1].lower()
+        file_type = EXTENSION_TO_TYPE.get(ext, 'other')
+
+        serializer.save(
+            lesson=lesson,
+            uploaded_by=self.request.user,
+            filename=uploaded_file.name,
+            file_type=file_type,
+            file_size=uploaded_file.size,
+        )
