@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db.models import Exists, OuterRef
 from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
 from users.serializers import UserSerializer
 
@@ -18,7 +19,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     student_count = serializers.IntegerField(read_only=True)
     assignment_count = serializers.IntegerField(read_only=True)
     lesson_count = serializers.IntegerField(read_only=True)
-    is_enrolled = serializers.SerializerMethodField()
+    is_enrolled = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Course
@@ -29,12 +30,6 @@ class CourseListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'instructor', 'created_at']
 
-    def get_is_enrolled(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.enrollments.filter(student=request.user, status='active').exists()
-        return False
-
 
 class CourseDetailSerializer(serializers.ModelSerializer):
     instructor = UserSerializer(read_only=True)
@@ -42,7 +37,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     student_count = serializers.IntegerField(read_only=True)
     assignment_count = serializers.IntegerField(read_only=True)
     lesson_count = serializers.IntegerField(read_only=True)
-    is_enrolled = serializers.SerializerMethodField()
+    is_enrolled = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Course
@@ -53,12 +48,6 @@ class CourseDetailSerializer(serializers.ModelSerializer):
             'datasets', 'is_enrolled', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'instructor', 'created_at', 'updated_at']
-
-    def get_is_enrolled(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.enrollments.filter(student=request.user, status='active').exists()
-        return False
 
 
 class CourseCreateSerializer(serializers.ModelSerializer):
@@ -197,7 +186,7 @@ class LessonCreateSerializer(serializers.ModelSerializer):
 
 
 class ModuleListSerializer(serializers.ModelSerializer):
-    lesson_count = serializers.SerializerMethodField()
+    lesson_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Module
@@ -206,12 +195,9 @@ class ModuleListSerializer(serializers.ModelSerializer):
             'lesson_count', 'is_published', 'created_at',
         ]
 
-    def get_lesson_count(self, obj):
-        return obj.lessons.count()
-
 
 class ModuleDetailSerializer(serializers.ModelSerializer):
-    lesson_count = serializers.SerializerMethodField()
+    lesson_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Module
@@ -220,9 +206,6 @@ class ModuleDetailSerializer(serializers.ModelSerializer):
             'lesson_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-
-    def get_lesson_count(self, obj):
-        return obj.lessons.count()
 
 
 class ModuleCreateSerializer(serializers.ModelSerializer):

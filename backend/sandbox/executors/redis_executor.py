@@ -184,7 +184,8 @@ class RedisExecutor(BaseExecutor):
 
         # Default: first argument is the key
         new_args = list(args)
-        new_args[0] = self._prefix_key(str(new_args[0]))
+        if new_args:
+            new_args[0] = self._prefix_key(str(new_args[0]))
         return new_args
 
     def _strip_prefix_from_keys(self, keys: list) -> list:

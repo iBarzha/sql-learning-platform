@@ -122,16 +122,21 @@ class UserResult(models.Model):
         return f'{self.student.email} - {target}: {self.best_score}'
 
     def update_from_submission(self, submission):
-        """Update result based on a new submission."""
-        self.total_attempts += 1
-        self.last_attempt_at = submission.submitted_at
+        """Update result based on a new submission (atomic)."""
+        from django.db.models import F
+
+        update_fields = {
+            'total_attempts': F('total_attempts') + 1,
+            'last_attempt_at': submission.submitted_at,
+        }
 
         if submission.score and (submission.score > self.best_score):
-            self.best_score = submission.score
-            self.best_submission = submission
+            update_fields['best_score'] = submission.score
+            update_fields['best_submission'] = submission
 
         if submission.is_correct and not self.is_completed:
-            self.is_completed = True
-            self.first_completed_at = submission.submitted_at
+            update_fields['is_completed'] = True
+            update_fields['first_completed_at'] = submission.submitted_at
 
-        self.save()
+        UserResult.objects.filter(pk=self.pk).update(**update_fields)
+        self.refresh_from_db()

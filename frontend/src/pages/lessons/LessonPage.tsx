@@ -86,6 +86,7 @@ export function LessonPage() {
     try {
       setError('');
       setCurrentSubmission(null);
+      if (!isSqlite) setLocalResult(null);
       const submission = await submitMutation.mutateAsync(query.trim());
       setCurrentSubmission(submission);
     } catch (err) {
