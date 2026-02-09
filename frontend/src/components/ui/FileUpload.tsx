@@ -50,6 +50,10 @@ export default function FileUpload({
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
+      if (e.dataTransfer.files.length > 1) {
+        setError('Only one file can be uploaded at a time.');
+        return;
+      }
       const file = e.dataTransfer.files[0];
       if (file) handleFile(file);
     },

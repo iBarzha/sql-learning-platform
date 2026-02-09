@@ -33,11 +33,17 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
   const [result, setResult] = useState<LocalQueryResult | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [initializing, setInitializing] = useState(false);
 
   async function ensureInit() {
-    if (!initialized) {
-      await sqlite.initDatabase(config.schema ?? '', config.seed ?? '');
-      setInitialized(true);
+    if (!initialized && !initializing) {
+      setInitializing(true);
+      try {
+        await sqlite.initDatabase(config.schema ?? '', config.seed ?? '');
+        setInitialized(true);
+      } finally {
+        setInitializing(false);
+      }
     }
   }
 
@@ -98,9 +104,9 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
       />
 
       <div className="px-3 py-2 border-t flex justify-end">
-        <Button size="sm" onClick={handleRun} className="gap-1 h-7">
+        <Button size="sm" onClick={handleRun} disabled={initializing} className="gap-1 h-7">
           <Play className="h-3 w-3" />
-          Run
+          {initializing ? 'Loading...' : 'Run'}
         </Button>
       </div>
 
