@@ -92,8 +92,8 @@ export function StudentsPage() {
                   className="flex items-center gap-4 p-4 rounded-lg border"
                 >
                   <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-medium">
-                    {enrollment.student.first_name[0]}
-                    {enrollment.student.last_name[0]}
+                    {(enrollment.student.first_name?.[0] ?? '').toUpperCase()}
+                    {(enrollment.student.last_name?.[0] ?? '').toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium">{enrollment.student.full_name}</h3>
