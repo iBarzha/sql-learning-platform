@@ -57,18 +57,27 @@ class ExecutionLog(models.Model):
         SandboxContainer,
         on_delete=models.SET_NULL,
         null=True,
+        blank=True,
         related_name='executions'
     )
     user_id = models.UUIDField(null=True, blank=True)
     submission_id = models.UUIDField(null=True, blank=True)
 
     query = models.TextField()
-    execution_time_ms = models.PositiveIntegerField()
+    database_type = models.CharField(max_length=20, blank=True)
+    session_id = models.CharField(max_length=64, blank=True)
+    execution_time_ms = models.PositiveIntegerField(default=0)
     success = models.BooleanField()
     error_message = models.TextField(blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    was_blocked = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'sandbox_execution_logs'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['was_blocked', '-created_at']),
+            models.Index(fields=['user_id', '-created_at']),
+        ]
