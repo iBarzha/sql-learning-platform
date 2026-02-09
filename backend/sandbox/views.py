@@ -1,6 +1,8 @@
 """API views for sandbox management."""
 
 from django.db.models import Q
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 
 from rest_framework import status
 from rest_framework.views import APIView
@@ -15,6 +17,7 @@ class ExecuteQueryView(APIView):
     """Execute query in sandbox - available for all authenticated users."""
     permission_classes = [IsAuthenticated]
 
+    @method_decorator(ratelimit(key='user', rate='30/m', method='POST'))
     def post(self, request):
         """Execute a query in the sandbox."""
         database_type = request.data.get('database_type', 'sqlite')

@@ -5,6 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 
 from .models import Submission, UserResult
 from .serializers import (
@@ -51,6 +53,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             return SubmissionResultSerializer
         return SubmissionSerializer
 
+    @method_decorator(ratelimit(key='user', rate='10/m', method='POST'))
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
