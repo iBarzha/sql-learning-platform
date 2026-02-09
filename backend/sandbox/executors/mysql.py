@@ -3,7 +3,7 @@
 import pymysql
 from pymysql.cursors import DictCursor
 
-from .base import BaseExecutor, QueryResult
+from .base import BaseExecutor, QueryResult, MAX_RESULT_ROWS
 from ..exceptions import (
     DatabaseConnectionError,
     QueryExecutionError,
@@ -74,12 +74,16 @@ class MySQLExecutor(BaseExecutor):
                 if cur.description:
                     columns = [desc[0] for desc in cur.description]
                     rows = [list(row) for row in cur.fetchall()]
+                    truncated = len(rows) > MAX_RESULT_ROWS
+                    if truncated:
+                        rows = rows[:MAX_RESULT_ROWS]
                     return QueryResult(
                         success=True,
                         columns=columns,
                         rows=rows,
                         row_count=len(rows),
                         execution_time_ms=elapsed_ms,
+                        truncated=truncated,
                     )
                 else:
                     return QueryResult(

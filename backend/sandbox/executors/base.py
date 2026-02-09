@@ -6,6 +6,9 @@ from typing import Any
 import time
 
 
+MAX_RESULT_ROWS = 1000
+
+
 @dataclass
 class QueryResult:
     """Result of a query execution."""
@@ -16,6 +19,7 @@ class QueryResult:
     affected_rows: int = 0
     execution_time_ms: int = 0
     error_message: str = ''
+    truncated: bool = False
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -27,6 +31,7 @@ class QueryResult:
             'affected_rows': self.affected_rows,
             'execution_time_ms': self.execution_time_ms,
             'error_message': self.error_message,
+            'truncated': self.truncated,
         }
 
 
