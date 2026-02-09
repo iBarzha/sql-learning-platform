@@ -405,11 +405,13 @@ class SessionManager:
         student_config = SANDBOX_DATABASES.get('mariadb_student')
 
         # Admin connection (root) to create database and grant access
+        import os
+        mariadb_root_pw = os.getenv('MARIADB_ROOT_PASSWORD', 'rootpassword')
         admin_conn = pymysql.connect(
             host=config.host,
             port=config.port,
             user='root',
-            password='rootpassword',
+            password=mariadb_root_pw,
             connect_timeout=10,
             autocommit=True,
         )
@@ -596,11 +598,13 @@ class SessionManager:
 
         config = SANDBOX_DATABASES['mariadb']
         try:
+            import os
+            mariadb_root_pw = os.getenv('MARIADB_ROOT_PASSWORD', 'rootpassword')
             conn = pymysql.connect(
                 host=config.host,
                 port=config.port,
                 user='root',
-                password='rootpassword',
+                password=mariadb_root_pw,
                 connect_timeout=10,
                 autocommit=True,
             )

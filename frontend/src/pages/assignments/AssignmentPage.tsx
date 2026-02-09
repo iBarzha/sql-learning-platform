@@ -111,7 +111,7 @@ export function AssignmentPage() {
   const maxAttempts = assignment.max_attempts;
   const attemptsUsed = submissions.length;
   const attemptsLeft = maxAttempts ? maxAttempts - attemptsUsed : undefined;
-  const canSubmit = !maxAttempts || attemptsLeft! > 0;
+  const canSubmit = !maxAttempts || (attemptsLeft !== undefined && attemptsLeft > 0);
 
   return (
     <div className="space-y-6">
