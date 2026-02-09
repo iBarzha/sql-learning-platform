@@ -131,6 +131,113 @@ class CourseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        """Deep-copy a course: modules, lessons, datasets, assignments."""
+        course = self.get_object()
+        if course.instructor != request.user:
+            return Response(
+                {'detail': 'Not authorized'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        new_title = request.data.get('title', f'{course.title} (Copy)')
+
+        # Clone course
+        new_course = Course.objects.create(
+            title=new_title,
+            description=course.description,
+            instructor=request.user,
+            database_type=course.database_type,
+            is_published=False,
+            enrollment_key='',
+            max_students=course.max_students,
+        )
+
+        # Map old IDs -> new objects for FK references
+        dataset_map = {}
+        module_map = {}
+
+        # Clone datasets
+        for ds in course.datasets.all():
+            old_id = ds.id
+            new_ds = Dataset.objects.create(
+                name=ds.name,
+                description=ds.description,
+                course=new_course,
+                database_type=ds.database_type,
+                schema_sql=ds.schema_sql,
+                seed_sql=ds.seed_sql,
+                is_default=ds.is_default,
+            )
+            dataset_map[old_id] = new_ds
+
+        # Clone modules
+        for mod in course.modules.all():
+            old_id = mod.id
+            new_mod = Module.objects.create(
+                course=new_course,
+                title=mod.title,
+                description=mod.description,
+                order=mod.order,
+                is_published=mod.is_published,
+            )
+            module_map[old_id] = new_mod
+
+        # Clone lessons
+        for lesson in course.lessons.all():
+            Lesson.objects.create(
+                course=new_course,
+                module=module_map.get(lesson.module_id),
+                title=lesson.title,
+                description=lesson.description,
+                lesson_type=lesson.lesson_type,
+                order=lesson.order,
+                theory_content=lesson.theory_content,
+                practice_description=lesson.practice_description,
+                practice_initial_code=lesson.practice_initial_code,
+                expected_query=lesson.expected_query,
+                expected_result=lesson.expected_result,
+                required_keywords=lesson.required_keywords,
+                forbidden_keywords=lesson.forbidden_keywords,
+                order_matters=lesson.order_matters,
+                max_score=lesson.max_score,
+                time_limit_seconds=lesson.time_limit_seconds,
+                max_attempts=lesson.max_attempts,
+                hints=lesson.hints,
+                dataset=dataset_map.get(lesson.dataset_id),
+                is_published=lesson.is_published,
+            )
+
+        # Clone assignments
+        from assignments.models import Assignment
+        for asn in Assignment.objects.filter(course=course):
+            Assignment.objects.create(
+                course=new_course,
+                module=module_map.get(asn.module_id),
+                dataset=dataset_map.get(asn.dataset_id),
+                title=asn.title,
+                description=asn.description,
+                instructions=asn.instructions,
+                query_type=asn.query_type,
+                difficulty=asn.difficulty,
+                expected_query=asn.expected_query,
+                expected_result=asn.expected_result,
+                required_keywords=asn.required_keywords,
+                forbidden_keywords=asn.forbidden_keywords,
+                order_matters=asn.order_matters,
+                partial_match=asn.partial_match,
+                max_score=asn.max_score,
+                time_limit_seconds=asn.time_limit_seconds,
+                max_attempts=asn.max_attempts,
+                hints=asn.hints,
+                is_published=asn.is_published,
+                order=asn.order,
+            )
+
+        serializer = CourseDetailSerializer(new_course, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['get'])
     def students(self, request, pk=None):
         """List students enrolled in the course (instructor only)."""
