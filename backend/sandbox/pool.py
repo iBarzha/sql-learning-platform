@@ -200,6 +200,7 @@ class SandboxPool:
             elif database_type == 'redis':
                 validate_redis(query)
         except QueryBlockedError as e:
+            self._log_blocked_query(query, database_type, e.message)
             return QueryResult(
                 success=False,
                 error_message=e.message,
@@ -263,6 +264,10 @@ class SandboxPool:
             elif database_type == 'redis':
                 validate_redis(query)
         except QueryBlockedError as e:
+            self._log_blocked_query(
+                query, database_type, e.message,
+                user_id=user_id, session_id=session_id,
+            )
             return QueryResult(
                 success=False,
                 error_message=e.message,
@@ -293,6 +298,30 @@ class SandboxPool:
     def destroy_session(self, session_id: str) -> None:
         """Destroy a session (alias for reset_session)."""
         self.reset_session(session_id)
+
+    @staticmethod
+    def _log_blocked_query(
+        query: str,
+        database_type: str,
+        error_message: str,
+        user_id: Optional[int] = None,
+        session_id: str = '',
+    ) -> None:
+        """Log a blocked query to the audit log."""
+        try:
+            from .models import ExecutionLog
+            ExecutionLog.objects.create(
+                query=query[:4096],
+                database_type=database_type,
+                session_id=session_id or '',
+                user_id=user_id,
+                execution_time_ms=0,
+                success=False,
+                error_message=error_message,
+                was_blocked=True,
+            )
+        except Exception as exc:
+            logger.warning(f'Failed to log blocked query: {exc}')
 
     def get_stats(self) -> dict:
         """Get pool statistics."""
