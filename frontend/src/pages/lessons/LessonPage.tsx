@@ -19,10 +19,13 @@ import {
 import ReactMarkdown from 'react-markdown';
 import type { Submission } from '@/types';
 import { useLesson, useLessonSubmissions, useSubmitLesson } from '@/hooks/queries/useLessons';
+import { useAttachments } from '@/hooks/queries/useAttachments';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
+import { formatFileSize, getFileTypeIcon } from '@/components/ui/FileUpload';
 import type { LocalQueryResult } from '@/lib/sqljs';
+import { Paperclip, Download } from 'lucide-react';
 
 export function LessonPage() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
@@ -30,6 +33,7 @@ export function LessonPage() {
 
   const { data: lesson, isLoading: lessonLoading } = useLesson(courseId, lessonId);
   const { data: submissions = [], isLoading: subsLoading } = useLessonSubmissions(courseId, lessonId);
+  const { data: attachments = [] } = useAttachments(courseId, lessonId);
   const submitMutation = useSubmitLesson(courseId!, lessonId!);
   const loading = lessonLoading || subsLoading;
 
@@ -197,6 +201,38 @@ export function LessonPage() {
             ) : (
               <p className="text-muted-foreground">No theory content available.</p>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Attachments */}
+      {attachments.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Paperclip className="h-4 w-4" />
+              Attachments ({attachments.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {attachments.map((att) => (
+                <a
+                  key={att.id}
+                  href={att.download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-2 rounded-md hover:bg-muted transition-colors"
+                >
+                  <span>{getFileTypeIcon(att.file_type)}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{att.filename}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(att.file_size)}</p>
+                  </div>
+                  <Download className="h-4 w-4 text-muted-foreground" />
+                </a>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
