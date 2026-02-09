@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from .base import BaseExecutor, QueryResult
+from .base import BaseExecutor, QueryResult, MAX_RESULT_ROWS
 from ..exceptions import (
     DatabaseConnectionError,
     QueryTimeoutError,
@@ -68,12 +68,16 @@ class SQLiteExecutor(BaseExecutor):
             if cursor.description:
                 columns = [desc[0] for desc in cursor.description]
                 rows = [list(row) for row in cursor.fetchall()]
+                truncated = len(rows) > MAX_RESULT_ROWS
+                if truncated:
+                    rows = rows[:MAX_RESULT_ROWS]
                 return QueryResult(
                     success=True,
                     columns=columns,
                     rows=rows,
                     row_count=len(rows),
                     execution_time_ms=elapsed_ms,
+                    truncated=truncated,
                 )
             else:
                 return QueryResult(
