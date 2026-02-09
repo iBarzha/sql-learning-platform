@@ -20,11 +20,12 @@ import {
   Edit,
   Users,
   FolderPlus,
+  Copy,
 } from 'lucide-react';
 import lessonsApi, { type Lesson } from '@/api/lessons';
 import modulesApi from '@/api/modules';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCourse, useUpdateCourse } from '@/hooks/queries/useCourses';
+import { useCourse, useUpdateCourse, useDuplicateCourse } from '@/hooks/queries/useCourses';
 import { useLessons, useDeleteLesson } from '@/hooks/queries/useLessons';
 import { useModules, useCreateModule, useDeleteModule } from '@/hooks/queries/useModules';
 
@@ -52,6 +53,7 @@ export function CourseManagePage() {
 
   const queryClient = useQueryClient();
   const updateCourse = useUpdateCourse(courseId!);
+  const duplicateMutation = useDuplicateCourse();
   const deleteLessonMutation = useDeleteLesson(courseId!);
   const createModuleMutation = useCreateModule(courseId!);
   const deleteModuleMutation = useDeleteModule(courseId!);
@@ -166,6 +168,19 @@ export function CourseManagePage() {
               Students ({course.student_count})
             </Button>
           </Link>
+          <Button
+            variant="outline"
+            disabled={duplicateMutation.isPending}
+            onClick={() => {
+              duplicateMutation.mutate(
+                { courseId: courseId! },
+                { onSuccess: (newCourse) => navigate(`/courses/${newCourse.id}/manage`) }
+              );
+            }}
+          >
+            <Copy className="h-4 w-4 mr-2" />
+            Duplicate
+          </Button>
           <Link to={`/courses/${courseId}/edit`}>
             <Button variant="outline">
               <Settings className="h-4 w-4 mr-2" />

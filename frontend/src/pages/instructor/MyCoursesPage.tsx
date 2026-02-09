@@ -3,12 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import { Plus, Users, BookOpen, Settings, Eye, EyeOff, GraduationCap, Layers } from 'lucide-react';
-import { useCourses } from '@/hooks/queries/useCourses';
+import { Plus, Users, BookOpen, Settings, Eye, EyeOff, GraduationCap, Layers, Copy } from 'lucide-react';
+import { useCourses, useDuplicateCourse } from '@/hooks/queries/useCourses';
 
 export function MyCoursesPage() {
   const { data: coursesData, isLoading: loading } = useCourses();
   const courses = coursesData?.results ?? [];
+  const duplicateMutation = useDuplicateCourse();
 
   if (loading) {
     return (
@@ -100,6 +101,15 @@ export function MyCoursesPage() {
                       Manage
                     </Button>
                   </Link>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Duplicate course"
+                    disabled={duplicateMutation.isPending}
+                    onClick={() => duplicateMutation.mutate({ courseId: course.id })}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
                   <Link to={`/courses/${course.id}`}>
                     <Button variant="ghost" size="icon">
                       <Eye className="h-4 w-4" />
