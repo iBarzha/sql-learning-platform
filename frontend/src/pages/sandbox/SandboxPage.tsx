@@ -40,6 +40,116 @@ import { SqlEditor } from '@/components/editor/SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
 import { useDatabaseTypes, useSandboxDatasets } from '@/hooks/queries/useSandbox';
 
+interface QuickExample {
+  labelKey: string;
+  schema: string;
+  seed: string;
+  query: string;
+}
+
+const QUICK_EXAMPLES: Record<string, QuickExample[]> = {
+  sqlite: [
+    {
+      labelKey: 'basicSelect',
+      schema: 'CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  email TEXT UNIQUE\n);',
+      seed: "INSERT INTO users (id, name, email) VALUES\n  (1, 'Alice', 'alice@example.com'),\n  (2, 'Bob', 'bob@example.com'),\n  (3, 'Charlie', 'charlie@example.com');",
+      query: 'SELECT * FROM users;',
+    },
+    {
+      labelKey: 'groupBy',
+      schema: 'CREATE TABLE products (\n  id INTEGER PRIMARY KEY,\n  name TEXT,\n  price DECIMAL(10,2),\n  category TEXT\n);',
+      seed: "INSERT INTO products (id, name, price, category) VALUES\n  (1, 'Laptop', 999.99, 'Electronics'),\n  (2, 'Phone', 599.99, 'Electronics'),\n  (3, 'Desk', 199.99, 'Furniture'),\n  (4, 'Chair', 149.99, 'Furniture');",
+      query: 'SELECT category, COUNT(*) as count, AVG(price) as avg_price\nFROM products\nGROUP BY category;',
+    },
+    {
+      labelKey: 'join',
+      schema: 'CREATE TABLE orders (\n  id INTEGER PRIMARY KEY,\n  customer_id INTEGER,\n  total DECIMAL(10,2)\n);\n\nCREATE TABLE customers (\n  id INTEGER PRIMARY KEY,\n  name TEXT\n);',
+      seed: "INSERT INTO customers (id, name) VALUES (1, 'Alice'), (2, 'Bob');\nINSERT INTO orders (id, customer_id, total) VALUES (1, 1, 100), (2, 1, 200), (3, 2, 150);",
+      query: 'SELECT c.name, SUM(o.total) as total_spent\nFROM customers c\nJOIN orders o ON c.id = o.customer_id\nGROUP BY c.id, c.name;',
+    },
+  ],
+  postgresql: [
+    {
+      labelKey: 'basicSelect',
+      schema: 'CREATE TABLE users (\n  id SERIAL PRIMARY KEY,\n  name VARCHAR(100) NOT NULL,\n  email VARCHAR(255) UNIQUE\n);',
+      seed: "INSERT INTO users (name, email) VALUES\n  ('Alice', 'alice@example.com'),\n  ('Bob', 'bob@example.com'),\n  ('Charlie', 'charlie@example.com');",
+      query: 'SELECT * FROM users;',
+    },
+    {
+      labelKey: 'windowFunctions',
+      schema: 'CREATE TABLE employees (\n  id SERIAL PRIMARY KEY,\n  name VARCHAR(100),\n  department VARCHAR(50),\n  salary NUMERIC(10,2)\n);',
+      seed: "INSERT INTO employees (name, department, salary) VALUES\n  ('Alice', 'Engineering', 95000),\n  ('Bob', 'Engineering', 105000),\n  ('Charlie', 'Sales', 70000),\n  ('Diana', 'Sales', 80000),\n  ('Eve', 'Engineering', 110000);",
+      query: 'SELECT name, department, salary,\n  RANK() OVER (PARTITION BY department ORDER BY salary DESC) as dept_rank\nFROM employees;',
+    },
+    {
+      labelKey: 'jsonQueries',
+      schema: "CREATE TABLE events (\n  id SERIAL PRIMARY KEY,\n  name VARCHAR(100),\n  payload JSONB\n);",
+      seed: "INSERT INTO events (name, payload) VALUES\n  ('signup', '{\"user\": \"alice\", \"plan\": \"pro\"}'),\n  ('purchase', '{\"user\": \"bob\", \"amount\": 49.99}'),\n  ('signup', '{\"user\": \"charlie\", \"plan\": \"free\"}');",
+      query: "SELECT name,\n  payload->>'user' AS user_name,\n  payload->>'plan' AS plan\nFROM events\nWHERE payload ? 'plan';",
+    },
+  ],
+  mariadb: [
+    {
+      labelKey: 'basicSelect',
+      schema: 'CREATE TABLE users (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(100) NOT NULL,\n  email VARCHAR(255) UNIQUE\n);',
+      seed: "INSERT INTO users (name, email) VALUES\n  ('Alice', 'alice@example.com'),\n  ('Bob', 'bob@example.com'),\n  ('Charlie', 'charlie@example.com');",
+      query: 'SELECT * FROM users;',
+    },
+    {
+      labelKey: 'groupBy',
+      schema: 'CREATE TABLE products (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(100),\n  price DECIMAL(10,2),\n  category VARCHAR(50)\n);',
+      seed: "INSERT INTO products (name, price, category) VALUES\n  ('Laptop', 999.99, 'Electronics'),\n  ('Phone', 599.99, 'Electronics'),\n  ('Desk', 199.99, 'Furniture'),\n  ('Chair', 149.99, 'Furniture');",
+      query: 'SELECT category, COUNT(*) as count, AVG(price) as avg_price\nFROM products\nGROUP BY category;',
+    },
+    {
+      labelKey: 'subquery',
+      schema: 'CREATE TABLE products (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(100),\n  price DECIMAL(10,2)\n);\n\nCREATE TABLE orders (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  product_id INT,\n  quantity INT\n);',
+      seed: "INSERT INTO products (name, price) VALUES\n  ('Laptop', 999.99),\n  ('Phone', 599.99),\n  ('Tablet', 399.99);\nINSERT INTO orders (product_id, quantity) VALUES\n  (1, 2), (1, 1), (3, 5);",
+      query: 'SELECT name, price\nFROM products\nWHERE id IN (\n  SELECT product_id FROM orders\n);',
+    },
+  ],
+  mongodb: [
+    {
+      labelKey: 'find',
+      schema: '',
+      seed: "db.users.insertMany([\n  { name: 'Alice', age: 30, city: 'Kyiv' },\n  { name: 'Bob', age: 25, city: 'Lviv' },\n  { name: 'Charlie', age: 35, city: 'Kyiv' }\n]);",
+      query: 'db.users.find({ city: "Kyiv" });',
+    },
+    {
+      labelKey: 'aggregate',
+      schema: '',
+      seed: "db.orders.insertMany([\n  { customer: 'Alice', amount: 100, status: 'completed' },\n  { customer: 'Alice', amount: 200, status: 'completed' },\n  { customer: 'Bob', amount: 150, status: 'pending' },\n  { customer: 'Bob', amount: 50, status: 'completed' }\n]);",
+      query: 'db.orders.aggregate([\n  { $group: {\n    _id: "$customer",\n    totalSpent: { $sum: "$amount" },\n    orderCount: { $sum: 1 }\n  }}\n]);',
+    },
+    {
+      labelKey: 'update',
+      schema: '',
+      seed: "db.products.insertMany([\n  { name: 'Laptop', price: 999, inStock: true },\n  { name: 'Phone', price: 599, inStock: true },\n  { name: 'Tablet', price: 399, inStock: false }\n]);",
+      query: 'db.products.updateMany(\n  { price: { $gt: 500 } },\n  { $set: { premium: true } }\n);',
+    },
+  ],
+  redis: [
+    {
+      labelKey: 'strings',
+      schema: '',
+      seed: 'SET user:1 "Alice"\nSET user:2 "Bob"\nSET user:3 "Charlie"',
+      query: 'MGET user:1 user:2 user:3',
+    },
+    {
+      labelKey: 'lists',
+      schema: '',
+      seed: 'LPUSH tasks "Write docs"\nLPUSH tasks "Fix bug"\nRPUSH tasks "Deploy"',
+      query: 'LRANGE tasks 0 -1',
+    },
+    {
+      labelKey: 'sortedSets',
+      schema: '',
+      seed: 'ZADD leaderboard 100 "Alice"\nZADD leaderboard 85 "Bob"\nZADD leaderboard 95 "Charlie"',
+      query: 'ZRANGE leaderboard 0 -1 WITHSCORES',
+    },
+  ],
+};
+
 export function SandboxPage() {
   const { t } = useTranslation('sandbox');
   const [selectedDbType, setSelectedDbType] = useState('sqlite');
@@ -513,42 +623,21 @@ export function SandboxPage() {
                   {t('tryExamples')}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      resetSessionState();
-                      setSchemaSql('CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  email TEXT UNIQUE\n);');
-                      setSeedSql("INSERT INTO users (name, email) VALUES\n  ('Alice', 'alice@example.com'),\n  ('Bob', 'bob@example.com'),\n  ('Charlie', 'charlie@example.com');");
-                      setQuery('SELECT * FROM users;');
-                    }}
-                  >
-                    {t('basicSelect')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      resetSessionState();
-                      setSchemaSql('CREATE TABLE products (\n  id INTEGER PRIMARY KEY,\n  name TEXT,\n  price DECIMAL(10,2),\n  category TEXT\n);');
-                      setSeedSql("INSERT INTO products (name, price, category) VALUES\n  ('Laptop', 999.99, 'Electronics'),\n  ('Phone', 599.99, 'Electronics'),\n  ('Desk', 199.99, 'Furniture'),\n  ('Chair', 149.99, 'Furniture');");
-                      setQuery('SELECT category, COUNT(*) as count, AVG(price) as avg_price\nFROM products\nGROUP BY category;');
-                    }}
-                  >
-                    {t('groupBy')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      resetSessionState();
-                      setSchemaSql('CREATE TABLE orders (\n  id INTEGER PRIMARY KEY,\n  customer_id INTEGER,\n  total DECIMAL(10,2)\n);\n\nCREATE TABLE customers (\n  id INTEGER PRIMARY KEY,\n  name TEXT\n);');
-                      setSeedSql("INSERT INTO customers (id, name) VALUES (1, 'Alice'), (2, 'Bob');\nINSERT INTO orders (customer_id, total) VALUES (1, 100), (1, 200), (2, 150);");
-                      setQuery('SELECT c.name, SUM(o.total) as total_spent\nFROM customers c\nJOIN orders o ON c.id = o.customer_id\nGROUP BY c.id, c.name;');
-                    }}
-                  >
-                    {t('join')}
-                  </Button>
+                  {(QUICK_EXAMPLES[selectedDbType] || []).map((example) => (
+                    <Button
+                      key={example.labelKey}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        resetSessionState();
+                        setSchemaSql(example.schema);
+                        setSeedSql(example.seed);
+                        setQuery(example.query);
+                      }}
+                    >
+                      {t(example.labelKey)}
+                    </Button>
+                  ))}
                 </div>
               </CardContent>
             </Card>
