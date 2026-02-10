@@ -9,7 +9,7 @@ export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
+    <div className="min-h-screen bg-background relative overflow-hidden pt-14">
       {/* Global floating SQL keywords background */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <FloatingKeywords />

@@ -15,7 +15,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { t } = useTranslation();
 
   return (
-    <header className="sticky top-0 z-50 w-full h-14 bg-card/95 backdrop-blur-md border-b border-border shadow-noble-sm">
+    <header className="fixed top-0 z-50 w-full h-14 bg-card/95 backdrop-blur-md border-b border-border shadow-noble-sm">
       <div className="flex h-full items-center px-4 md:px-6 gap-3">
         {/* Mobile menu button */}
         <Button
