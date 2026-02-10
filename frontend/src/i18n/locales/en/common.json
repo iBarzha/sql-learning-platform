@@ -1,0 +1,61 @@
+{
+  "navigation": {
+    "dashboard": "Dashboard",
+    "courses": "Courses",
+    "sandbox": "SQL Sandbox",
+    "myCourses": "My Courses",
+    "students": "Students",
+    "settings": "Settings",
+    "profile": "Profile",
+    "changePassword": "Change Password",
+    "logout": "Logout"
+  },
+  "branding": {
+    "name": "SQL Learning",
+    "fullName": "SQL Learning Platform"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "back": "Back",
+    "submit": "Submit",
+    "run": "Run",
+    "reset": "Reset",
+    "show": "Show",
+    "hide": "Hide",
+    "loading": "Loading...",
+    "viewAll": "View All"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "active": "Active",
+    "inactive": "Inactive",
+    "draft": "Draft",
+    "published": "Published",
+    "completed": "Completed",
+    "pending": "Pending",
+    "error": "Error",
+    "success": "Success"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "english": "English",
+    "ukrainian": "Ukrainian",
+    "switch": "Switch language"
+  },
+  "misc": {
+    "noResults": "No results found",
+    "noData": "No data available",
+    "confirmDelete": "Are you sure you want to delete?",
+    "pageNotFound": "Page not found"
+  }
+}

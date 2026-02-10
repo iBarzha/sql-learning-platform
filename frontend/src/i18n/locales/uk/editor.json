@@ -1,0 +1,10 @@
+{
+  "tryItYourself": "Спробуйте самі",
+  "hint": "Підказка",
+  "reset": "Скинути",
+  "run": "Запустити",
+  "loading": "Завантаження...",
+  "writeQuery": "-- Напишіть запит та натисніть Ctrl+Enter",
+  "rowsAffected": "{{count}} рядків змінено",
+  "executionTime": "{{time}}мс"
+}

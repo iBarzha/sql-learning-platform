@@ -1,0 +1,31 @@
+{
+  "welcome": {
+    "title": "Welcome back, {{name}}!",
+    "defaultName": "User",
+    "instructorSubtitle": "Manage your courses and track student progress.",
+    "studentSubtitle": "Continue your SQL learning and practice."
+  },
+  "stats": {
+    "enrolledCourses": "Enrolled Courses",
+    "completed": "Completed",
+    "completedSubtitle": "of {{total}} lessons",
+    "ofLessons": "of {{count}} lessons",
+    "inProgress": "In Progress",
+    "avgScore": "Avg Score"
+  },
+  "courses": {
+    "title": "Your Courses",
+    "subtitle": "Continue where you left off",
+    "viewAll": "View All",
+    "byInstructor": "by {{name}}",
+    "noCourses": "No courses yet",
+    "noCoursesDesc": "Start learning SQL by enrolling in a course.",
+    "browseCourses": "Browse Courses",
+    "by": "by {{name}}",
+    "empty": {
+      "title": "No courses yet",
+      "description": "Start learning SQL by enrolling in a course.",
+      "browse": "Browse Courses"
+    }
+  }
+}

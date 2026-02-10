@@ -1,0 +1,61 @@
+{
+  "navigation": {
+    "dashboard": "Панель управління",
+    "courses": "Курси",
+    "sandbox": "SQL Пісочниця",
+    "myCourses": "Мої курси",
+    "students": "Студенти",
+    "settings": "Налаштування",
+    "profile": "Профіль",
+    "changePassword": "Змінити пароль",
+    "logout": "Вийти"
+  },
+  "branding": {
+    "name": "SQL Learning",
+    "fullName": "SQL Навчальна Платформа"
+  },
+  "actions": {
+    "save": "Зберегти",
+    "cancel": "Скасувати",
+    "delete": "Видалити",
+    "edit": "Редагувати",
+    "create": "Створити",
+    "search": "Пошук",
+    "back": "Назад",
+    "submit": "Надіслати",
+    "run": "Запустити",
+    "reset": "Скинути",
+    "show": "Показати",
+    "hide": "Сховати",
+    "loading": "Завантаження...",
+    "viewAll": "Переглянути все"
+  },
+  "status": {
+    "online": "Онлайн",
+    "offline": "Офлайн",
+    "active": "Активний",
+    "inactive": "Неактивний",
+    "draft": "Чернетка",
+    "published": "Опубліковано",
+    "completed": "Завершено",
+    "pending": "Очікування",
+    "error": "Помилка",
+    "success": "Успіх"
+  },
+  "theme": {
+    "light": "Світла",
+    "dark": "Темна",
+    "system": "Системна"
+  },
+  "language": {
+    "english": "English",
+    "ukrainian": "Українська",
+    "switch": "Змінити мову"
+  },
+  "misc": {
+    "noResults": "Нічого не знайдено",
+    "noData": "Немає даних",
+    "confirmDelete": "Ви впевнені, що хочете видалити?",
+    "pageNotFound": "Сторінку не знайдено"
+  }
+}

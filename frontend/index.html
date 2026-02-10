@@ -4,7 +4,21 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>SQL Learning Platform</title>
+    <script>
+      // Anti-flash: apply dark class and lang attribute before first paint
+      (function() {
+        try {
+          var prefs = JSON.parse(localStorage.getItem('preferences-storage') || '{}');
+          var state = prefs.state || {};
+          var theme = state.theme || 'system';
+          var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+          var locale = state.locale || 'en';
+          document.documentElement.lang = locale;
+        } catch(e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
