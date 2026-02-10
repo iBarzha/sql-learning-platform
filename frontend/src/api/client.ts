@@ -26,11 +26,16 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
+const PUBLIC_ENDPOINTS = ['/auth/login/', '/auth/register/', '/auth/token/refresh/', '/auth/invite/'];
+
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const isPublic = PUBLIC_ENDPOINTS.some((ep) => config.url?.includes(ep));
+    if (!isPublic) {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
     return config;
   },

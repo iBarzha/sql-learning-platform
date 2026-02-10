@@ -79,10 +79,10 @@ export default function FileUpload({
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+        className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
           dragOver
-            ? 'border-blue-400 bg-blue-50'
-            : 'border-gray-300 hover:border-gray-400'
+            ? 'border-primary bg-primary/5'
+            : 'border-border hover:border-primary/50'
         } ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
       >
         <input
@@ -93,19 +93,19 @@ export default function FileUpload({
           accept={accept}
         />
         {isUploading ? (
-          <p className="text-sm text-gray-500">Uploading...</p>
+          <p className="text-sm text-muted-foreground">Uploading...</p>
         ) : (
           <>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Drop file here or click to browse
             </p>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-muted-foreground/70 mt-1">
               Max {maxSizeMB}MB
             </p>
           </>
         )}
       </div>
-      {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-sm text-destructive mt-1">{error}</p>}
     </div>
   );
 }

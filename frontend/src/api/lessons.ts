@@ -118,7 +118,7 @@ const lessonsApi = {
 
   getMySubmissions: async (courseId: string, lessonId: string) => {
     const response = await apiClient.get<Submission[]>(
-      `/courses/${courseId}/lessons/${lessonId}/submissions/my_submissions/`
+      `/courses/${courseId}/lessons/${lessonId}/submissions/my/`
     );
     return response.data;
   },

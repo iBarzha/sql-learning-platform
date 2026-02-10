@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
   ArrowLeft,
   CheckCircle,
@@ -15,7 +17,7 @@ import {
   ChevronRight,
   ChevronLeft,
 } from 'lucide-react';
-import type { Assignment, Submission } from '@/types';
+import type { Submission } from '@/types';
 import { useAssignment } from '@/hooks/queries/useAssignments';
 import { useMySubmissions, useSubmitAssignment } from '@/hooks/queries/useSubmissions';
 import { getApiErrorMessage } from '@/lib/utils';
@@ -24,6 +26,7 @@ import { useSqlite } from '@/hooks/useSqlite';
 import type { LocalQueryResult } from '@/lib/sqljs';
 
 export function AssignmentPage() {
+  const { t } = useTranslation('lessons');
   const { courseId, assignmentId } = useParams<{
     courseId: string;
     assignmentId: string;
@@ -82,7 +85,7 @@ export function AssignmentPage() {
       });
       setCurrentSubmission(submission);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to submit query'));
+      setError(getApiErrorMessage(err, t('page.failedSubmit')));
     }
   }, [courseId, assignmentId, query, isSqlite, sqlite, submitMutation]);
 
@@ -99,9 +102,9 @@ export function AssignmentPage() {
   if (!assignment) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Assignment not found</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('page.assignmentNotFound')}</h2>
         <Link to={`/courses/${courseId}`} className="text-primary hover:underline">
-          Back to course
+          {t('page.backToCourse')}
         </Link>
       </div>
     );
@@ -114,7 +117,7 @@ export function AssignmentPage() {
   const canSubmit = !maxAttempts || (attemptsLeft !== undefined && attemptsLeft > 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
         <Button
           variant="ghost"
@@ -139,19 +142,19 @@ export function AssignmentPage() {
             </Badge>
           </div>
           <p className="text-muted-foreground">
-            {assignment.course_title} • {assignment.query_type.toUpperCase()}
+            {assignment.course_title} &bull; {assignment.query_type.toUpperCase()}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {assignment.user_completed && (
-            <Badge variant="default" className="bg-green-500">
+            <Badge variant="success">
               <CheckCircle className="h-3 w-3 mr-1" />
-              Completed
+              {t('page.completed')}
             </Badge>
           )}
           {maxAttempts && (
             <Badge variant="outline">
-              {attemptsLeft} attempts left
+              {t('page.attemptsLeft', { count: attemptsLeft })}
             </Badge>
           )}
         </div>
@@ -168,13 +171,13 @@ export function AssignmentPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Instructions</CardTitle>
+              <CardTitle>{t('page.instructions')}</CardTitle>
             </CardHeader>
             <CardContent className="prose prose-sm dark:prose-invert max-w-none">
               <p className="whitespace-pre-wrap">{assignment.description}</p>
               {assignment.instructions && (
                 <>
-                  <h4>Details</h4>
+                  <h4>{t('page.details')}</h4>
                   <p className="whitespace-pre-wrap">{assignment.instructions}</p>
                 </>
               )}
@@ -188,14 +191,14 @@ export function AssignmentPage() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Lightbulb className="h-4 w-4" />
-                    Hints
+                    {t('page.hints')}
                   </CardTitle>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowHint(!showHint)}
                   >
-                    {showHint ? 'Hide' : 'Show'}
+                    {showHint ? t('page.hide') : t('page.show')}
                   </Button>
                 </div>
               </CardHeader>
@@ -211,7 +214,7 @@ export function AssignmentPage() {
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      Hint {hintIndex + 1} of {hints.length}
+                      {t('page.hintOf', { current: hintIndex + 1, total: hints.length })}
                     </span>
                     <Button
                       variant="ghost"
@@ -234,7 +237,7 @@ export function AssignmentPage() {
           {assignment.dataset && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Dataset</CardTitle>
+                <CardTitle className="text-base">{t('page.dataset')}</CardTitle>
                 <CardDescription>{assignment.dataset_name}</CardDescription>
               </CardHeader>
               <CardContent>
@@ -250,9 +253,9 @@ export function AssignmentPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Your Query</CardTitle>
+              <CardTitle>{t('page.yourQuery')}</CardTitle>
               <CardDescription>
-                Write your SQL query and press Ctrl+Enter to submit
+                {t('page.writeAndSubmit')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -262,11 +265,11 @@ export function AssignmentPage() {
                 height="192px"
                 readOnly={!canSubmit}
                 onExecute={handleSubmit}
-                placeholder={`-- Write your ${assignment.query_type.toUpperCase()} query here`}
+                placeholder={`-- ${t('page.writeQueryPlaceholder', { type: assignment.query_type.toUpperCase() })}`}
               />
               <div className="flex items-center justify-between mt-4">
                 <span className="text-xs text-muted-foreground">
-                  Time limit: {assignment.time_limit_seconds}s
+                  {t('page.timeLimit', { seconds: assignment.time_limit_seconds })}
                 </span>
                 <Button
                   onClick={handleSubmit}
@@ -277,7 +280,7 @@ export function AssignmentPage() {
                   ) : (
                     <Play className="h-4 w-4 mr-2" />
                   )}
-                  Run Query
+                  {t('page.runQuery')}
                 </Button>
               </div>
             </CardContent>
@@ -288,9 +291,9 @@ export function AssignmentPage() {
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Query Output</CardTitle>
+                  <CardTitle className="text-base">{t('page.queryOutput')}</CardTitle>
                   <Badge variant="outline">
-                    {localResult.execution_time_ms}ms (local)
+                    {localResult.execution_time_ms}ms ({t('page.local')})
                   </Badge>
                 </div>
               </CardHeader>
@@ -304,37 +307,37 @@ export function AssignmentPage() {
                 )}
                 {localResult.success && localResult.columns.length > 0 && (
                   <div className="overflow-auto max-h-48 border rounded-md">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted sticky top-0">
-                        <tr>
+                    <Table className="w-full text-sm">
+                      <TableHeader className="bg-muted sticky top-0">
+                        <TableRow>
                           {localResult.columns.map((col, i) => (
-                            <th key={i} className="px-2 py-1 text-left font-medium border-b">
+                            <TableHead key={i} className="px-2 py-1 text-left font-medium border-b">
                               {col}
-                            </th>
+                            </TableHead>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {localResult.rows.slice(0, 10).map((row, i) => (
-                          <tr key={i} className="border-b">
+                          <TableRow key={i} className="border-b">
                             {(row as unknown[]).map((cell, j) => (
-                              <td key={j} className="px-2 py-1 font-mono text-xs">
+                              <TableCell key={j} className="px-2 py-1 font-mono text-xs">
                                 {cell === null ? (
                                   <span className="text-muted-foreground italic">NULL</span>
                                 ) : (
                                   String(cell)
                                 )}
-                              </td>
+                              </TableCell>
                             ))}
-                          </tr>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
                 {localResult.success && localResult.affected_rows > 0 && (
                   <p className="text-sm text-muted-foreground">
-                    {localResult.affected_rows} row(s) affected
+                    {t('page.rowsAffected', { count: localResult.affected_rows })}
                   </p>
                 )}
               </CardContent>
@@ -346,16 +349,16 @@ export function AssignmentPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Result</CardTitle>
+                  <CardTitle className="text-base">{t('page.result')}</CardTitle>
                   {currentSubmission.is_correct ? (
-                    <Badge variant="default" className="bg-green-500">
+                    <Badge variant="success">
                       <CheckCircle className="h-3 w-3 mr-1" />
-                      Correct
+                      {t('page.correct')}
                     </Badge>
                   ) : (
                     <Badge variant="destructive">
                       <XCircle className="h-3 w-3 mr-1" />
-                      Incorrect
+                      {t('page.incorrect')}
                     </Badge>
                   )}
                 </div>
@@ -371,31 +374,31 @@ export function AssignmentPage() {
 
                 {currentSubmission.result && (
                   <div className="overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
+                    <Table className="w-full text-sm">
+                      <TableHeader>
+                        <TableRow className="border-b">
                           {currentSubmission.result.columns.map((col, i) => (
-                            <th key={i} className="px-2 py-1 text-left font-medium">
+                            <TableHead key={i} className="px-2 py-1 text-left font-medium">
                               {col}
-                            </th>
+                            </TableHead>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {currentSubmission.result.rows.slice(0, 10).map((row, i) => (
-                          <tr key={i} className="border-b">
+                          <TableRow key={i} className="border-b">
                             {(row as unknown[]).map((cell, j) => (
-                              <td key={j} className="px-2 py-1">
+                              <TableCell key={j} className="px-2 py-1">
                                 {String(cell ?? 'NULL')}
-                              </td>
+                              </TableCell>
                             ))}
-                          </tr>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                     {currentSubmission.result.row_count > 10 && (
                       <p className="text-xs text-muted-foreground mt-2">
-                        Showing 10 of {currentSubmission.result.row_count} rows
+                        {t('page.showingRows', { shown: 10, total: currentSubmission.result.row_count })}
                       </p>
                     )}
                   </div>
@@ -408,15 +411,15 @@ export function AssignmentPage() {
                     )}
                     {currentSubmission.feedback.keywords_missing &&
                       currentSubmission.feedback.keywords_missing.length > 0 && (
-                        <p className="text-sm text-yellow-600">
-                          Missing keywords:{' '}
+                        <p className="text-sm text-warning">
+                          {t('page.missingKeywords')}{' '}
                           {currentSubmission.feedback.keywords_missing.join(', ')}
                         </p>
                       )}
                     {currentSubmission.feedback.forbidden_used &&
                       currentSubmission.feedback.forbidden_used.length > 0 && (
-                        <p className="text-sm text-red-600">
-                          Forbidden keywords used:{' '}
+                        <p className="text-sm text-destructive">
+                          {t('page.forbiddenKeywords')}{' '}
                           {currentSubmission.feedback.forbidden_used.join(', ')}
                         </p>
                       )}
@@ -425,10 +428,10 @@ export function AssignmentPage() {
 
                 <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
                   <span>
-                    Score: {currentSubmission.score}/{assignment.max_score}
+                    {t('page.score', { score: currentSubmission.score, max: assignment.max_score })}
                   </span>
                   <span>
-                    Execution time: {currentSubmission.execution_time_ms}ms
+                    {t('page.executionTime', { ms: currentSubmission.execution_time_ms })}
                   </span>
                 </div>
               </CardContent>
@@ -439,7 +442,7 @@ export function AssignmentPage() {
           {submissions.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Submission History</CardTitle>
+                <CardTitle className="text-base">{t('page.submissionHistory')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
@@ -450,18 +453,18 @@ export function AssignmentPage() {
                     >
                       <div className="flex items-center gap-2">
                         {sub.is_correct ? (
-                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <CheckCircle className="h-4 w-4 text-success" />
                         ) : sub.status === 'error' ? (
-                          <XCircle className="h-4 w-4 text-red-500" />
+                          <XCircle className="h-4 w-4 text-destructive" />
                         ) : (
-                          <Clock className="h-4 w-4 text-yellow-500" />
+                          <Clock className="h-4 w-4 text-warning" />
                         )}
                         <span className="text-sm">
-                          Attempt #{sub.attempt_number}
+                          {t('page.attempt', { number: sub.attempt_number })}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>Score: {sub.score}</span>
+                        <span>{t('page.scoreValue', { score: sub.score })}</span>
                         <span>
                           {new Date(sub.submitted_at).toLocaleTimeString()}
                         </span>

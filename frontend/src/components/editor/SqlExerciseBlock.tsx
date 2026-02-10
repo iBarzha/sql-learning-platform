@@ -8,9 +8,18 @@
  */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
 import { Play, RotateCcw, Lightbulb } from 'lucide-react';
 import { SqlEditor } from './SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
@@ -28,6 +37,7 @@ interface SqlExerciseBlockProps {
 }
 
 export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
+  const { t } = useTranslation('editor');
   const sqlite = useSqlite();
   const [query, setQuery] = useState(config.initial ?? '');
   const [result, setResult] = useState<LocalQueryResult | null>(null);
@@ -62,9 +72,9 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
   }
 
   return (
-    <div className="my-4 border rounded-lg overflow-hidden not-prose">
-      <div className="bg-muted/50 px-3 py-2 flex items-center justify-between border-b">
-        <span className="text-sm font-medium">Try it yourself</span>
+    <div className="my-4 border border-border/50 rounded-xl overflow-hidden not-prose">
+      <div className="bg-muted/50 px-3 py-2 flex items-center justify-between border-b border-border/50">
+        <span className="text-sm font-medium">{t('tryItYourself')}</span>
         <div className="flex items-center gap-1">
           {config.hint && (
             <Button
@@ -74,7 +84,7 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
               className="gap-1 h-7 text-xs"
             >
               <Lightbulb className="h-3 w-3" />
-              Hint
+              {t('hint')}
             </Button>
           )}
           <Button
@@ -84,13 +94,13 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
             className="gap-1 h-7 text-xs"
           >
             <RotateCcw className="h-3 w-3" />
-            Reset
+            {t('reset')}
           </Button>
         </div>
       </div>
 
       {showHint && config.hint && (
-        <div className="px-3 py-2 bg-yellow-50 dark:bg-yellow-950 border-b text-sm">
+        <div className="px-3 py-2 bg-warning/5 border-b border-warning/20 text-sm text-warning">
           {config.hint}
         </div>
       )}
@@ -100,18 +110,18 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
         onChange={setQuery}
         height="80px"
         onExecute={handleRun}
-        placeholder="-- Write your query and press Ctrl+Enter"
+        placeholder={t('writeQuery')}
       />
 
-      <div className="px-3 py-2 border-t flex justify-end">
+      <div className="px-3 py-2 border-t border-border/50 flex justify-end">
         <Button size="sm" onClick={handleRun} disabled={initializing} className="gap-1 h-7">
           <Play className="h-3 w-3" />
-          {initializing ? 'Loading...' : 'Run'}
+          {initializing ? t('loading') : t('run')}
         </Button>
       </div>
 
       {result && (
-        <div className="border-t">
+        <div className="border-t border-border/50">
           {result.error_message && (
             <Alert variant="destructive" className="rounded-none border-0">
               <AlertDescription className="font-mono text-xs">
@@ -121,43 +131,41 @@ export function SqlExerciseBlock({ config }: SqlExerciseBlockProps) {
           )}
           {result.success && result.columns.length > 0 && (
             <div className="overflow-auto max-h-48">
-              <table className="w-full text-sm">
-                <thead className="bg-muted">
-                  <tr>
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {result.columns.map((col, i) => (
-                      <th key={i} className="px-2 py-1 text-left font-medium border-b text-xs">
-                        {col}
-                      </th>
+                      <TableHead key={i}>{col}</TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {result.rows.slice(0, 20).map((row, i) => (
-                    <tr key={i} className="border-b">
+                    <TableRow key={i}>
                       {(row as unknown[]).map((cell, j) => (
-                        <td key={j} className="px-2 py-1 font-mono text-xs">
+                        <TableCell key={j}>
                           {cell === null ? (
                             <span className="text-muted-foreground italic">NULL</span>
                           ) : (
                             String(cell)
                           )}
-                        </td>
+                        </TableCell>
                       ))}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           {result.success && result.columns.length === 0 && result.affected_rows > 0 && (
             <div className="px-3 py-2 text-sm text-muted-foreground">
-              {result.affected_rows} row(s) affected
+              {t('rowsAffected', { count: result.affected_rows })}
             </div>
           )}
           {result.success && (
-            <div className="px-3 py-1 border-t">
+            <div className="px-3 py-1 border-t border-border/50">
               <Badge variant="outline" className="text-xs">
-                {result.execution_time_ms}ms
+                {t('executionTime', { time: result.execution_time_ms })}
               </Badge>
             </div>
           )}

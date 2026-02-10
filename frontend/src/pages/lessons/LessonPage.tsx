@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
   ArrowLeft,
   CheckCircle,
@@ -29,6 +32,7 @@ import type { LocalQueryResult } from '@/lib/sqljs';
 import { Paperclip, Download } from 'lucide-react';
 
 export function LessonPage() {
+  const { t } = useTranslation('lessons');
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
   const navigate = useNavigate();
 
@@ -90,7 +94,7 @@ export function LessonPage() {
       const submission = await submitMutation.mutateAsync(query.trim());
       setCurrentSubmission(submission);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to submit query'));
+      setError(getApiErrorMessage(err, t('page.failedSubmit')));
     }
   }, [courseId, lessonId, query, isSqlite, sqlite, submitMutation]);
 
@@ -107,9 +111,9 @@ export function LessonPage() {
   if (!lesson) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Lesson not found</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('page.notFound')}</h2>
         <Link to={`/courses/${courseId}`} className="text-primary hover:underline">
-          Back to course
+          {t('page.backToCourse')}
         </Link>
       </div>
     );
@@ -124,7 +128,7 @@ export function LessonPage() {
   const hasTheory = lesson.lesson_type !== 'practice';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
         <Button
           variant="ghost"
@@ -141,21 +145,21 @@ export function LessonPage() {
           {lesson.lesson_type === 'theory' ? (
             <>
               <BookOpen className="h-3 w-3 mr-1" />
-              Theory
+              {t('page.theory')}
             </>
           ) : lesson.lesson_type === 'practice' ? (
             <>
               <Code className="h-3 w-3 mr-1" />
-              Practice
+              {t('page.practice')}
             </>
           ) : (
-            'Mixed'
+            t('page.mixed')
           )}
         </Badge>
         {hasPractice && lesson.user_completed && (
-          <Badge variant="default" className="bg-green-500">
+          <Badge variant="success">
             <CheckCircle className="h-3 w-3 mr-1" />
-            Completed
+            {t('page.completed')}
           </Badge>
         )}
       </div>
@@ -168,30 +172,18 @@ export function LessonPage() {
 
       {/* Tabs for mixed lessons */}
       {lesson.lesson_type === 'mixed' && (
-        <div className="flex gap-2 border-b">
-          <button
-            onClick={() => setActiveTab('theory')}
-            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'theory'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <BookOpen className="h-4 w-4 inline mr-2" />
-            Theory
-          </button>
-          <button
-            onClick={() => setActiveTab('practice')}
-            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'practice'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Code className="h-4 w-4 inline mr-2" />
-            Practice
-          </button>
-        </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'theory' | 'practice')}>
+          <TabsList>
+            <TabsTrigger value="theory">
+              <BookOpen className="h-4 w-4 mr-2" />
+              {t('page.theory')}
+            </TabsTrigger>
+            <TabsTrigger value="practice">
+              <Code className="h-4 w-4 mr-2" />
+              {t('page.practice')}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       )}
 
       {/* Theory content */}
@@ -220,7 +212,7 @@ export function LessonPage() {
                 {lesson.theory_content}
               </ReactMarkdown>
             ) : (
-              <p className="text-muted-foreground">No theory content available.</p>
+              <p className="text-muted-foreground">{t('page.noTheoryContent')}</p>
             )}
           </CardContent>
         </Card>
@@ -232,7 +224,7 @@ export function LessonPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Paperclip className="h-4 w-4" />
-              Attachments ({attachments.length})
+              {t('page.attachments', { count: attachments.length })}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -265,11 +257,11 @@ export function LessonPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Task</CardTitle>
+                <CardTitle>{t('page.task')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="whitespace-pre-wrap">
-                  {lesson.practice_description || 'Complete the SQL query.'}
+                  {lesson.practice_description || t('page.defaultTaskDescription')}
                 </p>
               </CardContent>
             </Card>
@@ -281,14 +273,14 @@ export function LessonPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Lightbulb className="h-4 w-4" />
-                      Hints
+                      {t('page.hints')}
                     </CardTitle>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowHint(!showHint)}
                     >
-                      {showHint ? 'Hide' : 'Show'}
+                      {showHint ? t('page.hide') : t('page.show')}
                     </Button>
                   </div>
                 </CardHeader>
@@ -304,7 +296,7 @@ export function LessonPage() {
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
                       <span className="text-sm text-muted-foreground">
-                        Hint {hintIndex + 1} of {hints.length}
+                        {t('page.hintOf', { current: hintIndex + 1, total: hints.length })}
                       </span>
                       <Button
                         variant="ghost"
@@ -325,7 +317,7 @@ export function LessonPage() {
             {lesson.dataset && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Database Schema</CardTitle>
+                  <CardTitle className="text-base">{t('page.databaseSchema')}</CardTitle>
                   <CardDescription>{lesson.dataset.name}</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -341,10 +333,10 @@ export function LessonPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Your Query</CardTitle>
+                <CardTitle>{t('page.yourQuery')}</CardTitle>
                 <CardDescription>
-                  Press Ctrl+Enter to submit
-                  {maxAttempts && ` • ${attemptsLeft} attempts left`}
+                  {t('page.pressCtrlEnter')}
+                  {maxAttempts && ` \u2022 ${t('page.attemptsLeft', { count: attemptsLeft })}`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -354,11 +346,11 @@ export function LessonPage() {
                   height="192px"
                   readOnly={!canSubmit}
                   onExecute={handleSubmit}
-                  placeholder="-- Write your SQL query here"
+                  placeholder={t('page.queryPlaceholder')}
                 />
                 <div className="flex items-center justify-between mt-4">
                   <span className="text-xs text-muted-foreground">
-                    Time limit: {lesson.time_limit_seconds}s
+                    {t('page.timeLimit', { seconds: lesson.time_limit_seconds })}
                   </span>
                   <Button
                     onClick={handleSubmit}
@@ -369,7 +361,7 @@ export function LessonPage() {
                     ) : (
                       <Play className="h-4 w-4 mr-2" />
                     )}
-                    Run Query
+                    {t('page.runQuery')}
                   </Button>
                 </div>
               </CardContent>
@@ -380,9 +372,9 @@ export function LessonPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Query Output</CardTitle>
+                    <CardTitle className="text-base">{t('page.queryOutput')}</CardTitle>
                     <Badge variant="outline">
-                      {localResult.execution_time_ms}ms (local)
+                      {localResult.execution_time_ms}ms ({t('page.local')})
                     </Badge>
                   </div>
                 </CardHeader>
@@ -396,37 +388,37 @@ export function LessonPage() {
                   )}
                   {localResult.success && localResult.columns.length > 0 && (
                     <div className="overflow-auto max-h-48 border rounded-md">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted sticky top-0">
-                          <tr>
+                      <Table className="w-full text-sm">
+                        <TableHeader className="bg-muted sticky top-0">
+                          <TableRow>
                             {localResult.columns.map((col, i) => (
-                              <th key={i} className="px-2 py-1 text-left font-medium border-b">
+                              <TableHead key={i} className="px-2 py-1 text-left font-medium border-b">
                                 {col}
-                              </th>
+                              </TableHead>
                             ))}
-                          </tr>
-                        </thead>
-                        <tbody>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                           {localResult.rows.slice(0, 10).map((row, i) => (
-                            <tr key={i} className="border-b">
+                            <TableRow key={i} className="border-b">
                               {(row as unknown[]).map((cell, j) => (
-                                <td key={j} className="px-2 py-1 font-mono text-xs">
+                                <TableCell key={j} className="px-2 py-1 font-mono text-xs">
                                   {cell === null ? (
                                     <span className="text-muted-foreground italic">NULL</span>
                                   ) : (
                                     String(cell)
                                   )}
-                                </td>
+                                </TableCell>
                               ))}
-                            </tr>
+                            </TableRow>
                           ))}
-                        </tbody>
-                      </table>
+                        </TableBody>
+                      </Table>
                     </div>
                   )}
                   {localResult.success && localResult.affected_rows > 0 && (
                     <p className="text-sm text-muted-foreground">
-                      {localResult.affected_rows} row(s) affected
+                      {t('page.rowsAffected', { count: localResult.affected_rows })}
                     </p>
                   )}
                 </CardContent>
@@ -438,16 +430,16 @@ export function LessonPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Result</CardTitle>
+                    <CardTitle className="text-base">{t('page.result')}</CardTitle>
                     {currentSubmission.is_correct ? (
-                      <Badge variant="default" className="bg-green-500">
+                      <Badge variant="success">
                         <CheckCircle className="h-3 w-3 mr-1" />
-                        Correct
+                        {t('page.correct')}
                       </Badge>
                     ) : (
                       <Badge variant="destructive">
                         <XCircle className="h-3 w-3 mr-1" />
-                        Incorrect
+                        {t('page.incorrect')}
                       </Badge>
                     )}
                   </div>
@@ -461,31 +453,31 @@ export function LessonPage() {
 
                   {currentSubmission.result && (
                     <div className="overflow-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b">
+                      <Table className="w-full text-sm">
+                        <TableHeader>
+                          <TableRow className="border-b">
                             {currentSubmission.result.columns.map((col: string, i: number) => (
-                              <th key={i} className="px-2 py-1 text-left font-medium">
+                              <TableHead key={i} className="px-2 py-1 text-left font-medium">
                                 {col}
-                              </th>
+                              </TableHead>
                             ))}
-                          </tr>
-                        </thead>
-                        <tbody>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                           {currentSubmission.result.rows.slice(0, 10).map((row: unknown[], i: number) => (
-                            <tr key={i} className="border-b">
+                            <TableRow key={i} className="border-b">
                               {row.map((cell, j) => (
-                                <td key={j} className="px-2 py-1">
+                                <TableCell key={j} className="px-2 py-1">
                                   {String(cell ?? 'NULL')}
-                                </td>
+                                </TableCell>
                               ))}
-                            </tr>
+                            </TableRow>
                           ))}
-                        </tbody>
-                      </table>
+                        </TableBody>
+                      </Table>
                       {currentSubmission.result.row_count > 10 && (
                         <p className="text-xs text-muted-foreground mt-2">
-                          Showing 10 of {currentSubmission.result.row_count} rows
+                          {t('page.showingRows', { shown: 10, total: currentSubmission.result.row_count })}
                         </p>
                       )}
                     </div>
@@ -493,9 +485,9 @@ export function LessonPage() {
 
                   <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
                     <span>
-                      Score: {currentSubmission.score}/{lesson.max_score}
+                      {t('page.score', { score: currentSubmission.score, max: lesson.max_score })}
                     </span>
-                    <span>Time: {currentSubmission.execution_time_ms}ms</span>
+                    <span>{t('page.time', { ms: currentSubmission.execution_time_ms })}</span>
                   </div>
                 </CardContent>
               </Card>

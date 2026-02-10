@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Search, Users, Mail, BookOpen } from 'lucide-react';
 import coursesApi from '@/api/courses';
 import type { Course, Enrollment } from '@/types';
@@ -16,6 +18,7 @@ interface StudentWithCourses {
 }
 
 export function AllStudentsPage() {
+  const { t } = useTranslation('instructor');
   const { data: coursesData, isLoading: coursesLoading } = useCourses();
   const courses = coursesData?.results ?? [];
 
@@ -41,7 +44,6 @@ export function AllStudentsPage() {
   const loading = coursesLoading || enrollmentsLoading;
   const [search, setSearch] = useState('');
 
-  // Group enrollments by student
   const studentMap = new Map<string, StudentWithCourses>();
   allEnrollments.forEach((enrollment) => {
     const studentId = enrollment.student.id;
@@ -66,36 +68,44 @@ export function AllStudentsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Spinner size="lg" />
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-2xl" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-3xl font-bold">Students</h1>
+        <h1 className="text-3xl font-bold">{t('students.allStudentsTitle')}</h1>
         <p className="text-muted-foreground">
-          All students enrolled in your courses
+          {t('students.allStudentsSubtitle')}
         </p>
       </div>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search students..."
+          placeholder={t('students.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
         />
       </div>
 
-      <Card>
+      <Card variant="glass">
         <CardHeader>
-          <CardTitle>All Students</CardTitle>
+          <CardTitle>{t('students.allStudents')}</CardTitle>
           <CardDescription>
-            {students.length} students across {courses.length} courses
+            {t('students.studentsAcrossCourses', {
+              studentCount: students.length,
+              courseCount: courses.length,
+            })}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -103,12 +113,10 @@ export function AllStudentsPage() {
             <div className="text-center py-12">
               <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="font-medium text-lg mb-2">
-                {search ? 'No students found' : 'No students yet'}
+                {search ? t('students.noStudents') : t('students.noStudentsYet')}
               </h3>
               <p className="text-muted-foreground">
-                {search
-                  ? 'Try adjusting your search'
-                  : 'Students will appear here once they enroll in your courses'}
+                {search ? t('students.noStudentsSearch') : t('students.noStudentsEnrolled')}
               </p>
             </div>
           ) : (
@@ -116,12 +124,14 @@ export function AllStudentsPage() {
               {filteredStudents.map((item) => (
                 <div
                   key={item.student.id}
-                  className="flex items-start gap-4 p-4 rounded-lg border"
+                  className="flex items-start gap-4 p-4 rounded-xl border border-border/50 hover:bg-muted/30 transition-colors"
                 >
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-medium shrink-0">
-                    {item.student.first_name[0]}
-                    {item.student.last_name[0]}
-                  </div>
+                  <Avatar>
+                    <AvatarFallback>
+                      {item.student.first_name[0]}
+                      {item.student.last_name[0]}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium">{item.student.full_name}</h3>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
@@ -151,7 +161,7 @@ export function AllStudentsPage() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-sm font-medium">
-                      {item.enrollments.length} course{item.enrollments.length !== 1 ? 's' : ''}
+                      {item.enrollments.length} {item.enrollments.length === 1 ? 'course' : 'courses'}
                     </div>
                   </div>
                 </div>

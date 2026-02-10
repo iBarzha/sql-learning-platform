@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ArrowLeft, Search, Users, Mail, Calendar } from 'lucide-react';
 import { useCourse, useCourseEnrollments } from '@/hooks/queries/useCourses';
 
 export function StudentsPage() {
+  const { t } = useTranslation('instructor');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
 
@@ -25,8 +28,16 @@ export function StudentsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Spinner size="lg" />
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+        </div>
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
     );
   }
@@ -34,22 +45,22 @@ export function StudentsPage() {
   if (!course) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Course not found</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('students.courseNotFound')}</h2>
         <Link to="/my-courses" className="text-primary hover:underline">
-          Back to my courses
+          {t('students.backToMyCourses')}
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Students</h1>
+          <h1 className="text-2xl font-bold">{t('students.title')}</h1>
           <p className="text-muted-foreground">{course.title}</p>
         </div>
       </div>
@@ -57,18 +68,18 @@ export function StudentsPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search students..."
+          placeholder={t('students.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
         />
       </div>
 
-      <Card>
+      <Card variant="glass">
         <CardHeader>
-          <CardTitle>Enrolled Students</CardTitle>
+          <CardTitle>{t('students.enrolledStudents')}</CardTitle>
           <CardDescription>
-            {enrollments.length} students enrolled
+            {t('students.studentsEnrolled', { count: enrollments.length })}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -76,12 +87,10 @@ export function StudentsPage() {
             <div className="text-center py-12">
               <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="font-medium text-lg mb-2">
-                {search ? 'No students found' : 'No students yet'}
+                {search ? t('students.noStudents') : t('students.noStudentsYet')}
               </h3>
               <p className="text-muted-foreground">
-                {search
-                  ? 'Try adjusting your search'
-                  : 'Students will appear here once they enroll'}
+                {search ? t('students.noStudentsSearch') : t('students.adjustSearch')}
               </p>
             </div>
           ) : (
@@ -89,12 +98,14 @@ export function StudentsPage() {
               {filteredEnrollments.map((enrollment) => (
                 <div
                   key={enrollment.id}
-                  className="flex items-center gap-4 p-4 rounded-lg border"
+                  className="flex items-center gap-4 p-4 rounded-xl border border-border/50 hover:bg-muted/30 transition-colors"
                 >
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-medium">
-                    {(enrollment.student.first_name?.[0] ?? '').toUpperCase()}
-                    {(enrollment.student.last_name?.[0] ?? '').toUpperCase()}
-                  </div>
+                  <Avatar>
+                    <AvatarFallback>
+                      {(enrollment.student.first_name?.[0] ?? '').toUpperCase()}
+                      {(enrollment.student.last_name?.[0] ?? '').toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium">{enrollment.student.full_name}</h3>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -111,9 +122,9 @@ export function StudentsPage() {
                   <Badge
                     variant={
                       enrollment.status === 'active'
-                        ? 'default'
+                        ? 'success'
                         : enrollment.status === 'completed'
-                        ? 'secondary'
+                        ? 'default'
                         : 'outline'
                     }
                   >
@@ -122,7 +133,7 @@ export function StudentsPage() {
                   {enrollment.grade !== null && enrollment.grade !== undefined && (
                     <div className="text-right">
                       <div className="font-medium">{enrollment.grade}%</div>
-                      <div className="text-xs text-muted-foreground">Grade</div>
+                      <div className="text-xs text-muted-foreground">{t('students.grade')}</div>
                     </div>
                   )}
                 </div>

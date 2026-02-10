@@ -50,12 +50,12 @@ const submissionsApi = {
 
   // Progress
   getMyProgress: async () => {
-    const response = await apiClient.get<CourseProgress[]>('/progress/my/');
+    const response = await apiClient.get<CourseProgress[]>('/results/my_progress/');
     return response.data;
   },
 
   getCourseProgress: async (courseId: string) => {
-    const response = await apiClient.get<CourseProgress>(`/courses/${courseId}/progress/`);
+    const response = await apiClient.get<CourseProgress>(`/results/my_progress/?course=${courseId}`);
     return response.data;
   },
 };
