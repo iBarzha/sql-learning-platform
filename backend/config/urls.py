@@ -21,6 +21,7 @@ courses_router.register(r'datasets', DatasetViewSet, basename='course-dataset')
 courses_router.register(r'assignments', AssignmentViewSet, basename='course-assignment')
 courses_router.register(r'lessons', LessonViewSet, basename='course-lesson')
 courses_router.register(r'modules', ModuleViewSet, basename='course-module')
+courses_router.register(r'results', UserResultViewSet, basename='course-result')
 
 assignments_router = routers.NestedDefaultRouter(courses_router, r'assignments', lookup='assignment')
 assignments_router.register(r'submissions', SubmissionViewSet, basename='assignment-submission')

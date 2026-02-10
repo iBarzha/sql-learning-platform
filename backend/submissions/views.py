@@ -233,8 +233,8 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         result_serializer = SubmissionResultSerializer(submission)
         return Response(result_serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=['get'])
-    def my_submissions(self, request):
+    @action(detail=False, methods=['get'], url_path='my')
+    def my_submissions(self, request, **kwargs):
         """Get all submissions for the current user."""
         assignment_id = self.kwargs.get('assignment_pk')
         lesson_id = self.kwargs.get('lesson_pk')
@@ -262,7 +262,7 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         assignment_id = self.kwargs.get('assignment_pk')
         lesson_id = self.kwargs.get('lesson_pk')
-        course_id = self.request.query_params.get('course')
+        course_id = self.kwargs.get('course_pk') or self.request.query_params.get('course')
 
         if user.is_instructor:
             queryset = UserResult.objects.filter(
@@ -286,8 +286,15 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
 
         return queryset.select_related('student', 'assignment', 'lesson', 'best_submission')
 
+    @action(detail=False, methods=['get'], url_path='my')
+    def my(self, request, **kwargs):
+        """Get current user's results (filtered by route context)."""
+        queryset = self.get_queryset().filter(student=request.user)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
     @action(detail=False, methods=['get'])
-    def my_progress(self, request):
+    def my_progress(self, request, **kwargs):
         """Get current user's progress across all enrolled courses."""
         results = UserResult.objects.filter(
             student=request.user

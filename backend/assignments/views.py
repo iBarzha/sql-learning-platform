@@ -25,7 +25,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         queryset = Assignment.objects.annotate(
             submission_count=Count('submissions', distinct=True),
             average_score=Avg('submissions__score')
-        )
+        ).order_by('order', 'created_at')
 
         if course_id:
             queryset = queryset.filter(course_id=course_id)

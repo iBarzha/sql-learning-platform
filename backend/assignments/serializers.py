@@ -86,12 +86,13 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Assignment
         fields = [
-            'title', 'description', 'instructions', 'dataset',
+            'id', 'title', 'description', 'instructions', 'dataset',
             'query_type', 'difficulty', 'expected_query', 'expected_result',
             'required_keywords', 'forbidden_keywords', 'order_matters',
             'partial_match', 'max_score', 'time_limit_seconds',
             'max_attempts', 'hints', 'due_date', 'is_published', 'order'
         ]
+        read_only_fields = ['id']
 
 
 class AssignmentInstructorSerializer(AssignmentDetailSerializer):

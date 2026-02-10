@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Optional
 from uuid import UUID
 
@@ -134,6 +135,7 @@ class QueryExecutionService:
                 user_id=user_id,
                 submission_id=submission_id,
                 query=query[:10000],
+                database_type=database_type,
                 execution_time_ms=result.execution_time_ms,
                 success=result.success,
                 error_message=result.error_message[:1000] if result.error_message else '',
@@ -147,11 +149,11 @@ class QueryExecutionService:
 
         try:
             recent_executions = ExecutionLog.objects.filter(
-                created_at__gte=timezone.now() - timezone.timedelta(hours=1)
+                created_at__gte=timezone.now() - timedelta(hours=1)
             ).count()
 
             success_count = ExecutionLog.objects.filter(
-                created_at__gte=timezone.now() - timezone.timedelta(hours=1),
+                created_at__gte=timezone.now() - timedelta(hours=1),
                 success=True
             ).count()
 

@@ -8,7 +8,7 @@ class DatasetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dataset
         fields = [
-            'id', 'name', 'description', 'schema_sql', 'seed_sql',
+            'id', 'name', 'description', 'database_type', 'schema_sql', 'seed_sql',
             'is_default', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -49,14 +49,22 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'instructor', 'created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and not getattr(request.user, 'is_instructor', False):
+            data.pop('enrollment_key', None)
+        return data
+
 
 class CourseCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'title', 'description', 'database_type', 'is_published',
+            'id', 'title', 'description', 'database_type', 'is_published',
             'enrollment_key', 'max_students', 'start_date', 'end_date'
         ]
+        read_only_fields = ['id']
 
     def create(self, validated_data):
         validated_data['instructor'] = self.context['request'].user
@@ -155,6 +163,16 @@ class LessonDetailSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
+class LessonStudentDetailSerializer(LessonDetailSerializer):
+    """Lesson detail for students — hides expected answers."""
+
+    class Meta(LessonDetailSerializer.Meta):
+        fields = [
+            f for f in LessonDetailSerializer.Meta.fields
+            if f not in ('expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords')
+        ]
+
+
 class LessonCreateSerializer(serializers.ModelSerializer):
     dataset_id = serializers.UUIDField(required=False, allow_null=True)
     module_id = serializers.UUIDField(required=False, allow_null=True)
@@ -162,12 +180,13 @@ class LessonCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
         fields = [
-            'title', 'description', 'lesson_type', 'order',
+            'id', 'title', 'description', 'lesson_type', 'order',
             'theory_content', 'practice_description', 'practice_initial_code',
             'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
             'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
             'hints', 'dataset_id', 'module_id', 'is_published'
         ]
+        read_only_fields = ['id']
 
     def create(self, validated_data):
         dataset_id = validated_data.pop('dataset_id', None)
@@ -211,7 +230,8 @@ class ModuleDetailSerializer(serializers.ModelSerializer):
 class ModuleCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Module
-        fields = ['title', 'description', 'order', 'is_published']
+        fields = ['id', 'title', 'description', 'order', 'is_published']
+        read_only_fields = ['id']
 
 
 class AttachmentSerializer(serializers.ModelSerializer):

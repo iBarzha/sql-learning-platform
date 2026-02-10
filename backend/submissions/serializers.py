@@ -5,12 +5,14 @@ from users.serializers import UserSerializer
 
 class SubmissionSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source='student.full_name', read_only=True)
-    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True, allow_null=True)
+    lesson_title = serializers.CharField(source='lesson.title', read_only=True, allow_null=True)
 
     class Meta:
         model = Submission
         fields = [
             'id', 'student', 'student_name', 'assignment', 'assignment_title',
+            'lesson', 'lesson_title',
             'query', 'status', 'result', 'error_message', 'execution_time_ms',
             'score', 'is_correct', 'feedback', 'attempt_number',
             'submitted_at', 'graded_at'
@@ -25,7 +27,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
 class SubmissionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Submission
-        fields = ['assignment', 'query']
+        fields = ['query']
 
 
 class SubmissionResultSerializer(serializers.ModelSerializer):
@@ -42,13 +44,15 @@ class SubmissionResultSerializer(serializers.ModelSerializer):
 
 class UserResultSerializer(serializers.ModelSerializer):
     student = UserSerializer(read_only=True)
-    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True, allow_null=True)
+    lesson_title = serializers.CharField(source='lesson.title', read_only=True, allow_null=True)
     best_submission = SubmissionSerializer(read_only=True)
 
     class Meta:
         model = UserResult
         fields = [
             'id', 'student', 'assignment', 'assignment_title',
+            'lesson', 'lesson_title',
             'best_submission', 'best_score', 'total_attempts',
             'is_completed', 'first_completed_at', 'last_attempt_at'
         ]

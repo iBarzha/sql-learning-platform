@@ -23,6 +23,7 @@ User = get_user_model()
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
+    authentication_classes = []
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
@@ -42,6 +43,7 @@ class RegisterView(generics.CreateAPIView):
 
 
 class LoginView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -144,6 +146,7 @@ class SetPasswordView(APIView):
 
 
 class InviteAcceptView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -198,6 +201,7 @@ class InviteAcceptView(APIView):
 
 class InviteCheckView(APIView):
     """Check if an invitation token is valid."""
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request, token):

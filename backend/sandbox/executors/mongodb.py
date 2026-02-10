@@ -1,6 +1,8 @@
 """MongoDB query executor."""
 
 import json
+import re
+from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import (
     ConnectionFailure,
@@ -152,14 +154,20 @@ class MongoDBExecutor(BaseExecutor):
         # Handle common MongoDB shell formats
         args_str = args_str.strip()
 
+        # Convert MongoDB shell syntax to JSON-compatible format
+        # new Date("...") → {"$date": "..."}
+        args_str = re.sub(r'new Date\("([^"]+)"\)', r'{"$date": "\1"}', args_str)
+        # ObjectId("...") → {"$oid": "..."}
+        args_str = re.sub(r'ObjectId\("([^"]+)"\)', r'{"$oid": "\1"}', args_str)
+
         # Try to parse as JSON array first
         try:
             if not args_str.startswith('['):
                 args_str = f'[{args_str}]'
-            return json.loads(args_str)
+            parsed = json.loads(args_str)
+            return self._convert_special_types(parsed)
         except json.JSONDecodeError:
             # Try with relaxed JSON (single quotes, unquoted keys)
-            import re
             # Replace single quotes with double quotes
             relaxed = re.sub(r"'([^']*)'", r'"\1"', args_str)
             # Quote unquoted keys
@@ -167,9 +175,23 @@ class MongoDBExecutor(BaseExecutor):
             try:
                 if not relaxed.startswith('['):
                     relaxed = f'[{relaxed}]'
-                return json.loads(relaxed)
+                parsed = json.loads(relaxed)
+                return self._convert_special_types(parsed)
             except json.JSONDecodeError:
                 raise ValueError(f'Failed to parse arguments: {args_str}')
+
+    def _convert_special_types(self, obj):
+        """Convert MongoDB extended JSON types ($date, $oid) to Python objects."""
+        if isinstance(obj, dict):
+            if '$date' in obj and len(obj) == 1:
+                try:
+                    return datetime.fromisoformat(obj['$date'].replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    return obj
+            return {k: self._convert_special_types(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._convert_special_types(item) for item in obj]
+        return obj
 
     def _execute_operation(self, collection, operation: str, args: list,
                            timeout: int) -> list | dict:
@@ -181,10 +203,8 @@ class MongoDBExecutor(BaseExecutor):
             'findOne': lambda: collection.find_one(*args, max_time_ms=timeout_ms),
             'insertOne': lambda: {'insertedId': str(collection.insert_one(*args).inserted_id)},
             'insertMany': lambda: {'insertedIds': [str(id) for id in collection.insert_many(*args).inserted_ids]},
-            'updateOne': lambda: {'matchedCount': collection.update_one(*args).matched_count,
-                                  'modifiedCount': collection.update_one(*args).modified_count},
-            'updateMany': lambda: {'matchedCount': collection.update_many(*args).matched_count,
-                                   'modifiedCount': collection.update_many(*args).modified_count},
+            'updateOne': lambda: self._do_update(collection.update_one, args),
+            'updateMany': lambda: self._do_update(collection.update_many, args),
             'deleteOne': lambda: {'deletedCount': collection.delete_one(*args).deleted_count},
             'deleteMany': lambda: {'deletedCount': collection.delete_many(*args).deleted_count},
             'aggregate': lambda: list(collection.aggregate(*args, maxTimeMS=timeout_ms)),
@@ -197,6 +217,15 @@ class MongoDBExecutor(BaseExecutor):
 
         result = op_map[operation]()
         return result if result is not None else {}
+
+    @staticmethod
+    def _do_update(method, args) -> dict:
+        """Execute an update operation once and return both counts."""
+        result = method(*args)
+        return {
+            'matchedCount': result.matched_count,
+            'modifiedCount': result.modified_count,
+        }
 
     def initialize_schema(self, schema_sql: str) -> QueryResult:
         """Initialize MongoDB schema (create collections, indexes)."""

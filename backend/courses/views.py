@@ -5,7 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-from django.db.models import Count, Exists, OuterRef
+from django.db import transaction
+from django.db.models import Count, Exists, OuterRef, Q
 
 from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
 from .serializers import (
@@ -17,6 +18,7 @@ from .serializers import (
     DatasetSerializer,
     LessonListSerializer,
     LessonDetailSerializer,
+    LessonStudentDetailSerializer,
     LessonCreateSerializer,
     ModuleListSerializer,
     ModuleDetailSerializer,
@@ -32,7 +34,7 @@ class CourseViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         queryset = Course.objects.annotate(
-            student_count=Count('enrollments', distinct=True),
+            student_count=Count('enrollments', distinct=True, filter=Q(enrollments__status='active')),
             assignment_count=Count('assignments', distinct=True),
             lesson_count=Count('lessons', distinct=True),
             is_enrolled=Exists(
@@ -42,7 +44,7 @@ class CourseViewSet(viewsets.ModelViewSet):
                     status='active',
                 )
             ),
-        )
+        ).order_by('-created_at')
 
         if user.is_instructor:
             if self.action == 'list':
@@ -82,7 +84,7 @@ class CourseViewSet(viewsets.ModelViewSet):
         ).exclude(
             id__in=enrolled_courses
         ).annotate(
-            student_count=Count('enrollments', distinct=True),
+            student_count=Count('enrollments', distinct=True, filter=Q(enrollments__status='active')),
             assignment_count=Count('assignments', distinct=True),
             lesson_count=Count('lessons', distinct=True),
             is_enrolled=Exists(
@@ -159,6 +161,11 @@ class CourseViewSet(viewsets.ModelViewSet):
 
         new_title = request.data.get('title', f'{course.title} (Copy)')
 
+        with transaction.atomic():
+            return self._do_duplicate(request, course, new_title)
+
+    def _do_duplicate(self, request, course, new_title):
+        """Perform the actual course duplication inside a transaction."""
         # Clone course
         new_course = Course.objects.create(
             title=new_title,
@@ -343,6 +350,11 @@ class LessonViewSet(viewsets.ModelViewSet):
             return LessonListSerializer
         if self.action == 'create':
             return LessonCreateSerializer
+        if self.action in ['update', 'partial_update']:
+            return LessonDetailSerializer
+        # Students get serializer without expected_query/expected_result
+        if not self.request.user.is_instructor:
+            return LessonStudentDetailSerializer
         return LessonDetailSerializer
 
     def get_permissions(self):

@@ -116,6 +116,18 @@ class UserResult(models.Model):
             models.Index(fields=['student', 'assignment']),
             models.Index(fields=['student', 'lesson']),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['student', 'assignment'],
+                name='unique_student_assignment',
+                condition=models.Q(assignment__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=['student', 'lesson'],
+                name='unique_student_lesson',
+                condition=models.Q(lesson__isnull=False),
+            ),
+        ]
 
     def __str__(self):
         target = self.lesson.title if self.lesson else (self.assignment.title if self.assignment else 'Unknown')
