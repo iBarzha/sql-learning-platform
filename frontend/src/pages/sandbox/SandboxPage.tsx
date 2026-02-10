@@ -1,10 +1,26 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import {
+  Table as TableUI,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
 import {
   Play,
   Database,
@@ -25,6 +41,7 @@ import { useSqlite } from '@/hooks/useSqlite';
 import { useDatabaseTypes, useSandboxDatasets } from '@/hooks/queries/useSandbox';
 
 export function SandboxPage() {
+  const { t } = useTranslation('sandbox');
   const [selectedDbType, setSelectedDbType] = useState('sqlite');
   const [selectedDataset, setSelectedDataset] = useState<string>('');
   const [schemaSql, setSchemaSql] = useState('');
@@ -95,7 +112,7 @@ export function SandboxPage() {
 
   function handleDatasetChange(datasetId: string) {
     setSelectedDataset(datasetId);
-    if (datasetId) {
+    if (datasetId && datasetId !== '__custom__') {
       const dataset = datasets.find((d) => d.id === datasetId);
       if (dataset) {
         setSchemaSql(dataset.schema_sql);
@@ -122,12 +139,12 @@ export function SandboxPage() {
       if (isSqlite) {
         // Initialize DB on first execute (or after reset)
         if (!sqliteInitialized) {
-          await sqlite.initDatabase(schemaSql, seedSql);
+          const initResult = await sqlite.initDatabase(schemaSql, seedSql);
+          if (!initResult.success) {
+            setError(initResult.error || 'SQLite initialization failed');
+            return;
+          }
           setSqliteInitialized(true);
-        }
-        if (sqlite.initError) {
-          setError(sqlite.initError);
-          return;
         }
         const localResult = sqlite.execute(query.trim());
         if (localResult) {
@@ -201,21 +218,21 @@ export function SandboxPage() {
   const selectedDbInfo = databaseTypes.find((t) => t.value === selectedDbType);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Database className="h-6 w-6" />
-            SQL Sandbox
+            {t('title')}
           </h1>
           <p className="text-muted-foreground">
-            Practice SQL queries in an isolated environment
+            {t('subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {sessionId && sessionInitialized && (
-            <Badge variant="outline" className="text-green-600 border-green-300">
-              Session Active
+            <Badge variant="success">
+              {t('sessionActive')}
             </Badge>
           )}
           {sessionId && (
@@ -225,7 +242,7 @@ export function SandboxPage() {
               onClick={handleResetSession}
             >
               <RotateCcw className="h-3 w-3 mr-1" />
-              Reset Session
+              {t('resetSession')}
             </Button>
           )}
         </div>
@@ -241,28 +258,29 @@ export function SandboxPage() {
         {/* Left panel: Configuration */}
         <div className="space-y-4">
           {/* Database Type Selection */}
-          <Card>
+          <Card variant="glass">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Database</CardTitle>
+              <CardTitle className="text-base">{t('database')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <select
-                value={selectedDbType}
-                onChange={(e) => {
-                  setSelectedDbType(e.target.value);
-                  setSelectedDataset('');
-                  setSchemaSql('');
-                  setSeedSql('');
-                  setResult(null);
-                }}
-                className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {databaseTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
+              <Select value={selectedDbType} onValueChange={(val) => {
+                setSelectedDbType(val);
+                setSelectedDataset('');
+                setSchemaSql('');
+                setSeedSql('');
+                setResult(null);
+              }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {databaseTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {selectedDbInfo && (
                 <p className="text-xs text-muted-foreground">
                   {selectedDbInfo.description}
@@ -272,10 +290,10 @@ export function SandboxPage() {
           </Card>
 
           {/* Dataset Selection */}
-          <Card>
+          <Card variant="glass">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Dataset</CardTitle>
+                <CardTitle className="text-base">{t('dataset')}</CardTitle>
                 {(schemaSql || seedSql) && (
                   <Button
                     variant="ghost"
@@ -284,37 +302,38 @@ export function SandboxPage() {
                     className="h-7 px-2"
                   >
                     <Trash2 className="h-3 w-3 mr-1" />
-                    Clear
+                    {t('clear')}
                   </Button>
                 )}
               </div>
               <CardDescription>
-                Choose a predefined dataset or create your own
+                {t('datasetDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <select
-                value={selectedDataset}
-                onChange={(e) => handleDatasetChange(e.target.value)}
-                className="w-full px-3 py-2 bg-background border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">Custom schema</option>
-                {datasets.map((dataset) => (
-                  <option key={dataset.id} value={dataset.id}>
-                    {dataset.name}{dataset.course_title ? ` (${dataset.course_title})` : ''}
-                  </option>
-                ))}
-              </select>
+              <Select value={selectedDataset || '__custom__'} onValueChange={(val) => handleDatasetChange(val === '__custom__' ? '' : val)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__custom__">{t('customSchema')}</SelectItem>
+                  {datasets.map((dataset) => (
+                    <SelectItem key={dataset.id} value={dataset.id}>
+                      {dataset.name}{dataset.course_title ? ` (${dataset.course_title})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </CardContent>
           </Card>
 
           {/* Schema Editor */}
-          <Card>
+          <Card variant="glass">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <FileCode className="h-4 w-4" />
-                  Schema
+                  {t('schema')}
                 </CardTitle>
                 <Button
                   variant="ghost"
@@ -322,7 +341,7 @@ export function SandboxPage() {
                   onClick={() => setShowSchema(!showSchema)}
                   className="h-7 px-2"
                 >
-                  {showSchema ? 'Hide' : 'Show'}
+                  {showSchema ? t('hide') : t('show')}
                 </Button>
               </div>
             </CardHeader>
@@ -330,7 +349,7 @@ export function SandboxPage() {
               <CardContent className="space-y-3">
                 <div>
                   <Label className="text-xs text-muted-foreground">
-                    CREATE statements
+                    {t('createStatements')}
                   </Label>
                   <div className="mt-1">
                     <SqlEditor
@@ -343,7 +362,7 @@ export function SandboxPage() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">
-                    Seed data (INSERT statements)
+                    {t('seedData')}
                   </Label>
                   <div className="mt-1">
                     <SqlEditor
@@ -362,11 +381,11 @@ export function SandboxPage() {
         {/* Right panel: Query and Results */}
         <div className="lg:col-span-2 space-y-4">
           {/* Query Editor */}
-          <Card>
+          <Card variant="glass">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Query</CardTitle>
+              <CardTitle className="text-base">{t('query')}</CardTitle>
               <CardDescription>
-                Press Ctrl+Enter to execute. State persists across queries in your session.
+                {t('queryDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -385,7 +404,7 @@ export function SandboxPage() {
                   ) : (
                     <Play className="h-4 w-4 mr-2" />
                   )}
-                  Run Query
+                  {t('runQuery')}
                 </Button>
               </div>
             </CardContent>
@@ -393,23 +412,23 @@ export function SandboxPage() {
 
           {/* Results */}
           {result && (
-            <Card>
+            <Card variant="glass">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Table className="h-4 w-4" />
-                    Results
+                    {t('results')}
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     {result.success ? (
-                      <Badge variant="default" className="bg-green-500">
+                      <Badge variant="success">
                         <CheckCircle className="h-3 w-3 mr-1" />
-                        Success
+                        {t('success')}
                       </Badge>
                     ) : (
                       <Badge variant="destructive">
                         <XCircle className="h-3 w-3 mr-1" />
-                        Error
+                        {t('error')}
                       </Badge>
                     )}
                     <Badge variant="outline">
@@ -429,59 +448,54 @@ export function SandboxPage() {
                 )}
 
                 {result.success && result.columns && result.rows && (
-                  <div className="overflow-auto max-h-96 border rounded-md">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted sticky top-0">
-                        <tr>
+                  <div className="overflow-auto max-h-96 border border-border/50 rounded-xl">
+                    <TableUI>
+                      <TableHeader className="sticky top-0">
+                        <TableRow>
                           {result.columns.map((col, i) => (
-                            <th
-                              key={i}
-                              className="px-3 py-2 text-left font-medium border-b"
-                            >
-                              {col}
-                            </th>
+                            <TableHead key={i}>{col}</TableHead>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {result.rows.length === 0 ? (
-                          <tr>
-                            <td
+                          <TableRow>
+                            <TableCell
                               colSpan={result.columns.length}
-                              className="px-3 py-4 text-center text-muted-foreground"
+                              className="text-center text-muted-foreground py-4"
                             >
-                              No rows returned
-                            </td>
-                          </tr>
+                              {t('noRows')}
+                            </TableCell>
+                          </TableRow>
                         ) : (
                           result.rows.slice(0, 100).map((row, i) => (
-                            <tr key={i} className="border-b hover:bg-muted/50">
+                            <TableRow key={i}>
                               {row.map((cell, j) => (
-                                <td key={j} className="px-3 py-2 font-mono text-xs">
+                                <TableCell key={j}>
                                   {cell === null ? (
                                     <span className="text-muted-foreground italic">NULL</span>
                                   ) : (
                                     String(cell)
                                   )}
-                                </td>
+                                </TableCell>
                               ))}
-                            </tr>
+                            </TableRow>
                           ))
                         )}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </TableUI>
                   </div>
                 )}
 
                 {result.success && result.affected_rows !== undefined && (
                   <p className="text-sm text-muted-foreground">
-                    {result.affected_rows} row(s) affected
+                    {t('rowsAffected', { count: result.affected_rows })}
                   </p>
                 )}
 
                 {result.row_count !== undefined && result.row_count > 100 && (
                   <p className="text-xs text-muted-foreground mt-2">
-                    Showing 100 of {result.row_count} rows
+                    {t('showingRows', { shown: 100, total: result.row_count })}
                   </p>
                 )}
               </CardContent>
@@ -490,13 +504,13 @@ export function SandboxPage() {
 
           {/* Quick examples */}
           {!result && (
-            <Card>
+            <Card variant="glass">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Quick Start</CardTitle>
+                <CardTitle className="text-base">{t('quickStart')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Try these example queries:
+                  {t('tryExamples')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -509,7 +523,7 @@ export function SandboxPage() {
                       setQuery('SELECT * FROM users;');
                     }}
                   >
-                    Basic SELECT
+                    {t('basicSelect')}
                   </Button>
                   <Button
                     variant="outline"
@@ -521,7 +535,7 @@ export function SandboxPage() {
                       setQuery('SELECT category, COUNT(*) as count, AVG(price) as avg_price\nFROM products\nGROUP BY category;');
                     }}
                   >
-                    GROUP BY
+                    {t('groupBy')}
                   </Button>
                   <Button
                     variant="outline"
@@ -533,7 +547,7 @@ export function SandboxPage() {
                       setQuery('SELECT c.name, SUM(o.total) as total_spent\nFROM customers c\nJOIN orders o ON c.id = o.customer_id\nGROUP BY c.id, c.name;');
                     }}
                   >
-                    JOIN
+                    {t('join')}
                   </Button>
                 </div>
               </CardContent>

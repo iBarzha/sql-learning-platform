@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
 import { ArrowLeft, Save } from 'lucide-react';
 import { courseSchema, type CourseFormData } from '@/lib/schemas';
 import { getApiErrorMessage } from '@/lib/utils';
@@ -15,7 +24,7 @@ import { useCourse, useCreateCourse, useUpdateCourse } from '@/hooks/queries/use
 
 const DATABASE_TYPES = [
   { value: 'postgresql', label: 'PostgreSQL' },
-  { value: 'sqlite', label: 'SQLite (runs in browser)' },
+  { value: 'sqlite', label: 'SQLite' },
   { value: 'mysql', label: 'MySQL' },
   { value: 'mariadb', label: 'MariaDB' },
   { value: 'mongodb', label: 'MongoDB' },
@@ -23,6 +32,7 @@ const DATABASE_TYPES = [
 ];
 
 export function CourseFormPage() {
+  const { t } = useTranslation('instructor');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const isEditing = Boolean(courseId);
@@ -41,7 +51,8 @@ export function CourseFormPage() {
     watch,
     formState: { errors, isSubmitting },
   } = useForm<CourseFormData>({
-    resolver: zodResolver(courseSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(courseSchema) as any,
     defaultValues: {
       title: '',
       description: '',
@@ -87,7 +98,7 @@ export function CourseFormPage() {
         navigate(`/courses/${course.id}/manage`);
       }
     } catch (err) {
-      setApiError(getApiErrorMessage(err, 'Failed to save course'));
+      setApiError(getApiErrorMessage(err, t('courseForm.failedSave')));
     }
   }
 
@@ -107,10 +118,10 @@ export function CourseFormPage() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold">
-            {isEditing ? 'Edit Course' : 'Create Course'}
+            {isEditing ? t('courseForm.editTitle') : t('courseForm.createTitle')}
           </h1>
           <p className="text-muted-foreground">
-            {isEditing ? 'Update course details' : 'Set up a new course'}
+            {isEditing ? t('courseForm.editSubtitle') : t('courseForm.createSubtitle')}
           </p>
         </div>
       </div>
@@ -124,16 +135,16 @@ export function CourseFormPage() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <Card>
           <CardHeader>
-            <CardTitle>Course Details</CardTitle>
-            <CardDescription>Basic information about your course</CardDescription>
+            <CardTitle>{t('courseForm.courseDetails')}</CardTitle>
+            <CardDescription>{t('courseForm.courseDetailsDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Title *</Label>
+              <Label htmlFor="title">{t('courseForm.titleRequired')}</Label>
               <Input
                 id="title"
                 {...register('title')}
-                placeholder="e.g., Introduction to SQL"
+                placeholder={t('courseForm.titlePlaceholder')}
               />
               {errors.title && (
                 <p className="text-sm text-destructive">{errors.title.message}</p>
@@ -141,28 +152,29 @@ export function CourseFormPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <textarea
+              <Label htmlFor="description">{t('courseForm.description')}</Label>
+              <Textarea
                 id="description"
                 {...register('description')}
-                placeholder="What will students learn in this course?"
-                className="w-full h-24 p-3 text-sm bg-background border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder={t('courseForm.descriptionPlaceholder')}
+                rows={4}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="database_type">Database Type *</Label>
-              <select
-                id="database_type"
-                {...register('database_type')}
-                className="w-full p-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {DATABASE_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
+              <Label>{t('courseForm.databaseType')} *</Label>
+              <Select value={watch('database_type')} onValueChange={(val) => setValue('database_type', val)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DATABASE_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {errors.database_type && (
                 <p className="text-sm text-destructive">{errors.database_type.message}</p>
               )}
@@ -170,11 +182,11 @@ export function CourseFormPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="start_date">Start Date</Label>
+                <Label htmlFor="start_date">{t('courseForm.startDate')}</Label>
                 <Input id="start_date" type="date" {...register('start_date')} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="end_date">End Date</Label>
+                <Label htmlFor="end_date">{t('courseForm.endDate')}</Label>
                 <Input id="end_date" type="date" {...register('end_date')} />
               </div>
             </div>
@@ -183,24 +195,24 @@ export function CourseFormPage() {
 
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle>Enrollment Settings</CardTitle>
-            <CardDescription>Control who can join your course</CardDescription>
+            <CardTitle>{t('courseForm.enrollmentSettings')}</CardTitle>
+            <CardDescription>{t('courseForm.enrollmentSettingsDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="enrollment_key">Enrollment Key</Label>
+              <Label htmlFor="enrollment_key">{t('courseForm.enrollmentKey')}</Label>
               <Input
                 id="enrollment_key"
                 {...register('enrollment_key')}
-                placeholder="Leave empty for open enrollment"
+                placeholder={t('courseForm.enrollmentKeyPlaceholder')}
               />
               <p className="text-xs text-muted-foreground">
-                Students will need this key to enroll in your course
+                {t('courseForm.enrollmentKeyHelp')}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="max_students">Maximum Students</Label>
+              <Label htmlFor="max_students">{t('courseForm.maxStudents')}</Label>
               <Input
                 id="max_students"
                 type="number"
@@ -212,7 +224,7 @@ export function CourseFormPage() {
                     e.target.value ? parseInt(e.target.value) : undefined
                   )
                 }
-                placeholder="Unlimited"
+                placeholder={t('courseForm.unlimitedPlaceholder')}
               />
             </div>
           </CardContent>
@@ -220,7 +232,7 @@ export function CourseFormPage() {
 
         <div className="flex justify-end gap-2 mt-6">
           <Button type="button" variant="outline" onClick={() => navigate(-1)}>
-            Cancel
+            {t('courseForm.cancel')}
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
@@ -228,7 +240,7 @@ export function CourseFormPage() {
             ) : (
               <Save className="h-4 w-4 mr-2" />
             )}
-            {isEditing ? 'Save Changes' : 'Create Course'}
+            {isEditing ? t('courseForm.saveCourse') : t('courseForm.createCourse')}
           </Button>
         </div>
       </form>

@@ -16,13 +16,18 @@ import {
   type LocalQueryResult,
 } from '@/lib/sqljs';
 
+interface InitResult {
+  success: boolean;
+  error?: string;
+}
+
 interface UseSqliteReturn {
   /** Whether the WASM module and DB are ready. */
   isReady: boolean;
   /** Error during initialization. */
   initError: string | null;
-  /** Initialize (or re-initialize) the database with schema + seed. */
-  initDatabase: (schemaSql: string, seedSql: string) => Promise<void>;
+  /** Initialize (or re-initialize) the database with schema + seed. Returns result directly. */
+  initDatabase: (schemaSql: string, seedSql: string) => Promise<InitResult>;
   /** Execute a query against the local database. */
   execute: (query: string) => LocalQueryResult | null;
   /** Reset DB: drop everything, re-run stored schema + seed. */
@@ -50,7 +55,7 @@ export function useSqlite(): UseSqliteReturn {
     };
   }, []);
 
-  const initDatabase = useCallback(async (schemaSql: string, seedSql: string) => {
+  const initDatabase = useCallback(async (schemaSql: string, seedSql: string): Promise<InitResult> => {
     // Close previous DB
     if (dbRef.current) {
       try {
@@ -69,9 +74,11 @@ export function useSqlite(): UseSqliteReturn {
     try {
       dbRef.current = await createDatabase(schemaSql, seedSql);
       setIsReady(true);
+      return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setInitError(msg);
+      return { success: false, error: msg };
     }
   }, []);
 

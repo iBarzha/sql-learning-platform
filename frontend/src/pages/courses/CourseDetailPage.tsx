@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import { Progress } from '@/components/ui/progress';
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import {
   ArrowLeft,
   CheckCircle,
@@ -33,6 +45,7 @@ const LESSON_TYPE_ICONS = {
 };
 
 function LessonRow({ lesson, index, courseId }: { lesson: Lesson; index: number; courseId: string }) {
+  const { t } = useTranslation('courses');
   const TypeIcon = LESSON_TYPE_ICONS[lesson.lesson_type];
   const hasPractice = lesson.lesson_type === 'practice' || lesson.lesson_type === 'mixed';
 
@@ -50,10 +63,10 @@ function LessonRow({ lesson, index, courseId }: { lesson: Lesson; index: number;
           <Badge variant="outline">
             <TypeIcon className="h-3 w-3 mr-1" />
             {lesson.lesson_type === 'theory'
-              ? 'Theory'
+              ? t('detail.theory')
               : lesson.lesson_type === 'practice'
-              ? 'Practice'
-              : 'Mixed'}
+              ? t('detail.practice')
+              : t('detail.mixed')}
           </Badge>
         </div>
         {lesson.description && (
@@ -64,9 +77,9 @@ function LessonRow({ lesson, index, courseId }: { lesson: Lesson; index: number;
       </div>
       <div className="shrink-0">
         {hasPractice && lesson.user_completed ? (
-          <CheckCircle className="h-5 w-5 text-green-500" />
-        ) : hasPractice && lesson.user_best_score !== null ? (
-          <Clock className="h-5 w-5 text-yellow-500" />
+          <CheckCircle className="h-5 w-5 text-success" />
+        ) : hasPractice && lesson.user_best_score != null ? (
+          <Clock className="h-5 w-5 text-warning" />
         ) : (
           <Play className="h-5 w-5 text-muted-foreground" />
         )}
@@ -84,7 +97,9 @@ function LessonsList({
   modules: Module[];
   courseId: string;
 }) {
-  // No modules — flat list
+  const { t } = useTranslation('courses');
+
+  // No modules -- flat list
   if (modules.length === 0) {
     return (
       <div className="space-y-2">
@@ -142,7 +157,7 @@ function LessonsList({
         <div>
           {sortedModules.length > 0 && (
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-2">
-              Other Lessons
+              {t('detail.otherLessons')}
             </h3>
           )}
           <div className="space-y-2">
@@ -165,6 +180,7 @@ function LessonsList({
 }
 
 export function CourseDetailPage() {
+  const { t } = useTranslation('courses');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -194,19 +210,19 @@ export function CourseDetailPage() {
       setError('');
       await enrollMutation.mutateAsync(enrollmentKey || undefined);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to enroll'));
+      setError(getApiErrorMessage(err, t('detail.failedEnroll')));
     } finally {
       setEnrolling(false);
     }
   }
 
   async function handleUnenroll() {
-    if (!courseId || !confirm('Are you sure you want to unenroll from this course?')) return;
+    if (!courseId) return;
 
     try {
       await unenrollMutation.mutateAsync();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to unenroll'));
+      setError(getApiErrorMessage(err, t('detail.failedUnenroll')));
     }
   }
 
@@ -221,9 +237,9 @@ export function CourseDetailPage() {
   if (!course) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Course not found</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('detail.notFound')}</h2>
         <Link to="/courses" className="text-primary hover:underline">
-          Back to courses
+          {t('detail.backToCourses')}
         </Link>
       </div>
     );
@@ -236,7 +252,7 @@ export function CourseDetailPage() {
   const progressPercent = practiceCount > 0 ? (completedCount / practiceCount) * 100 : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
@@ -252,7 +268,7 @@ export function CourseDetailPage() {
           <Link to={`/courses/${courseId}/manage`}>
             <Button variant="outline">
               <Settings className="h-4 w-4 mr-2" />
-              Manage
+              {t('detail.manage')}
             </Button>
           </Link>
         )}
@@ -268,7 +284,7 @@ export function CourseDetailPage() {
         <div className="md:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>About this course</CardTitle>
+              <CardTitle>{t('detail.aboutCourse')}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="whitespace-pre-wrap">{course.description}</p>
@@ -278,9 +294,9 @@ export function CourseDetailPage() {
           {/* Lessons list */}
           <Card>
             <CardHeader>
-              <CardTitle>Lessons</CardTitle>
+              <CardTitle>{t('detail.lessons')}</CardTitle>
               <CardDescription>
-                {lessons.length} lessons in this course
+                {t('detail.lessonCount', { count: lessons.length })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -288,12 +304,12 @@ export function CourseDetailPage() {
                 <div className="text-center py-8">
                   <Lock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">
-                    Enroll in this course to access lessons
+                    {t('detail.enrollToAccess')}
                   </p>
                 </div>
               ) : lessons.length === 0 ? (
                 <p className="text-center py-8 text-muted-foreground">
-                  No lessons yet
+                  {t('detail.noLessons')}
                 </p>
               ) : (
                 <LessonsList
@@ -310,33 +326,33 @@ export function CourseDetailPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Course Info</CardTitle>
+              <CardTitle>{t('detail.courseInfo')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Students</span>
+                <span className="text-muted-foreground">{t('detail.students')}</span>
                 <div className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
                   <span>{course.student_count}</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Lessons</span>
+                <span className="text-muted-foreground">{t('detail.lessons')}</span>
                 <span>{lessons.length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Database</span>
+                <span className="text-muted-foreground">{t('detail.database')}</span>
                 <Badge variant="outline">{course.database_type}</Badge>
               </div>
               {course.start_date && (
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Start Date</span>
+                  <span className="text-muted-foreground">{t('detail.startDate')}</span>
                   <span>{new Date(course.start_date).toLocaleDateString()}</span>
                 </div>
               )}
               {course.end_date && (
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">End Date</span>
+                  <span className="text-muted-foreground">{t('detail.endDate')}</span>
                   <span>{new Date(course.end_date).toLocaleDateString()}</span>
                 </div>
               )}
@@ -348,7 +364,7 @@ export function CourseDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle>
-                  {course.is_enrolled ? 'Your Progress' : 'Enroll'}
+                  {course.is_enrolled ? t('detail.yourProgress') : t('detail.enroll')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -356,32 +372,45 @@ export function CourseDetailPage() {
                   <div className="space-y-4">
                     <div>
                       <div className="flex items-center justify-between text-sm mb-1">
-                        <span>Progress</span>
+                        <span>{t('detail.progress')}</span>
                         <span>{Math.round(progressPercent)}%</span>
                       </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary transition-all"
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
+                      <Progress value={progressPercent} />
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {completedCount} of {practiceCount} practice lessons completed
+                      {t('detail.completedOf', { completed: completedCount, total: practiceCount })}
                     </p>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleUnenroll}
-                    >
-                      Unenroll
-                    </Button>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" className="w-full">
+                          {t('detail.unenroll')}
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>{t('detail.unenrollConfirmTitle')}</DialogTitle>
+                          <DialogDescription>
+                            {t('detail.unenrollConfirmDescription')}
+                          </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button variant="outline">{t('detail.cancel')}</Button>
+                          </DialogClose>
+                          <DialogClose asChild>
+                            <Button variant="destructive" onClick={handleUnenroll}>
+                              {t('detail.unenroll')}
+                            </Button>
+                          </DialogClose>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {course.enrollment_key !== undefined && (
                       <Input
-                        placeholder="Enrollment key (if required)"
+                        placeholder={t('detail.enrollmentKeyPlaceholder')}
                         value={enrollmentKey}
                         onChange={(e) => setEnrollmentKey(e.target.value)}
                       />
@@ -391,7 +420,7 @@ export function CourseDetailPage() {
                       onClick={handleEnroll}
                       disabled={enrolling}
                     >
-                      {enrolling ? <Spinner size="sm" /> : 'Enroll Now'}
+                      {enrolling ? <Spinner size="sm" /> : t('detail.enrollNow')}
                     </Button>
                   </div>
                 )}

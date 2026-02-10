@@ -1,6 +1,8 @@
 import { useRef, useCallback, useEffect } from 'react';
 import Editor, { type OnMount, type BeforeMount } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
+import { usePreferencesStore } from '@/store/preferencesStore';
+import { registerNobleThemes, NOBLE_DARK, NOBLE_LIGHT } from './monacoThemes';
 
 interface SqlEditorProps {
   value: string;
@@ -29,8 +31,8 @@ const SQL_KEYWORDS = [
   'BEGIN', 'TRANSACTION', 'SCHEMA', 'DATABASE', 'IF', 'CASCADE', 'RESTRICT',
 ];
 
-// Track whether SQL autocomplete provider is already registered (global singleton)
 let sqlProviderRegistered = false;
+let themesRegistered = false;
 
 export function SqlEditor({
   value,
@@ -43,18 +45,26 @@ export function SqlEditor({
   className,
 }: SqlEditorProps) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
-  // Use ref so Monaco action always calls the latest onExecute
   const onExecuteRef = useRef(onExecute);
+  const resolvedTheme = usePreferencesStore((s) => s.resolvedTheme);
+
   useEffect(() => {
     onExecuteRef.current = onExecute;
   }, [onExecute]);
 
+  const monacoTheme = resolvedTheme === 'dark' ? NOBLE_DARK : NOBLE_LIGHT;
+
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
-    // Register SQL autocomplete provider only once globally
+    if (!themesRegistered) {
+      registerNobleThemes(monaco);
+      themesRegistered = true;
+    }
+
     if (language === 'sql' && !sqlProviderRegistered) {
       sqlProviderRegistered = true;
       monaco.languages.registerCompletionItemProvider('sql', {
-        provideCompletionItems: (model, position) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        provideCompletionItems: (model: any, position: any) => {
           const word = model.getWordUntilPosition(position);
           const range = {
             startLineNumber: position.lineNumber,
@@ -80,7 +90,6 @@ export function SqlEditor({
     (editor, monaco) => {
       editorRef.current = editor;
 
-      // Ctrl+Enter to execute — uses ref to always call latest handler
       editor.addAction({
         id: 'execute-query',
         label: 'Execute Query',
@@ -88,14 +97,13 @@ export function SqlEditor({
         run: () => onExecuteRef.current?.(),
       });
 
-      // Focus editor on mount
       editor.focus();
     },
     [],
   );
 
   return (
-    <div className={`rounded-md overflow-hidden border ${className ?? ''}`}>
+    <div className={`rounded-xl overflow-hidden border border-border/50 ${className ?? ''}`}>
       <Editor
         height={height}
         language={language === 'redis' ? 'plaintext' : language}
@@ -130,7 +138,7 @@ export function SqlEditor({
           },
           placeholder: placeholder,
         }}
-        theme="vs-dark"
+        theme={monacoTheme}
       />
     </div>
   );

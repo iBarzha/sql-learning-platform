@@ -1,11 +1,20 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   ArrowLeft,
   Plus,
@@ -35,13 +44,8 @@ const LESSON_TYPE_ICONS = {
   mixed: Layers,
 };
 
-const LESSON_TYPE_LABELS = {
-  theory: 'Theory',
-  practice: 'Practice',
-  mixed: 'Mixed',
-};
-
 export function CourseManagePage() {
+  const { t } = useTranslation('instructor');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
 
@@ -62,6 +66,10 @@ export function CourseManagePage() {
   const [error, setError] = useState('');
   const [newModuleTitle, setNewModuleTitle] = useState('');
   const [showAddModule, setShowAddModule] = useState(false);
+
+  // Dialog state for confirmations
+  const [deleteLessonId, setDeleteLessonId] = useState<string | null>(null);
+  const [deleteModuleId, setDeleteModuleId] = useState<string | null>(null);
 
   async function togglePublish() {
     if (!course) return;
@@ -84,12 +92,14 @@ export function CourseManagePage() {
     }
   }
 
-  async function deleteLesson(lessonId: string) {
-    if (!confirm('Are you sure you want to delete this lesson?')) return;
+  async function confirmDeleteLesson() {
+    if (!deleteLessonId) return;
     try {
-      await deleteLessonMutation.mutateAsync(lessonId);
+      await deleteLessonMutation.mutateAsync(deleteLessonId);
     } catch {
       setError('Failed to delete lesson');
+    } finally {
+      setDeleteLessonId(null);
     }
   }
 
@@ -107,12 +117,14 @@ export function CourseManagePage() {
     }
   }
 
-  async function handleDeleteModule(moduleId: string) {
-    if (!confirm('Delete this module? Lessons will be moved to uncategorized.')) return;
+  async function confirmDeleteModule() {
+    if (!deleteModuleId) return;
     try {
-      await deleteModuleMutation.mutateAsync(moduleId);
+      await deleteModuleMutation.mutateAsync(deleteModuleId);
     } catch {
       setError('Failed to delete module');
+    } finally {
+      setDeleteModuleId(null);
     }
   }
 
@@ -136,16 +148,16 @@ export function CourseManagePage() {
   if (!course) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Course not found</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('courseManage.courseNotFound')}</h2>
         <Link to="/my-courses" className="text-primary hover:underline">
-          Back to my courses
+          {t('courseManage.backToMyCourses')}
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate('/my-courses')}>
           <ArrowLeft className="h-4 w-4" />
@@ -154,18 +166,18 @@ export function CourseManagePage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{course.title}</h1>
             {course.is_published ? (
-              <Badge variant="default">Published</Badge>
+              <Badge variant="default">{t('courseManage.published')}</Badge>
             ) : (
-              <Badge variant="secondary">Draft</Badge>
+              <Badge variant="secondary">{t('courseManage.draft')}</Badge>
             )}
           </div>
-          <p className="text-muted-foreground">Manage course content and settings</p>
+          <p className="text-muted-foreground">{t('courseManage.manageContent')}</p>
         </div>
         <div className="flex gap-2">
           <Link to={`/courses/${courseId}/students`}>
             <Button variant="outline">
               <Users className="h-4 w-4 mr-2" />
-              Students ({course.student_count})
+              {t('courseManage.studentsCount', { count: course.student_count })}
             </Button>
           </Link>
           <Button
@@ -179,12 +191,12 @@ export function CourseManagePage() {
             }}
           >
             <Copy className="h-4 w-4 mr-2" />
-            Duplicate
+            {t('courseManage.duplicate')}
           </Button>
           <Link to={`/courses/${courseId}/edit`}>
             <Button variant="outline">
               <Settings className="h-4 w-4 mr-2" />
-              Settings
+              {t('courseManage.settings')}
             </Button>
           </Link>
           <Button onClick={togglePublish} disabled={publishing}>
@@ -195,7 +207,7 @@ export function CourseManagePage() {
             ) : (
               <Eye className="h-4 w-4 mr-2" />
             )}
-            {course.is_published ? 'Unpublish' : 'Publish'}
+            {course.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
           </Button>
         </div>
       </div>
@@ -208,13 +220,13 @@ export function CourseManagePage() {
 
       {/* Modules */}
       {modules.length > 0 && (
-        <Card>
+        <Card variant="glass">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Modules</CardTitle>
+                <CardTitle>{t('courseManage.modules')}</CardTitle>
                 <CardDescription>
-                  {modules.length} modules in this course
+                  {t('courseManage.modulesCount', { count: modules.length })}
                 </CardDescription>
               </div>
               <Button
@@ -222,7 +234,7 @@ export function CourseManagePage() {
                 onClick={() => setShowAddModule(!showAddModule)}
               >
                 <FolderPlus className="h-4 w-4 mr-2" />
-                Add Module
+                {t('courseManage.addModule')}
               </Button>
             </div>
           </CardHeader>
@@ -230,7 +242,7 @@ export function CourseManagePage() {
             {showAddModule && (
               <div className="flex gap-2 mb-4">
                 <Input
-                  placeholder="Module title..."
+                  placeholder={t('courseManage.moduleTitlePlaceholder')}
                   value={newModuleTitle}
                   onChange={(e) => setNewModuleTitle(e.target.value)}
                   onKeyDown={(e) => {
@@ -241,7 +253,7 @@ export function CourseManagePage() {
                   }}
                 />
                 <Button onClick={handleAddModule} disabled={!newModuleTitle.trim()}>
-                  Add
+                  {t('courseManage.add')}
                 </Button>
               </div>
             )}
@@ -249,7 +261,7 @@ export function CourseManagePage() {
               {modules.map((mod) => (
                 <div
                   key={mod.id}
-                  className="flex items-center gap-4 p-3 rounded-lg border"
+                  className="flex items-center gap-4 p-3 rounded-xl border border-border/50 hover:bg-muted/30 transition-colors"
                 >
                   <div className="text-muted-foreground cursor-move">
                     <GripVertical className="h-5 w-5" />
@@ -257,9 +269,9 @@ export function CourseManagePage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{mod.title}</span>
-                      <Badge variant="outline">{mod.lesson_count} lessons</Badge>
+                      <Badge variant="outline">{mod.lesson_count} {t('courseManage.lessons').toLowerCase()}</Badge>
                       {!mod.is_published && (
-                        <Badge variant="secondary">Draft</Badge>
+                        <Badge variant="secondary">{t('courseManage.draft')}</Badge>
                       )}
                     </div>
                   </div>
@@ -268,7 +280,7 @@ export function CourseManagePage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => toggleModulePublish(mod)}
-                      title={mod.is_published ? 'Unpublish' : 'Publish'}
+                      title={mod.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
                     >
                       {mod.is_published ? (
                         <Eye className="h-4 w-4" />
@@ -279,8 +291,8 @@ export function CourseManagePage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDeleteModule(mod.id)}
-                      title="Delete"
+                      onClick={() => setDeleteModuleId(mod.id)}
+                      title={t('courseManage.deleteModule')}
                       className="text-destructive hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -294,13 +306,13 @@ export function CourseManagePage() {
       )}
 
       {/* Lessons */}
-      <Card>
+      <Card variant="glass">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Lessons</CardTitle>
+              <CardTitle>{t('courseManage.lessons')}</CardTitle>
               <CardDescription>
-                {lessons.length} lessons in this course
+                {t('courseManage.lessonsCount', { count: lessons.length })}
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -310,13 +322,13 @@ export function CourseManagePage() {
                   onClick={() => setShowAddModule(!showAddModule)}
                 >
                   <FolderPlus className="h-4 w-4 mr-2" />
-                  Add Module
+                  {t('courseManage.addModule')}
                 </Button>
               )}
               <Link to={`/courses/${courseId}/lessons/new`}>
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Lesson
+                  {t('courseManage.addLesson')}
                 </Button>
               </Link>
             </div>
@@ -326,7 +338,7 @@ export function CourseManagePage() {
           {modules.length === 0 && showAddModule && (
             <div className="flex gap-2 mb-4">
               <Input
-                placeholder="Module title..."
+                placeholder={t('courseManage.moduleTitlePlaceholder')}
                 value={newModuleTitle}
                 onChange={(e) => setNewModuleTitle(e.target.value)}
                 onKeyDown={(e) => {
@@ -337,21 +349,21 @@ export function CourseManagePage() {
                 }}
               />
               <Button onClick={handleAddModule} disabled={!newModuleTitle.trim()}>
-                Add
+                {t('courseManage.add')}
               </Button>
             </div>
           )}
           {lessons.length === 0 ? (
             <div className="text-center py-12">
               <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-medium text-lg mb-2">No lessons yet</h3>
+              <h3 className="font-medium text-lg mb-2">{t('courseManage.noLessons')}</h3>
               <p className="text-muted-foreground mb-4">
-                Start building your course by adding lessons
+                {t('courseManage.noLessonsDesc')}
               </p>
               <Link to={`/courses/${courseId}/lessons/new`}>
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add First Lesson
+                  {t('courseManage.addFirstLesson')}
                 </Button>
               </Link>
             </div>
@@ -362,7 +374,7 @@ export function CourseManagePage() {
                 return (
                   <div
                     key={lesson.id}
-                    className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                    className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 transition-colors"
                   >
                     <div className="text-muted-foreground cursor-move">
                       <GripVertical className="h-5 w-5" />
@@ -375,11 +387,11 @@ export function CourseManagePage() {
                         <h3 className="font-medium truncate">{lesson.title}</h3>
                         <Badge variant="outline" className="shrink-0">
                           <TypeIcon className="h-3 w-3 mr-1" />
-                          {LESSON_TYPE_LABELS[lesson.lesson_type]}
+                          {t(`courseManage.${lesson.lesson_type}`)}
                         </Badge>
                         {!lesson.is_published && (
                           <Badge variant="secondary" className="shrink-0">
-                            Draft
+                            {t('courseManage.draft')}
                           </Badge>
                         )}
                       </div>
@@ -394,7 +406,7 @@ export function CourseManagePage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => toggleLessonPublish(lesson)}
-                        title={lesson.is_published ? 'Unpublish' : 'Publish'}
+                        title={lesson.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
                       >
                         {lesson.is_published ? (
                           <Eye className="h-4 w-4" />
@@ -410,8 +422,8 @@ export function CourseManagePage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => deleteLesson(lesson.id)}
-                        title="Delete"
+                        onClick={() => setDeleteLessonId(lesson.id)}
+                        title={t('courseManage.deleteLesson')}
                         className="text-destructive hover:text-destructive"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -424,6 +436,46 @@ export function CourseManagePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Lesson Dialog */}
+      <Dialog open={!!deleteLessonId} onOpenChange={(open) => !open && setDeleteLessonId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('courseManage.deleteLesson')}</DialogTitle>
+            <DialogDescription>
+              {t('courseManage.deleteLessonConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteLessonId(null)}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteLesson}>
+              {t('courseManage.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Module Dialog */}
+      <Dialog open={!!deleteModuleId} onOpenChange={(open) => !open && setDeleteModuleId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('courseManage.deleteModule')}</DialogTitle>
+            <DialogDescription>
+              {t('courseManage.deleteModuleConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteModuleId(null)}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteModule}>
+              {t('courseManage.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

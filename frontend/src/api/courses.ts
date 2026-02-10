@@ -60,12 +60,12 @@ const coursesApi = {
   },
 
   getEnrollments: async (id: string) => {
-    const response = await apiClient.get<Enrollment[]>(`/courses/${id}/enrollments/`);
+    const response = await apiClient.get<Enrollment[]>(`/courses/${id}/students/`);
     return response.data;
   },
 
   getMyEnrollments: async () => {
-    const response = await apiClient.get<PaginatedResponse<Enrollment>>('/enrollments/my/');
+    const response = await apiClient.get<PaginatedResponse<Enrollment>>('/enrollments/');
     return response.data;
   },
 

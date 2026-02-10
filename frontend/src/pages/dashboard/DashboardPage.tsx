@@ -1,13 +1,17 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
+import { StatCard } from '@/components/charts/StatCard';
 import { BookOpen, CheckCircle, Clock, TrendingUp, ArrowRight, Sparkles } from 'lucide-react';
 import { useCourses } from '@/hooks/queries/useCourses';
 import { useMyProgress } from '@/hooks/queries/useSubmissions';
 
 export function DashboardPage() {
+  const { t } = useTranslation(['dashboard', 'common']);
   const { user } = useAuthStore();
   const { data: coursesData, isLoading: coursesLoading } = useCourses({ is_published: true });
   const { data: progress = [], isLoading: progressLoading } = useMyProgress();
@@ -17,8 +21,46 @@ export function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <Spinner size="lg" />
+      <div className="space-y-8">
+        {/* Welcome skeleton */}
+        <div className="rounded-2xl bg-gradient-to-r from-primary/10 to-primary/5 p-8">
+          <Skeleton className="h-8 w-64 mb-3" />
+          <Skeleton className="h-5 w-96" />
+        </div>
+
+        {/* Stats skeleton grid */}
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl glass shadow-noble-sm p-5">
+              <div className="flex items-start justify-between">
+                <div className="space-y-3 flex-1">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-16" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+                <Skeleton className="h-10 w-10 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Course list skeleton */}
+        <div className="rounded-2xl glass shadow-noble p-6">
+          <Skeleton className="h-6 w-40 mb-2" />
+          <Skeleton className="h-4 w-56 mb-6" />
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-5 p-5 rounded-xl border border-border/50">
+                <Skeleton className="h-12 w-12 rounded-xl shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+                <Skeleton className="h-2 w-28 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -32,72 +74,60 @@ export function DashboardPage() {
 
   const stats = [
     {
-      label: 'Enrolled Courses',
+      label: t('dashboard:stats.enrolledCourses'),
       value: enrolledCourses.length,
       icon: BookOpen,
       color: 'text-primary',
-      bg: 'bg-primary/10',
     },
     {
-      label: 'Completed',
+      label: t('dashboard:stats.completed'),
       value: totalCompleted,
-      subtitle: `of ${totalAssignments} lessons`,
+      subtitle: t('dashboard:stats.completedSubtitle', { total: totalAssignments }),
       icon: CheckCircle,
-      color: 'text-accent',
-      bg: 'bg-accent/10',
+      color: 'text-success',
     },
     {
-      label: 'In Progress',
+      label: t('dashboard:stats.inProgress'),
       value: totalAssignments - totalCompleted,
       icon: Clock,
-      color: 'text-chart-4',
-      bg: 'bg-chart-4/10',
+      color: 'text-warning',
     },
     {
-      label: 'Avg. Score',
+      label: t('dashboard:stats.avgScore'),
       value: `${avgScore}%`,
       icon: TrendingUp,
-      color: 'text-chart-5',
-      bg: 'bg-chart-5/10',
+      color: 'text-destructive',
     },
   ];
 
   return (
     <div className="space-y-8">
       {/* Welcome section */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
+      <div className="rounded-2xl bg-gradient-to-r from-primary/10 to-primary/5 p-8">
+        <div className="flex items-center gap-2 mb-2">
           <h1 className="text-3xl font-bold tracking-tight">
-            Welcome back, {user?.first_name || 'there'}!
+            {t('dashboard:welcome.title', { name: user?.first_name || t('dashboard:welcome.defaultName') })}
           </h1>
           <Sparkles className="h-6 w-6 text-primary" />
         </div>
         <p className="text-muted-foreground text-lg">
           {user?.role === 'instructor'
-            ? 'Manage your courses and track student progress.'
-            : 'Continue learning and practicing SQL.'}
+            ? t('dashboard:welcome.instructorSubtitle')
+            : t('dashboard:welcome.studentSubtitle')}
         </p>
       </div>
 
       {/* Stats cards */}
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.label} className="relative overflow-hidden">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
-                  <p className="text-3xl font-bold tracking-tight">{stat.value}</p>
-                  {stat.subtitle && (
-                    <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
-                  )}
-                </div>
-                <div className={`${stat.bg} p-3 rounded-xl`}>
-                  <stat.icon className={`h-5 w-5 ${stat.color}`} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatCard
+            key={stat.label}
+            label={stat.label}
+            value={stat.value}
+            subtitle={stat.subtitle}
+            icon={stat.icon}
+            color={stat.color}
+          />
         ))}
       </div>
 
@@ -106,15 +136,15 @@ export function DashboardPage() {
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-xl">Your Courses</CardTitle>
-              <CardDescription className="mt-1">Continue where you left off</CardDescription>
+              <CardTitle className="text-xl">{t('dashboard:courses.title')}</CardTitle>
+              <CardDescription className="mt-1">{t('dashboard:courses.subtitle')}</CardDescription>
             </div>
             {enrolledCourses.length > 0 && (
               <Link
                 to="/courses"
                 className="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
               >
-                View all <ArrowRight className="h-4 w-4" />
+                {t('dashboard:courses.viewAll')} <ArrowRight className="h-4 w-4" />
               </Link>
             )}
           </div>
@@ -125,15 +155,15 @@ export function DashboardPage() {
               <div className="mx-auto h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
                 <BookOpen className="h-8 w-8 text-primary" />
               </div>
-              <h3 className="font-semibold text-lg mb-2">No courses yet</h3>
+              <h3 className="font-semibold text-lg mb-2">{t('dashboard:courses.empty.title')}</h3>
               <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-                Start your SQL learning journey by enrolling in a course.
+                {t('dashboard:courses.empty.description')}
               </p>
               <Link
                 to="/courses"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground font-medium rounded-xl shadow-warm hover:shadow-warm-md transition-all"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground font-medium rounded-xl shadow-noble hover:shadow-noble-md transition-all"
               >
-                Browse courses <ArrowRight className="h-4 w-4" />
+                {t('dashboard:courses.empty.browse')} <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           ) : (
@@ -162,17 +192,12 @@ export function DashboardPage() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground truncate">
-                          by {course.instructor_name}
+                          {t('dashboard:courses.byInstructor', { name: course.instructor_name })}
                         </p>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 w-32">
                         <div className="text-sm font-semibold mb-2">{Math.round(percent)}%</div>
-                        <div className="w-28 h-2 bg-secondary rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all duration-500"
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
+                        <Progress value={percent} className="h-2" />
                       </div>
                     </div>
                   </Link>
