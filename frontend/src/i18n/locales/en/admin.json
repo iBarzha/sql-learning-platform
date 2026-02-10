@@ -1,0 +1,31 @@
+{
+  "settings": {
+    "title": "Settings",
+    "subtitle": "System configuration and administration"
+  },
+  "status": {
+    "title": "System Status",
+    "apiServer": "API Server",
+    "database": "Database",
+    "sandboxPool": "Sandbox Pool",
+    "available": "{{count}} available",
+    "online": "Online",
+    "connected": "Connected"
+  },
+  "dbInfo": {
+    "title": "Database Info",
+    "type": "Type",
+    "host": "Host",
+    "databaseName": "Database Name"
+  },
+  "quickActions": {
+    "title": "Quick Actions",
+    "djangoAdmin": "Django Admin Panel",
+    "apiBrowser": "API Browser"
+  },
+  "config": {
+    "title": "Configuration",
+    "subtitle": "Most settings are managed through Django Admin",
+    "description": "For advanced configuration, use the Django admin panel or edit environment variables in the backend .env file."
+  }
+}

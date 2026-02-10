@@ -1,0 +1,10 @@
+{
+  "tryItYourself": "Try it yourself",
+  "hint": "Hint",
+  "reset": "Reset",
+  "run": "Run",
+  "loading": "Loading...",
+  "writeQuery": "-- Write your query and press Ctrl+Enter",
+  "rowsAffected": "{{count}} row(s) affected",
+  "executionTime": "{{time}}ms"
+}

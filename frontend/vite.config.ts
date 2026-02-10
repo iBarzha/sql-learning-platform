@@ -11,6 +11,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    include: ['sql.js'],
+  },
+  build: {
+    commonjsOptions: {
+      include: [/sql\.js/, /node_modules/],
+    },
+  },
   server: {
     port: 5173,
     proxy: {

@@ -1,0 +1,31 @@
+{
+  "welcome": {
+    "title": "З поверненням, {{name}}!",
+    "defaultName": "Користувач",
+    "instructorSubtitle": "Керуйте курсами та відстежуйте прогрес студентів.",
+    "studentSubtitle": "Продовжуйте вивчення та практику SQL."
+  },
+  "stats": {
+    "enrolledCourses": "Записані курси",
+    "completed": "Завершено",
+    "completedSubtitle": "з {{total}} уроків",
+    "ofLessons": "з {{count}} уроків",
+    "inProgress": "В процесі",
+    "avgScore": "Сер. бал"
+  },
+  "courses": {
+    "title": "Ваші курси",
+    "subtitle": "Продовжуйте з того місця, де зупинилися",
+    "viewAll": "Переглянути все",
+    "byInstructor": "від {{name}}",
+    "noCourses": "Ще немає курсів",
+    "noCoursesDesc": "Почніть вивчення SQL, записавшись на курс.",
+    "browseCourses": "Переглянути курси",
+    "by": "від {{name}}",
+    "empty": {
+      "title": "Ще немає курсів",
+      "description": "Почніть вивчення SQL, записавшись на курс.",
+      "browse": "Переглянути курси"
+    }
+  }
+}

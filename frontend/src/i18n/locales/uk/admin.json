@@ -1,0 +1,31 @@
+{
+  "settings": {
+    "title": "Налаштування",
+    "subtitle": "Конфігурація та адміністрування системи"
+  },
+  "status": {
+    "title": "Стан системи",
+    "apiServer": "API Сервер",
+    "database": "База даних",
+    "sandboxPool": "Пул пісочниць",
+    "available": "{{count}} доступно",
+    "online": "Онлайн",
+    "connected": "Підключено"
+  },
+  "dbInfo": {
+    "title": "Інформація про базу даних",
+    "type": "Тип",
+    "host": "Хост",
+    "databaseName": "База даних"
+  },
+  "quickActions": {
+    "title": "Швидкі дії",
+    "djangoAdmin": "Панель адміністратора Django",
+    "apiBrowser": "Браузер API"
+  },
+  "config": {
+    "title": "Конфігурація",
+    "subtitle": "Більшість налаштувань керується через Django Admin",
+    "description": "Для розширеної конфігурації використовуйте панель Django admin або відредагуйте змінні середовища у файлі .env бекенду."
+  }
+}

@@ -1,63 +1,83 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
-    /* Soft & Warm Theme */
-    --background: 40 33% 98%;
-    --foreground: 20 14% 15%;
+    /* NobleFinance Light Theme */
+    --background: 70 15% 96%;
+    --foreground: 70 10% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 20 14% 15%;
+    --card-foreground: 70 10% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 20 14% 15%;
-    --primary: 24 70% 45%;
+    --popover-foreground: 70 10% 12%;
+    --primary: 90 25% 49%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 30% 94%;
-    --secondary-foreground: 20 14% 25%;
-    --muted: 40 20% 94%;
-    --muted-foreground: 20 10% 45%;
-    --accent: 150 30% 45%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 70% 50%;
+    --secondary: 80 15% 92%;
+    --secondary-foreground: 70 10% 20%;
+    --muted: 80 10% 93%;
+    --muted-foreground: 0 1% 54%;
+    --accent: 80 18% 82%;
+    --accent-foreground: 70 10% 15%;
+    --destructive: 5 60% 52%;
     --destructive-foreground: 0 0% 100%;
-    --border: 30 20% 90%;
-    --input: 30 20% 90%;
-    --ring: 24 70% 45%;
+    --success: 90 25% 49%;
+    --success-foreground: 0 0% 100%;
+    --warning: 40 80% 55%;
+    --warning-foreground: 0 0% 100%;
+    --border: 70 12% 88%;
+    --input: 70 12% 88%;
+    --ring: 90 25% 49%;
     --radius: 0.75rem;
-    --chart-1: 24 70% 50%;
-    --chart-2: 150 40% 45%;
-    --chart-3: 220 50% 55%;
-    --chart-4: 45 80% 55%;
-    --chart-5: 340 65% 55%;
-
-    /* Custom shadows */
-    --shadow-color: 30 30% 50%;
+    --chart-1: 90 25% 49%;
+    --chart-2: 5 60% 52%;
+    --chart-3: 200 40% 50%;
+    --chart-4: 40 80% 55%;
+    --chart-5: 280 40% 55%;
+    --shadow-color: 70 10% 40%;
+    --glass-bg: 0 0% 100% / 0.7;
+    --glass-border: 0 0% 100% / 0.3;
+    --sidebar-bg: 70 10% 93%;
+    --sidebar-border: 70 10% 86%;
+    --sidebar-muted-foreground: 90 18% 35%;
   }
 
   .dark {
-    --background: 20 14% 10%;
-    --foreground: 40 20% 95%;
-    --card: 20 14% 14%;
-    --card-foreground: 40 20% 95%;
-    --popover: 20 14% 14%;
-    --popover-foreground: 40 20% 95%;
-    --primary: 24 70% 55%;
-    --primary-foreground: 20 14% 10%;
-    --secondary: 20 14% 18%;
-    --secondary-foreground: 40 20% 90%;
-    --muted: 20 14% 18%;
-    --muted-foreground: 40 15% 60%;
-    --accent: 150 30% 50%;
-    --accent-foreground: 20 14% 10%;
-    --destructive: 0 62.8% 40%;
-    --destructive-foreground: 40 20% 95%;
-    --border: 20 14% 20%;
-    --input: 20 14% 20%;
-    --ring: 24 70% 55%;
-    --chart-1: 24 80% 60%;
-    --chart-2: 150 50% 50%;
-    --chart-3: 220 60% 60%;
-    --chart-4: 45 90% 60%;
-    --chart-5: 340 75% 60%;
+    /* NobleFinance Dark Theme */
+    --background: 70 8% 11%;
+    --foreground: 80 15% 85%;
+    --card: 70 8% 14%;
+    --card-foreground: 80 15% 85%;
+    --popover: 70 8% 14%;
+    --popover-foreground: 80 15% 85%;
+    --primary: 90 25% 49%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 70 8% 18%;
+    --secondary-foreground: 80 15% 80%;
+    --muted: 70 6% 18%;
+    --muted-foreground: 0 1% 54%;
+    --accent: 80 18% 30%;
+    --accent-foreground: 80 15% 85%;
+    --destructive: 5 60% 45%;
+    --destructive-foreground: 80 15% 95%;
+    --success: 90 30% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 40 80% 50%;
+    --warning-foreground: 0 0% 100%;
+    --border: 70 6% 22%;
+    --input: 70 6% 22%;
+    --ring: 90 25% 49%;
+    --chart-1: 90 30% 55%;
+    --chart-2: 5 65% 55%;
+    --chart-3: 200 50% 55%;
+    --chart-4: 40 85% 58%;
+    --chart-5: 280 50% 60%;
+    --shadow-color: 0 0% 0%;
+    --glass-bg: 70 8% 14% / 0.7;
+    --glass-border: 80 15% 85% / 0.08;
+    --sidebar-bg: 70 8% 13%;
+    --sidebar-border: 70 6% 18%;
+    --sidebar-muted-foreground: 80 10% 60%;
   }
 }
 
@@ -68,25 +88,79 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+    color: hsl(var(--foreground));
+  }
 }
 
 @layer utilities {
-  .shadow-warm-sm {
+  .shadow-noble-sm {
     box-shadow: 0 1px 2px 0 hsl(var(--shadow-color) / 0.04),
-                0 1px 3px 0 hsl(var(--shadow-color) / 0.08);
+                0 1px 3px 0 hsl(var(--shadow-color) / 0.06);
   }
-  .shadow-warm {
+  .shadow-noble {
     box-shadow: 0 2px 4px 0 hsl(var(--shadow-color) / 0.04),
                 0 4px 12px 0 hsl(var(--shadow-color) / 0.08);
   }
-  .shadow-warm-md {
+  .shadow-noble-md {
     box-shadow: 0 4px 6px -1px hsl(var(--shadow-color) / 0.06),
                 0 6px 16px -2px hsl(var(--shadow-color) / 0.10);
   }
-  .shadow-warm-lg {
+  .shadow-noble-lg {
     box-shadow: 0 10px 15px -3px hsl(var(--shadow-color) / 0.08),
                 0 12px 24px -4px hsl(var(--shadow-color) / 0.12);
   }
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--glass-border));
+  }
+  .glass-heavy {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid hsl(var(--glass-border));
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out forwards;
+  }
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out forwards;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @theme inline {
@@ -106,6 +180,10 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -114,9 +192,27 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
+  --color-sidebar-bg: hsl(var(--sidebar-bg));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-muted-foreground: hsl(var(--sidebar-muted-foreground));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+}
+
+.auth-grid-pattern {
+  background-image: radial-gradient(circle, hsl(var(--foreground) / 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(3deg); }
+}
+
+@keyframes float-medium {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-14px) rotate(-2deg); }
 }
