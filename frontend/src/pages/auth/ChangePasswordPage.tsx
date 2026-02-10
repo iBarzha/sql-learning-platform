@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import authApi from '@/api/auth';
 import { getApiErrorMessage } from '@/lib/utils';
@@ -14,6 +15,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/schemas';
 
 export function ChangePasswordPage() {
+  const { t } = useTranslation(['auth', 'common']);
   const navigate = useNavigate();
   const { user, fetchUser } = useAuthStore();
 
@@ -27,7 +29,8 @@ export function ChangePasswordPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<ChangePasswordFormData>({
-    resolver: zodResolver(changePasswordSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(changePasswordSchema) as any,
     defaultValues: {
       old_password: '',
       new_password: '',
@@ -52,7 +55,7 @@ export function ChangePasswordPage() {
       await fetchUser();
       navigate('/', { replace: true });
     } catch (err) {
-      setApiError(getApiErrorMessage(err, 'Failed to change password'));
+      setApiError(getApiErrorMessage(err, t('auth:changePassword.error')));
     } finally {
       setIsLoading(false);
     }
@@ -60,69 +63,78 @@ export function ChangePasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">
-            {mustChangePassword ? 'Set your password' : 'Change password'}
-          </CardTitle>
-          <CardDescription>
-            {mustChangePassword
-              ? 'You must set a new password before continuing'
-              : 'Enter your current and new password'}
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-4">
-            {apiError && (
-              <Alert variant="destructive">
-                <AlertDescription>{apiError}</AlertDescription>
-              </Alert>
-            )}
-            {!mustChangePassword && (
+      <div className="w-full max-w-md">
+        <Card variant="glass" className="shadow-noble-lg animate-fade-in">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl font-bold">
+              {mustChangePassword
+                ? t('auth:changePassword.setTitle')
+                : t('auth:changePassword.title')}
+            </CardTitle>
+            <CardDescription>
+              {mustChangePassword
+                ? t('auth:changePassword.setSubtitle')
+                : t('auth:changePassword.subtitle')}
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <CardContent className="space-y-4">
+              {apiError && (
+                <Alert variant="destructive" className="rounded-xl">
+                  <AlertDescription>{apiError}</AlertDescription>
+                </Alert>
+              )}
+              {!mustChangePassword && (
+                <div className="space-y-2">
+                  <Label htmlFor="old_password">{t('auth:changePassword.currentPassword')}</Label>
+                  <Input
+                    id="old_password"
+                    type="password"
+                    {...register('old_password')}
+                    required={!mustChangePassword}
+                    autoComplete="current-password"
+                    className="h-12"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
-                <Label htmlFor="old_password">Current password</Label>
+                <Label htmlFor="new_password">{t('auth:changePassword.newPassword')}</Label>
                 <Input
-                  id="old_password"
+                  id="new_password"
                   type="password"
-                  {...register('old_password')}
-                  required={!mustChangePassword}
-                  autoComplete="current-password"
+                  {...register('new_password')}
+                  autoComplete="new-password"
+                  className="h-12"
                 />
+                {errors.new_password && (
+                  <p className="text-sm text-destructive">{errors.new_password.message}</p>
+                )}
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="new_password">New password</Label>
-              <Input
-                id="new_password"
-                type="password"
-                {...register('new_password')}
-                autoComplete="new-password"
-              />
-              {errors.new_password && (
-                <p className="text-sm text-destructive">{errors.new_password.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new_password_confirm">Confirm new password</Label>
-              <Input
-                id="new_password_confirm"
-                type="password"
-                {...register('new_password_confirm')}
-                autoComplete="new-password"
-              />
-              {errors.new_password_confirm && (
-                <p className="text-sm text-destructive">{errors.new_password_confirm.message}</p>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? <Spinner size="sm" className="mr-2" /> : null}
-              {mustChangePassword ? 'Set password' : 'Change password'}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
+              <div className="space-y-2">
+                <Label htmlFor="new_password_confirm">{t('auth:changePassword.confirmNewPassword')}</Label>
+                <Input
+                  id="new_password_confirm"
+                  type="password"
+                  {...register('new_password_confirm')}
+                  autoComplete="new-password"
+                  className="h-12"
+                />
+                {errors.new_password_confirm && (
+                  <p className="text-sm text-destructive">{errors.new_password_confirm.message}</p>
+                )}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button type="submit" className="w-full h-12" disabled={isLoading}>
+                {isLoading ? <Spinner size="sm" className="mr-2" /> : null}
+                {mustChangePassword
+                  ? t('auth:changePassword.setSubmit')
+                  : t('auth:changePassword.submit')}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }
