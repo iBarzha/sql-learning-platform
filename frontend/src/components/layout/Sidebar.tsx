@@ -97,31 +97,33 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               return (
                 <Tooltip key={item.to}>
                   <TooltipTrigger asChild>
-                    <NavLink
-                      to={item.to}
-                      end={item.to === '/'}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center h-12 w-full rounded-xl transition-colors duration-200',
-                          isActive
-                            ? 'bg-primary text-primary-foreground shadow-noble-sm'
-                            : 'text-sidebar-muted-foreground hover:bg-secondary hover:text-foreground'
-                        )
-                      }
-                    >
-                      <div className="flex items-center justify-center w-12 shrink-0">
-                        <Icon className="h-5 w-5 transition-transform duration-300 group-hover/sidebar:scale-110 group-hover/sidebar:-rotate-6" />
-                      </div>
-                      <span
-                        className={cn(
-                          'text-sm font-medium whitespace-nowrap',
-                          'opacity-0 group-hover/sidebar:opacity-100',
-                          'transition-opacity duration-200 delay-75'
-                        )}
+                    <div className="w-full">
+                      <NavLink
+                        to={item.to}
+                        end={item.to === '/'}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center h-12 w-full rounded-xl transition-colors duration-200',
+                            isActive
+                              ? 'bg-primary text-primary-foreground shadow-noble-sm'
+                              : 'text-sidebar-muted-foreground hover:bg-secondary hover:text-foreground'
+                          )
+                        }
                       >
-                        {label}
-                      </span>
-                    </NavLink>
+                        <div className="flex items-center justify-center w-12 shrink-0">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <span
+                          className={cn(
+                            'text-sm font-medium whitespace-nowrap',
+                            'opacity-0 group-hover/sidebar:opacity-100',
+                            'transition-opacity duration-200 delay-75'
+                          )}
+                        >
+                          {label}
+                        </span>
+                      </NavLink>
+                    </div>
                   </TooltipTrigger>
                   <TooltipContent
                     side="right"
