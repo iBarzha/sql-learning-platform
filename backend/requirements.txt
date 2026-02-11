@@ -12,6 +12,7 @@ drf-nested-routers==0.95.0
 gunicorn==25.0.1
 idna==3.11
 packaging==26.0
+Pillow==11.2.1
 psycopg2-binary==2.9.11
 PyJWT==2.11.0
 pymongo==4.16.0
