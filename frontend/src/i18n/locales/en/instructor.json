@@ -27,16 +27,12 @@
     "endDate": "End Date",
     "enrollmentSettings": "Enrollment Settings",
     "enrollmentSettingsDesc": "Control who can join",
-    "enrollmentKey": "Enrollment Key",
-    "enrollmentKeyDesc": "Students will need this key to enroll",
     "maxStudents": "Max Students",
     "saveCourse": "Save Changes",
     "createCourse": "Create Course",
     "cancel": "Cancel",
     "titlePlaceholder": "e.g., Introduction to SQL",
     "descriptionPlaceholder": "What will students learn in this course?",
-    "enrollmentKeyPlaceholder": "Leave empty for open enrollment",
-    "enrollmentKeyHelp": "Students will need this key to enroll in your course",
     "unlimitedPlaceholder": "Unlimited",
     "titleRequired": "Title *",
     "failedSave": "Failed to save course"
@@ -72,7 +68,11 @@
     "cancel": "Cancel",
     "theory": "Theory",
     "practice": "Practice",
-    "mixed": "Mixed"
+    "mixed": "Mixed",
+    "courseCode": "Course Code",
+    "courseCodeDesc": "Share this code with your students",
+    "copyCode": "Copy",
+    "codeCopied": "Copied!"
   },
   "lessonForm": {
     "createTitle": "New Lesson",

@@ -27,16 +27,12 @@
     "endDate": "Дата закінчення",
     "enrollmentSettings": "Налаштування запису",
     "enrollmentSettingsDesc": "Контролюйте хто може приєднатися",
-    "enrollmentKey": "Ключ реєстрації",
-    "enrollmentKeyDesc": "Студентам потрібен цей ключ для запису",
     "maxStudents": "Максимум студентів",
     "saveCourse": "Зберегти зміни",
     "createCourse": "Створити курс",
     "cancel": "Скасувати",
     "titlePlaceholder": "напр., Вступ до SQL",
     "descriptionPlaceholder": "Що вивчатимуть студенти на цьому курсі?",
-    "enrollmentKeyPlaceholder": "Залиште порожнім для відкритого запису",
-    "enrollmentKeyHelp": "Студентам потрібен цей ключ для запису на курс",
     "unlimitedPlaceholder": "Необмежено",
     "titleRequired": "Назва *",
     "failedSave": "Не вдалося зберегти курс"
@@ -72,7 +68,11 @@
     "cancel": "Скасувати",
     "theory": "Теорія",
     "practice": "Практика",
-    "mixed": "Змішаний"
+    "mixed": "Змішаний",
+    "courseCode": "Код курсу",
+    "courseCodeDesc": "Поділіться цим кодом зі студентами",
+    "copyCode": "Копіювати",
+    "codeCopied": "Скопійовано!"
   },
   "lessonForm": {
     "createTitle": "Новий урок",

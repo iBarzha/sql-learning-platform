@@ -10,7 +10,14 @@
     "lessons": "{{count}} lessons",
     "lessonCount": "{{count}} lessons",
     "enrolled": "Enrolled",
-    "noDescription": "No description"
+    "noDescription": "No description",
+    "joinByCode": "Join by Code",
+    "joinByCodePlaceholder": "Enter course code",
+    "joinByCodeDesc": "Enter the code provided by your instructor",
+    "join": "Join",
+    "joinSuccess": "Successfully joined the course!",
+    "joinError": "Failed to join course",
+    "invalidCode": "Invalid course code"
   },
   "detail": {
     "aboutCourse": "About this course",
@@ -24,8 +31,6 @@
     "endDate": "End Date",
     "enroll": "Enroll",
     "enrollNow": "Enroll Now",
-    "enrollmentKey": "Enrollment key (if required)",
-    "enrollmentKeyPlaceholder": "Enter enrollment key",
     "unenroll": "Unenroll",
     "unenrollConfirmTitle": "Unenroll from course?",
     "unenrollConfirmDescription": "Are you sure you want to unenroll? You'll lose access to course materials.",
@@ -46,7 +51,10 @@
     "theory": "Theory",
     "practice": "Practice",
     "mixed": "Mixed",
-    "otherLessons": "Other Lessons"
+    "otherLessons": "Other Lessons",
+    "courseCode": "Course Code",
+    "copyCode": "Copy code",
+    "codeCopied": "Code copied!"
   },
   "types": {
     "theory": "Theory",

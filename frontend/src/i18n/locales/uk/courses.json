@@ -10,7 +10,14 @@
     "lessons": "{{count}} уроків",
     "lessonCount": "{{count}} уроків",
     "enrolled": "Записані",
-    "noDescription": "Без опису"
+    "noDescription": "Без опису",
+    "joinByCode": "Приєднатися за кодом",
+    "joinByCodePlaceholder": "Введіть код курсу",
+    "joinByCodeDesc": "Введіть код, наданий вашим викладачем",
+    "join": "Приєднатися",
+    "joinSuccess": "Успішно приєднано до курсу!",
+    "joinError": "Не вдалося приєднатися",
+    "invalidCode": "Невірний код курсу"
   },
   "detail": {
     "aboutCourse": "Про курс",
@@ -24,8 +31,6 @@
     "endDate": "Дата закінчення",
     "enroll": "Записатися",
     "enrollNow": "Записатися зараз",
-    "enrollmentKey": "Ключ реєстрації (якщо потрібен)",
-    "enrollmentKeyPlaceholder": "Введіть ключ реєстрації",
     "unenroll": "Відписатися",
     "unenrollConfirmTitle": "Відписатися від курсу?",
     "unenrollConfirmDescription": "Ви впевнені? Ви втратите доступ до матеріалів курсу.",
@@ -46,7 +51,10 @@
     "theory": "Теорія",
     "practice": "Практика",
     "mixed": "Змішаний",
-    "otherLessons": "Інші уроки"
+    "otherLessons": "Інші уроки",
+    "courseCode": "Код курсу",
+    "copyCode": "Копіювати код",
+    "codeCopied": "Код скопійовано!"
   },
   "types": {
     "theory": "Теорія",
