@@ -63,9 +63,20 @@ export function useUpdateCourse(courseId: string) {
 export function useEnrollCourse(courseId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (enrollmentKey?: string) => coursesApi.enroll(courseId, enrollmentKey),
+    mutationFn: () => coursesApi.enroll(courseId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['course', courseId] });
+      qc.invalidateQueries({ queryKey: ['courses'] });
+      qc.invalidateQueries({ queryKey: ['enrollments'] });
+    },
+  });
+}
+
+export function useJoinByCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => coursesApi.joinByCode(code),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['courses'] });
       qc.invalidateQueries({ queryKey: ['enrollments'] });
     },

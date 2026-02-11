@@ -29,7 +29,7 @@ export interface Course {
   instructor_name?: string;
   database_type: 'postgresql' | 'sqlite' | 'mysql' | 'mariadb' | 'mongodb' | 'redis';
   is_published: boolean;
-  enrollment_key?: string;
+  course_code?: string;
   max_students?: number;
   start_date?: string;
   end_date?: string;

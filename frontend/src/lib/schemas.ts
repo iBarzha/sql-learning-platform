@@ -39,7 +39,6 @@ export const courseSchema = z.object({
   title: z.string().min(1, 'Title is required').max(255),
   description: z.string().default(''),
   database_type: z.string().min(1, 'Database type is required'),
-  enrollment_key: z.string().default(''),
   max_students: z.number().positive().optional().nullable(),
   start_date: z.string().default(''),
   end_date: z.string().default(''),

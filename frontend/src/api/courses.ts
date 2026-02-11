@@ -5,7 +5,6 @@ export interface CreateCourseData {
   title: string;
   description: string;
   database_type: string;
-  enrollment_key?: string;
   max_students?: number;
   start_date?: string;
   end_date?: string;
@@ -48,10 +47,13 @@ const coursesApi = {
     await apiClient.delete(`/courses/${id}/`);
   },
 
-  enroll: async (id: string, enrollmentKey?: string) => {
-    const response = await apiClient.post<Enrollment>(`/courses/${id}/enroll/`, {
-      enrollment_key: enrollmentKey,
-    });
+  enroll: async (id: string) => {
+    const response = await apiClient.post<Enrollment>(`/courses/${id}/enroll/`);
+    return response.data;
+  },
+
+  joinByCode: async (code: string) => {
+    const response = await apiClient.post<Course>('/courses/join/', { code });
     return response.data;
   },
 
