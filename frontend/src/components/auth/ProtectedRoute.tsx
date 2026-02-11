@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ChangePasswordPage } from '@/pages/auth/ChangePasswordPage';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -34,8 +35,9 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (user.must_change_password && location.pathname !== '/change-password') {
-    return <Navigate to="/change-password" replace />;
+  // Force profile completion — render fullscreen, no sidebar, no navigation
+  if (user.must_change_password) {
+    return <ChangePasswordPage />;
   }
 
   if (requiredRole) {

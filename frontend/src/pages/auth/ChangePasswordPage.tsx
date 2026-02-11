@@ -21,6 +21,8 @@ export function ChangePasswordPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
 
   const mustChangePassword = user?.must_change_password;
 
@@ -47,6 +49,8 @@ export function ChangePasswordPage() {
         await authApi.setPassword({
           new_password: data.new_password,
           new_password_confirm: data.new_password_confirm,
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
         });
       } else {
         await authApi.changePassword(data);
@@ -68,12 +72,12 @@ export function ChangePasswordPage() {
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold">
               {mustChangePassword
-                ? t('auth:changePassword.setTitle')
+                ? t('auth:changePassword.completeProfileTitle')
                 : t('auth:changePassword.title')}
             </CardTitle>
             <CardDescription>
               {mustChangePassword
-                ? t('auth:changePassword.setSubtitle')
+                ? t('auth:changePassword.completeProfileSubtitle')
                 : t('auth:changePassword.subtitle')}
             </CardDescription>
           </CardHeader>
@@ -83,6 +87,32 @@ export function ChangePasswordPage() {
                 <Alert variant="destructive" className="rounded-xl">
                   <AlertDescription>{apiError}</AlertDescription>
                 </Alert>
+              )}
+              {mustChangePassword && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="first_name">{t('auth:fields.firstName')}</Label>
+                    <Input
+                      id="first_name"
+                      placeholder={t('auth:fields.firstNamePlaceholder')}
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      autoComplete="given-name"
+                      className="h-12"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="last_name">{t('auth:fields.lastName')}</Label>
+                    <Input
+                      id="last_name"
+                      placeholder={t('auth:fields.lastNamePlaceholder')}
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      autoComplete="family-name"
+                      className="h-12"
+                    />
+                  </div>
+                </div>
               )}
               {!mustChangePassword && (
                 <div className="space-y-2">
