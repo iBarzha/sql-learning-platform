@@ -6,9 +6,65 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ArrowLeft, Search, Users, Mail, Calendar } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ArrowLeft, Search, Users, Mail, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCourse, useCourseEnrollments } from '@/hooks/queries/useCourses';
+import { useStudentProgress } from '@/hooks/queries/useSubmissions';
+import type { CourseProgress } from '@/types';
+
+function StudentGrades({ studentId }: { studentId: string }) {
+  const { t } = useTranslation('instructor');
+  const { data: progress, isLoading } = useStudentProgress(studentId);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-4">
+        <Spinner size="sm" />
+      </div>
+    );
+  }
+
+  if (!progress || progress.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-2 px-4">
+        {t('students.noProgress')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {progress.map((cp: CourseProgress) => (
+        <div
+          key={cp.course_id}
+          className="flex items-center gap-4 p-3 rounded-lg bg-muted/30"
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">{cp.course_title}</p>
+            <p className="text-xs text-muted-foreground">
+              {t('students.tasks', {
+                completed: cp.completed_assignments,
+                total: cp.total_assignments,
+              })}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-24 h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${Math.min(cp.completion_rate, 100)}%` }}
+              />
+            </div>
+            <Badge variant="outline" className="min-w-[3rem] justify-center">
+              {Math.round(cp.percentage_score)}%
+            </Badge>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function StudentsPage() {
   const { t } = useTranslation('instructor');
@@ -19,12 +75,17 @@ export function StudentsPage() {
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useCourseEnrollments(courseId);
   const loading = courseLoading || enrollmentsLoading;
   const [search, setSearch] = useState('');
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
 
   const filteredEnrollments = enrollments.filter(
     (e) =>
       e.student.full_name.toLowerCase().includes(search.toLowerCase()) ||
       e.student.email.toLowerCase().includes(search.toLowerCase())
   );
+
+  function toggleExpand(studentId: string) {
+    setExpandedStudentId((prev) => (prev === studentId ? null : studentId));
+  }
 
   if (loading) {
     return (
@@ -95,49 +156,79 @@ export function StudentsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredEnrollments.map((enrollment) => (
-                <div
-                  key={enrollment.id}
-                  className="flex items-center gap-4 p-4 rounded-xl border border-border/50 hover:bg-muted/30 transition-colors"
-                >
-                  <Avatar>
-                    <AvatarFallback>
-                      {(enrollment.student.first_name?.[0] ?? '').toUpperCase()}
-                      {(enrollment.student.last_name?.[0] ?? '').toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium">{enrollment.student.full_name}</h3>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Mail className="h-3 w-3" />
-                        {enrollment.student.email}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(enrollment.enrolled_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                  <Badge
-                    variant={
-                      enrollment.status === 'active'
-                        ? 'success'
-                        : enrollment.status === 'completed'
-                        ? 'default'
-                        : 'outline'
-                    }
+              {filteredEnrollments.map((enrollment) => {
+                const isExpanded = expandedStudentId === enrollment.student.id;
+                return (
+                  <div
+                    key={enrollment.id}
+                    className="rounded-xl border border-border/50 transition-colors"
                   >
-                    {enrollment.status}
-                  </Badge>
-                  {enrollment.grade !== null && enrollment.grade !== undefined && (
-                    <div className="text-right">
-                      <div className="font-medium">{enrollment.grade}%</div>
-                      <div className="text-xs text-muted-foreground">{t('students.grade')}</div>
+                    <div
+                      className="flex items-center gap-4 p-4 hover:bg-muted/30 cursor-pointer"
+                      onClick={() => toggleExpand(enrollment.student.id)}
+                    >
+                      <Avatar>
+                        {enrollment.student.avatar_url ? (
+                          <AvatarImage
+                            src={enrollment.student.avatar_url}
+                            alt={enrollment.student.full_name}
+                          />
+                        ) : (
+                          <AvatarFallback>
+                            {(enrollment.student.first_name?.[0] ?? '').toUpperCase()}
+                            {(enrollment.student.last_name?.[0] ?? '').toUpperCase()}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium">{enrollment.student.full_name}</h3>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Mail className="h-3 w-3" />
+                            {enrollment.student.email}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(enrollment.enrolled_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                      <Badge
+                        variant={
+                          enrollment.status === 'active'
+                            ? 'success'
+                            : enrollment.status === 'completed'
+                            ? 'default'
+                            : 'outline'
+                        }
+                      >
+                        {enrollment.status}
+                      </Badge>
+                      {enrollment.grade !== null && enrollment.grade !== undefined && (
+                        <div className="text-right">
+                          <div className="font-medium">{enrollment.grade}%</div>
+                          <div className="text-xs text-muted-foreground">{t('students.grade')}</div>
+                        </div>
+                      )}
+                      <Button variant="ghost" size="icon" className="shrink-0">
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
-                  )}
-                </div>
-              ))}
+                    {isExpanded && (
+                      <div className="border-t border-border/50 p-4">
+                        <h4 className="text-sm font-medium mb-3">
+                          {t('students.studentGrades')}
+                        </h4>
+                        <StudentGrades studentId={enrollment.student.id} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

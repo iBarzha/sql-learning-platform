@@ -58,6 +58,13 @@ const submissionsApi = {
     const response = await apiClient.get<CourseProgress>(`/results/my_progress/?course=${courseId}`);
     return response.data;
   },
+
+  getStudentProgress: async (studentId: string) => {
+    const response = await apiClient.get<CourseProgress[]>(
+      `/results/student_progress/?student=${studentId}`
+    );
+    return response.data;
+  },
 };
 
 export default submissionsApi;
