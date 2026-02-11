@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Database, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
+import logoImg from '@/assets/logo.png';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from './ThemeToggle';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -32,9 +33,14 @@ export function Header({ onMenuClick }: HeaderProps) {
           to="/"
           className="flex items-center gap-3 font-semibold text-lg"
         >
-          <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-noble-sm">
-            <Database className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <img
+            src={logoImg}
+            alt="Logo"
+            width={36}
+            height={36}
+            className="h-9 w-9 object-contain drop-shadow-sm"
+            style={{ imageRendering: 'auto' }}
+          />
           <span className="hidden md:inline text-foreground">
             {t('common:branding.name')}
           </span>
