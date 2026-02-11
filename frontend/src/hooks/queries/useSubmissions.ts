@@ -41,3 +41,11 @@ export function useMyResults(courseId: string | undefined) {
     enabled: !!courseId,
   });
 }
+
+export function useStudentProgress(studentId: string | undefined) {
+  return useQuery({
+    queryKey: ['student', studentId, 'progress'],
+    queryFn: () => submissionsApi.getStudentProgress(studentId!),
+    enabled: !!studentId,
+  });
+}
