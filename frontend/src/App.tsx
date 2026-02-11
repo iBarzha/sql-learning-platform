@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import { usePreferencesStore } from '@/store/preferencesStore';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { MainLayout } from '@/components/layout';
-import { LoginPage, RegisterPage, ChangePasswordPage } from '@/pages/auth';
+import { LoginPage, ChangePasswordPage } from '@/pages/auth';
 import { DashboardPage } from '@/pages/dashboard';
 import { CoursesListPage, CourseDetailPage } from '@/pages/courses';
 import { LessonPage } from '@/pages/lessons';
@@ -22,7 +22,7 @@ import {
   StudentsPage,
   AllStudentsPage,
 } from '@/pages/instructor';
-import { SettingsPage } from '@/pages/admin';
+import { SettingsPage, UserManagementPage } from '@/pages/admin';
 import { Spinner } from '@/components/ui/spinner';
 
 function AppRoutes() {
@@ -57,10 +57,6 @@ function AppRoutes() {
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
-      />
-      <Route
-        path="/register"
-        element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterPage />}
       />
 
       {/* Protected routes with layout */}
@@ -119,6 +115,10 @@ function AppRoutes() {
         <Route
           path="settings"
           element={isAdmin ? <SettingsPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="users"
+          element={isAdmin ? <UserManagementPage /> : <Navigate to="/" replace />}
         />
       </Route>
 
