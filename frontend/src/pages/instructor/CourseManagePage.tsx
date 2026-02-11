@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +30,8 @@ import {
   Users,
   FolderPlus,
   Copy,
+  ClipboardCopy,
+  Check,
 } from 'lucide-react';
 import lessonsApi, { type Lesson } from '@/api/lessons';
 import modulesApi from '@/api/modules';
@@ -67,9 +69,19 @@ export function CourseManagePage() {
   const [newModuleTitle, setNewModuleTitle] = useState('');
   const [showAddModule, setShowAddModule] = useState(false);
 
+  const [codeCopied, setCodeCopied] = useState(false);
+
   // Dialog state for confirmations
   const [deleteLessonId, setDeleteLessonId] = useState<string | null>(null);
   const [deleteModuleId, setDeleteModuleId] = useState<string | null>(null);
+
+  const handleCopyCode = useCallback(() => {
+    if (course?.course_code) {
+      navigator.clipboard.writeText(course.course_code);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  }, [course?.course_code]);
 
   async function togglePublish() {
     if (!course) return;
@@ -171,7 +183,33 @@ export function CourseManagePage() {
               <Badge variant="secondary">{t('courseManage.draft')}</Badge>
             )}
           </div>
-          <p className="text-muted-foreground">{t('courseManage.manageContent')}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-muted-foreground">{t('courseManage.manageContent')}</p>
+            {course.course_code && (
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className="text-xs text-muted-foreground">{t('courseManage.courseCode')}:</span>
+                <Badge variant="outline" className="font-mono text-sm tracking-wider px-2.5 py-0.5">
+                  {course.course_code}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={handleCopyCode}
+                  title={t('courseManage.copyCode')}
+                >
+                  {codeCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <ClipboardCopy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                {codeCopied && (
+                  <span className="text-xs text-green-500">{t('courseManage.codeCopied')}</span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
           <Link to={`/courses/${courseId}/students`}>

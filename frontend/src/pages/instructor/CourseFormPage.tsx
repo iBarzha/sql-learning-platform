@@ -57,7 +57,6 @@ export function CourseFormPage() {
       title: '',
       description: '',
       database_type: 'postgresql',
-      enrollment_key: '',
       max_students: undefined,
       start_date: '',
       end_date: '',
@@ -71,7 +70,6 @@ export function CourseFormPage() {
         title: existingCourse.title,
         description: existingCourse.description,
         database_type: existingCourse.database_type,
-        enrollment_key: existingCourse.enrollment_key || '',
         max_students: existingCourse.max_students ?? undefined,
         start_date: existingCourse.start_date || '',
         end_date: existingCourse.end_date || '',
@@ -84,7 +82,6 @@ export function CourseFormPage() {
     try {
       const payload = {
         ...data,
-        enrollment_key: data.enrollment_key || undefined,
         max_students: data.max_students || undefined,
         start_date: data.start_date || undefined,
         end_date: data.end_date || undefined,
@@ -199,18 +196,6 @@ export function CourseFormPage() {
             <CardDescription>{t('courseForm.enrollmentSettingsDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="enrollment_key">{t('courseForm.enrollmentKey')}</Label>
-              <Input
-                id="enrollment_key"
-                {...register('enrollment_key')}
-                placeholder={t('courseForm.enrollmentKeyPlaceholder')}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('courseForm.enrollmentKeyHelp')}
-              </p>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="max_students">{t('courseForm.maxStudents')}</Label>
               <Input
