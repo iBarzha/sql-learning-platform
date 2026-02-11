@@ -1,6 +1,20 @@
+import random
+import string
 import uuid
 from django.db import models
 from django.conf import settings
+
+
+# Exclude ambiguous characters: O/0/I/1
+COURSE_CODE_CHARS = string.ascii_uppercase.replace('O', '').replace('I', '') + string.digits.replace('0', '').replace('1', '')
+
+
+def generate_course_code(length=6):
+    """Generate a random course code (uppercase letters + digits, no ambiguous chars)."""
+    while True:
+        code = ''.join(random.choices(COURSE_CODE_CHARS, k=length))
+        if not Course.objects.filter(course_code=code).exists():
+            return code
 
 
 class Course(models.Model):
@@ -25,7 +39,7 @@ class Course(models.Model):
         default=DatabaseType.POSTGRESQL
     )
     is_published = models.BooleanField(default=False)
-    enrollment_key = models.CharField(max_length=50, blank=True, null=True)
+    course_code = models.CharField(max_length=8, unique=True, editable=False)
     max_students = models.PositiveIntegerField(null=True, blank=True)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
@@ -38,6 +52,11 @@ class Course(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        if not self.course_code:
+            self.course_code = generate_course_code()
+        super().save(*args, **kwargs)
 
 
 class Enrollment(models.Model):
