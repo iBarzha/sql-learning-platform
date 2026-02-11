@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { AuthResponse, User } from '@/types';
+import type { AuthResponse, User, PaginatedResponse } from '@/types';
 
 export interface LoginData {
   email: string;
@@ -23,6 +23,8 @@ export interface ChangePasswordData {
 export interface SetPasswordData {
   new_password: string;
   new_password_confirm: string;
+  first_name?: string;
+  last_name?: string;
 }
 
 export interface InviteAcceptData {
@@ -39,6 +41,17 @@ export interface InviteCheckResponse {
   role?: string;
   course?: string;
   detail?: string;
+}
+
+export interface AdminCreateUserData {
+  email: string;
+  role: 'student' | 'instructor' | 'admin';
+  course_id?: string;
+}
+
+export interface AdminCreateUserResponse {
+  user: User;
+  password: string;
 }
 
 export const authApi = {
@@ -84,10 +97,36 @@ export const authApi = {
     return response.data;
   },
 
+  uploadAvatar: async (file: File): Promise<User> => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const response = await apiClient.patch<User>('/auth/me/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
   refreshToken: async (refresh: string): Promise<{ access: string }> => {
     const response = await apiClient.post<{ access: string }>('/auth/token/refresh/', {
       refresh,
     });
+    return response.data;
+  },
+};
+
+export const adminApi = {
+  createUser: async (data: AdminCreateUserData): Promise<AdminCreateUserResponse> => {
+    const response = await apiClient.post<AdminCreateUserResponse>('/auth/admin/create-user/', data);
+    return response.data;
+  },
+
+  listUsers: async (params?: {
+    role?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<User>> => {
+    const response = await apiClient.get<PaginatedResponse<User>>('/auth/admin/users/', { params });
     return response.data;
   },
 };
