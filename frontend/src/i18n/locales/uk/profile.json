@@ -19,5 +19,25 @@
     "subtitle": "Керуйте паролем та налаштуваннями безпеки",
     "changePassword": "Змінити пароль"
   },
+  "avatar": {
+    "changePhoto": "Змінити фото",
+    "uploadPhoto": "Завантажити фото",
+    "uploading": "Завантаження...",
+    "uploadSuccess": "Аватар успішно оновлено!",
+    "uploadError": "Не вдалося завантажити аватар",
+    "maxSize": "Макс. розмір: 2МБ",
+    "allowedTypes": "JPG, PNG, WebP, GIF"
+  },
+  "grades": {
+    "title": "Мої оцінки",
+    "subtitle": "Ваш прогрес по курсах",
+    "course": "Курс",
+    "completed": "Виконано",
+    "score": "Бал",
+    "progress": "Прогрес",
+    "noGrades": "Оцінок поки немає",
+    "noGradesDesc": "Ваші оцінки з'являться тут після виконання завдань",
+    "tasks": "{{completed}}/{{total}} завдань"
+  },
   "updateSuccess": "Профіль успішно оновлено!"
 }

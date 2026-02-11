@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
+import { useMyProgress } from '@/hooks/queries/useSubmissions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,17 +9,22 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { User, Mail, Calendar, Shield, Key } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { User, Mail, Calendar, Shield, Key, Camera, GraduationCap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export function ProfilePage() {
   const { t } = useTranslation('profile');
-  const { user, updateUser, isLoading, error, clearError } = useAuthStore();
+  const { user, updateUser, uploadAvatar, isLoading, error, clearError } = useAuthStore();
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
   const [success, setSuccess] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isStudent = user?.role === 'student';
+  const { data: progress = [], isLoading: progressLoading } = useMyProgress();
 
   async function handleSave() {
     try {
@@ -40,17 +46,61 @@ export function ProfilePage() {
     clearError();
   }
 
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAvatarUploading(true);
+    try {
+      clearError();
+      await uploadAvatar(file);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch {
+      // Error handled in store
+    } finally {
+      setAvatarUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }
+
   if (!user) return null;
+
+  const initials = `${(user.first_name?.[0] ?? '').toUpperCase()}${(user.last_name?.[0] ?? '').toUpperCase()}`;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
-        <Avatar size="lg">
-          <AvatarFallback size="lg">
-            {(user.first_name?.[0] ?? '').toUpperCase()}
-            {(user.last_name?.[0] ?? '').toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        <div className="relative group">
+          <Avatar size="lg">
+            {user.avatar_url ? (
+              <AvatarImage src={user.avatar_url} alt={user.full_name} />
+            ) : (
+              <AvatarFallback size="lg">{initials}</AvatarFallback>
+            )}
+          </Avatar>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={avatarUploading}
+            className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          >
+            {avatarUploading ? (
+              <Spinner size="sm" className="text-white" />
+            ) : (
+              <Camera className="h-5 w-5 text-white" />
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={handleAvatarChange}
+            className="hidden"
+          />
+        </div>
         <div>
           <h1 className="text-3xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground">{t('subtitle')}</p>
@@ -166,6 +216,60 @@ export function ProfilePage() {
           </Link>
         </CardContent>
       </Card>
+
+      {isStudent && (
+        <Card variant="glass">
+          <CardHeader>
+            <CardTitle>{t('grades.title')}</CardTitle>
+            <CardDescription>{t('grades.subtitle')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {progressLoading ? (
+              <div className="flex justify-center py-8">
+                <Spinner />
+              </div>
+            ) : progress.length === 0 ? (
+              <div className="text-center py-8">
+                <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="font-medium text-lg mb-2">{t('grades.noGrades')}</h3>
+                <p className="text-muted-foreground">{t('grades.noGradesDesc')}</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {progress.map((cp) => (
+                  <Link
+                    key={cp.course_id}
+                    to={`/courses/${cp.course_id}`}
+                    className="block p-4 rounded-xl border border-border/50 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium">{cp.course_title}</h4>
+                      <Badge variant="outline">
+                        {Math.round(cp.percentage_score)}%
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
+                      <span>
+                        {t('grades.tasks', {
+                          completed: cp.completed_assignments,
+                          total: cp.total_assignments,
+                        })}
+                      </span>
+                      <span>{Math.round(cp.completion_rate)}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-300"
+                        style={{ width: `${Math.min(cp.completion_rate, 100)}%` }}
+                      />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

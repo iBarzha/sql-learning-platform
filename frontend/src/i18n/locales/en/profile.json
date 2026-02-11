@@ -19,5 +19,25 @@
     "subtitle": "Manage your password and security settings",
     "changePassword": "Change Password"
   },
+  "avatar": {
+    "changePhoto": "Change Photo",
+    "uploadPhoto": "Upload Photo",
+    "uploading": "Uploading...",
+    "uploadSuccess": "Avatar updated successfully!",
+    "uploadError": "Failed to upload avatar",
+    "maxSize": "Max size: 2MB",
+    "allowedTypes": "JPG, PNG, WebP, GIF"
+  },
+  "grades": {
+    "title": "My Grades",
+    "subtitle": "Your progress across courses",
+    "course": "Course",
+    "completed": "Completed",
+    "score": "Score",
+    "progress": "Progress",
+    "noGrades": "No grades yet",
+    "noGradesDesc": "Your grades will appear here once you start completing assignments",
+    "tasks": "{{completed}}/{{total}} tasks"
+  },
   "updateSuccess": "Profile updated successfully!"
 }
