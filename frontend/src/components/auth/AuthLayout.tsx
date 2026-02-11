@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Database } from 'lucide-react';
+import logoImg from '@/assets/logo.png';
 import { FloatingKeywords } from '@/components/ui/FloatingKeywords';
 
 interface AuthLayoutProps {
@@ -23,9 +23,13 @@ export function AuthLayout({ children, mobileTaglineKey }: AuthLayoutProps) {
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-6 lg:p-12">
         {/* Branding */}
         <div className="flex items-center gap-3 mb-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-noble-sm">
-            <Database className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <img
+            src={logoImg}
+            alt="Logo"
+            width={44}
+            height={44}
+            className="h-11 w-11 object-contain drop-shadow-md"
+          />
           <span className="text-lg font-semibold text-foreground">
             {t('auth:branding.name')}
           </span>
