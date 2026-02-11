@@ -1,6 +1,6 @@
 import { useAuthStore } from '@/store/authStore';
 import { useTranslation } from 'react-i18next';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -28,7 +28,11 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full">
           <Avatar size="sm">
-            <AvatarFallback size="sm">{initials}</AvatarFallback>
+            {user?.avatar_url ? (
+              <AvatarImage src={user.avatar_url} alt={user.full_name} />
+            ) : (
+              <AvatarFallback size="sm">{initials}</AvatarFallback>
+            )}
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
