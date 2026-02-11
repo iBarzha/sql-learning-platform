@@ -13,7 +13,7 @@ from .serializers import (
     CourseDetailSerializer,
     CourseCreateSerializer,
     EnrollmentSerializer,
-    EnrollRequestSerializer,
+    JoinByCodeSerializer,
     DatasetSerializer,
     LessonListSerializer,
     LessonDetailSerializer,
@@ -108,15 +108,6 @@ class CourseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if course.enrollment_key:
-            serializer = EnrollRequestSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            if serializer.validated_data.get('enrollment_key') != course.enrollment_key:
-                return Response(
-                    {'detail': 'Invalid enrollment key'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
         if course.max_students:
             current_count = course.enrollments.filter(status='active').count()
             if current_count >= course.max_students:
@@ -130,6 +121,60 @@ class CourseViewSet(viewsets.ModelViewSet):
             EnrollmentSerializer(enrollment).data,
             status=status.HTTP_201_CREATED
         )
+
+    @action(detail=False, methods=['post'], url_path='join')
+    def join_by_code(self, request):
+        """Join a course by its course code."""
+        serializer = JoinByCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code = serializer.validated_data['code'].upper()
+
+        try:
+            course = Course.objects.get(course_code=code)
+        except Course.DoesNotExist:
+            return Response(
+                {'detail': 'Invalid course code'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not course.is_published:
+            return Response(
+                {'detail': 'This course is not available'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if Enrollment.objects.filter(student=request.user, course=course).exists():
+            return Response(
+                {'detail': 'Already enrolled in this course'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if course.max_students:
+            current_count = course.enrollments.filter(status='active').count()
+            if current_count >= course.max_students:
+                return Response(
+                    {'detail': 'Course is full'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        enrollment = Enrollment.objects.create(student=request.user, course=course)
+        # Return course data along with enrollment
+        course_data = CourseDetailSerializer(
+            Course.objects.annotate(
+                student_count=Count('enrollments', distinct=True),
+                assignment_count=Count('assignments', distinct=True),
+                lesson_count=Count('lessons', distinct=True),
+                is_enrolled=Exists(
+                    Enrollment.objects.filter(
+                        course=OuterRef('pk'),
+                        student=request.user,
+                        status='active',
+                    )
+                ),
+            ).get(pk=course.pk),
+            context={'request': request}
+        ).data
+        return Response(course_data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def unenroll(self, request, pk=None):
@@ -159,14 +204,13 @@ class CourseViewSet(viewsets.ModelViewSet):
 
         new_title = request.data.get('title', f'{course.title} (Copy)')
 
-        # Clone course
+        # Clone course (course_code auto-generated in save())
         new_course = Course.objects.create(
             title=new_title,
             description=course.description,
             instructor=request.user,
             database_type=course.database_type,
             is_published=False,
-            enrollment_key='',
             max_students=course.max_students,
         )
 

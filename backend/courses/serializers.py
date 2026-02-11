@@ -20,15 +20,23 @@ class CourseListSerializer(serializers.ModelSerializer):
     assignment_count = serializers.IntegerField(read_only=True)
     lesson_count = serializers.IntegerField(read_only=True)
     is_enrolled = serializers.BooleanField(read_only=True)
+    course_code = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = [
             'id', 'title', 'description', 'instructor', 'instructor_name',
             'database_type', 'is_published', 'student_count', 'assignment_count',
-            'lesson_count', 'start_date', 'end_date', 'is_enrolled', 'created_at'
+            'lesson_count', 'start_date', 'end_date', 'is_enrolled', 'course_code',
+            'created_at'
         ]
         read_only_fields = ['id', 'instructor', 'created_at']
+
+    def get_course_code(self, obj):
+        request = self.context.get('request')
+        if request and request.user == obj.instructor:
+            return obj.course_code
+        return None
 
 
 class CourseDetailSerializer(serializers.ModelSerializer):
@@ -38,16 +46,23 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     assignment_count = serializers.IntegerField(read_only=True)
     lesson_count = serializers.IntegerField(read_only=True)
     is_enrolled = serializers.BooleanField(read_only=True)
+    course_code = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = [
             'id', 'title', 'description', 'instructor', 'database_type',
-            'is_published', 'enrollment_key', 'max_students', 'start_date',
+            'is_published', 'course_code', 'max_students', 'start_date',
             'end_date', 'student_count', 'assignment_count', 'lesson_count',
             'datasets', 'is_enrolled', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'instructor', 'created_at', 'updated_at']
+
+    def get_course_code(self, obj):
+        request = self.context.get('request')
+        if request and request.user == obj.instructor:
+            return obj.course_code
+        return None
 
 
 class CourseCreateSerializer(serializers.ModelSerializer):
@@ -55,7 +70,7 @@ class CourseCreateSerializer(serializers.ModelSerializer):
         model = Course
         fields = [
             'title', 'description', 'database_type', 'is_published',
-            'enrollment_key', 'max_students', 'start_date', 'end_date'
+            'max_students', 'start_date', 'end_date'
         ]
 
     def create(self, validated_data):
@@ -76,8 +91,8 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'student', 'enrolled_at', 'completed_at']
 
 
-class EnrollRequestSerializer(serializers.Serializer):
-    enrollment_key = serializers.CharField(required=False, allow_blank=True)
+class JoinByCodeSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=8)
 
 
 class LessonListSerializer(serializers.ModelSerializer):
