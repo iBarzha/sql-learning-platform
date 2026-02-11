@@ -8,6 +8,7 @@ export interface User {
   must_change_password: boolean;
   is_active: boolean;
   created_at: string;
+  avatar_url?: string | null;
 }
 
 export interface AuthTokens {
