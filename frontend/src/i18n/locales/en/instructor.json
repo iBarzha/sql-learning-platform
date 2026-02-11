@@ -129,6 +129,15 @@
     "courseCount": "{{count}} course",
     "courseCount_plural": "{{count}} courses",
     "courseNotFound": "Course not found",
-    "backToMyCourses": "Back to my courses"
+    "backToMyCourses": "Back to my courses",
+    "viewGrades": "View Grades",
+    "hideGrades": "Hide Grades",
+    "studentGrades": "Student Grades",
+    "courseName": "Course",
+    "completedTasks": "Completed",
+    "scorePercent": "Score",
+    "progressLabel": "Progress",
+    "noProgress": "No progress data yet",
+    "tasks": "{{completed}}/{{total}} tasks"
   }
 }

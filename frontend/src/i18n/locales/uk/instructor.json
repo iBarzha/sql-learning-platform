@@ -129,6 +129,15 @@
     "courseCount": "{{count}} курс",
     "courseCount_plural": "{{count}} курсів",
     "courseNotFound": "Курс не знайдено",
-    "backToMyCourses": "Повернутися до моїх курсів"
+    "backToMyCourses": "Повернутися до моїх курсів",
+    "viewGrades": "Оцінки",
+    "hideGrades": "Сховати оцінки",
+    "studentGrades": "Оцінки студента",
+    "courseName": "Курс",
+    "completedTasks": "Виконано",
+    "scorePercent": "Бал",
+    "progressLabel": "Прогрес",
+    "noProgress": "Даних про прогрес ще немає",
+    "tasks": "{{completed}}/{{total}} завдань"
   }
 }
