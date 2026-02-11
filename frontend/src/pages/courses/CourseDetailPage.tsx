@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
@@ -30,6 +29,8 @@ import {
   BookOpen,
   Code,
   Layers,
+  ClipboardCopy,
+  Check,
 } from 'lucide-react';
 import type { Lesson } from '@/api/lessons';
 import type { Module } from '@/api/modules';
@@ -192,8 +193,8 @@ export function CourseDetailPage() {
   const loading = courseLoading || lessonsLoading || modulesLoading;
 
   const [enrolling, setEnrolling] = useState(false);
-  const [enrollmentKey, setEnrollmentKey] = useState('');
   const [error, setError] = useState('');
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const enrollMutation = useEnrollCourse(courseId!);
   const unenrollMutation = useUnenrollCourse(courseId!);
@@ -202,13 +203,21 @@ export function CourseDetailPage() {
   const isAdmin = user?.role === 'admin';
   const canManage = isInstructor || isAdmin;
 
+  function handleCopyCode() {
+    if (course?.course_code) {
+      navigator.clipboard.writeText(course.course_code);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  }
+
   async function handleEnroll() {
     if (!courseId) return;
 
     try {
       setEnrolling(true);
       setError('');
-      await enrollMutation.mutateAsync(enrollmentKey || undefined);
+      await enrollMutation.mutateAsync();
     } catch (err) {
       setError(getApiErrorMessage(err, t('detail.failedEnroll')));
     } finally {
@@ -356,6 +365,29 @@ export function CourseDetailPage() {
                   <span>{new Date(course.end_date).toLocaleDateString()}</span>
                 </div>
               )}
+              {canManage && course.course_code && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t('detail.courseCode')}</span>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="outline" className="font-mono text-sm tracking-wider">
+                      {course.course_code}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={handleCopyCode}
+                      title={t('detail.copyCode')}
+                    >
+                      {codeCopied ? (
+                        <Check className="h-3.5 w-3.5 text-green-500" />
+                      ) : (
+                        <ClipboardCopy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -408,13 +440,6 @@ export function CourseDetailPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {course.enrollment_key !== undefined && (
-                      <Input
-                        placeholder={t('detail.enrollmentKeyPlaceholder')}
-                        value={enrollmentKey}
-                        onChange={(e) => setEnrollmentKey(e.target.value)}
-                      />
-                    )}
                     <Button
                       className="w-full"
                       onClick={handleEnroll}

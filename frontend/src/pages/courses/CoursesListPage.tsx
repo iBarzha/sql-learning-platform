@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,15 +7,33 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Search, Users, BookOpen, GraduationCap, CheckCircle } from 'lucide-react';
-import { useCourses } from '@/hooks/queries/useCourses';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
+import { Plus, Search, Users, BookOpen, GraduationCap, CheckCircle, KeyRound } from 'lucide-react';
+import { getApiErrorMessage } from '@/lib/utils';
+import { useCourses, useJoinByCode } from '@/hooks/queries/useCourses';
 
 export function CoursesListPage() {
   const { t } = useTranslation('courses');
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const { data: coursesData, isLoading: loading } = useCourses({ is_published: true });
   const courses = coursesData?.results ?? [];
+
+  // Join by Code dialog state
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const joinByCodeMutation = useJoinByCode();
 
   const filteredCourses = courses.filter(
     (course) =>
@@ -25,6 +43,20 @@ export function CoursesListPage() {
   );
 
   const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
+  const isStudent = !isInstructor;
+
+  async function handleJoinByCode() {
+    if (!joinCode.trim()) return;
+    try {
+      setJoinError('');
+      const course = await joinByCodeMutation.mutateAsync(joinCode.trim());
+      setJoinDialogOpen(false);
+      setJoinCode('');
+      navigate(`/courses/${course.id}`);
+    } catch (err) {
+      setJoinError(getApiErrorMessage(err, t('list.joinError')));
+    }
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -45,14 +77,26 @@ export function CoursesListPage() {
         )}
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder={t('list.searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-11 h-11 rounded-xl bg-card border-border/50"
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={t('list.searchPlaceholder')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-11 h-11 rounded-xl bg-card border-border/50"
+          />
+        </div>
+        {isStudent && (
+          <Button
+            variant="outline"
+            className="h-11 gap-2"
+            onClick={() => { setJoinDialogOpen(true); setJoinError(''); setJoinCode(''); }}
+          >
+            <KeyRound className="h-4 w-4" />
+            {t('list.joinByCode')}
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -137,6 +181,53 @@ export function CoursesListPage() {
           ))}
         </div>
       )}
+
+      {/* Join by Code Dialog */}
+      <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('list.joinByCode')}</DialogTitle>
+            <DialogDescription>{t('list.joinByCodeDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {joinError && (
+              <Alert variant="destructive">
+                <AlertDescription>{joinError}</AlertDescription>
+              </Alert>
+            )}
+            <Input
+              placeholder={t('list.joinByCodePlaceholder')}
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              className="font-mono text-center text-lg tracking-widest"
+              maxLength={8}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleJoinByCode();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setJoinDialogOpen(false)}
+            >
+              {t('detail.cancel')}
+            </Button>
+            <Button
+              onClick={handleJoinByCode}
+              disabled={!joinCode.trim() || joinByCodeMutation.isPending}
+            >
+              {joinByCodeMutation.isPending ? (
+                <Spinner size="sm" className="mr-2" />
+              ) : null}
+              {t('list.join')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
