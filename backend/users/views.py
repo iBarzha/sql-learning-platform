@@ -1,9 +1,14 @@
+import string
+import secrets
+
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -15,8 +20,10 @@ from .serializers import (
     ChangePasswordSerializer,
     SetPasswordSerializer,
     InviteAcceptSerializer,
+    AdminCreateUserSerializer,
+    AdminUserListSerializer,
 )
-from courses.models import Enrollment
+from courses.models import Course, Enrollment
 
 User = get_user_model()
 
@@ -33,7 +40,7 @@ class RegisterView(generics.CreateAPIView):
 
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -73,7 +80,7 @@ class LoginView(APIView):
 
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -97,12 +104,31 @@ class LogoutView(APIView):
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={'request': request}).data)
 
     def patch(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        avatar = request.FILES.get('avatar')
+        if avatar:
+            if avatar.content_type not in self.ALLOWED_IMAGE_TYPES:
+                return Response(
+                    {'avatar': 'Only JPG, PNG, WebP, and GIF images are allowed.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if avatar.size > self.MAX_AVATAR_SIZE:
+                return Response(
+                    {'avatar': 'Image size must not exceed 2MB.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        serializer = UserSerializer(
+            request.user, data=request.data, partial=True, context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -136,9 +162,14 @@ class SetPasswordView(APIView):
         serializer = SetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        request.user.set_password(serializer.validated_data['new_password'])
-        request.user.must_change_password = False
-        request.user.save()
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        if serializer.validated_data.get('first_name'):
+            user.first_name = serializer.validated_data['first_name']
+        if serializer.validated_data.get('last_name'):
+            user.last_name = serializer.validated_data['last_name']
+        user.must_change_password = False
+        user.save()
 
         return Response({'detail': 'Password set successfully'})
 
@@ -188,7 +219,7 @@ class InviteAcceptView(APIView):
 
         refresh = RefreshToken.for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -220,4 +251,99 @@ class InviteCheckView(APIView):
             'email': invite.email,
             'role': invite.role,
             'course': invite.course.title if invite.course else None,
+        })
+
+
+class AdminCreateUserView(APIView):
+    """Admin-only: create a new user with a random password."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != 'admin':
+            return Response(
+                {'detail': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = AdminCreateUserSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        password = ''.join(
+            secrets.choice(string.ascii_letters + string.digits)
+            for _ in range(10)
+        )
+
+        user = User.objects.create_user(
+            email=serializer.validated_data['email'],
+            password=password,
+            role=serializer.validated_data['role'],
+            must_change_password=True,
+            first_name='',
+            last_name='',
+        )
+
+        course_id = serializer.validated_data.get('course_id')
+        if course_id:
+            try:
+                course = Course.objects.get(id=course_id)
+                Enrollment.objects.create(
+                    student=user,
+                    course=course,
+                    status='active',
+                )
+            except Course.DoesNotExist:
+                pass
+
+        return Response({
+            'user': AdminUserListSerializer(user, context={'request': request}).data,
+            'password': password,
+        }, status=status.HTTP_201_CREATED)
+
+
+class AdminUsersListView(APIView):
+    """Admin-only: list users with search/filter/pagination."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin':
+            return Response(
+                {'detail': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        queryset = User.objects.all().order_by('-created_at')
+
+        role = request.query_params.get('role')
+        if role:
+            queryset = queryset.filter(role=role)
+
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        total = queryset.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        users = queryset[start:end]
+
+        next_url = None
+        previous_url = None
+        if end < total:
+            next_url = f'?page={page + 1}&page_size={page_size}'
+        if page > 1:
+            previous_url = f'?page={page - 1}&page_size={page_size}'
+
+        return Response({
+            'count': total,
+            'next': next_url,
+            'previous': previous_url,
+            'results': AdminUserListSerializer(
+                users, many=True, context={'request': request}
+            ).data,
         })
