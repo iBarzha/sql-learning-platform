@@ -1,5 +1,6 @@
 """Views for submission handling with sandbox execution and grading."""
 
+from django.db import models
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -292,6 +293,96 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         results = UserResult.objects.filter(
             student=request.user
         ).select_related('assignment__course', 'lesson__course')
+
+        courses_data = {}
+        for result in results:
+            course = None
+            if result.assignment:
+                course = result.assignment.course
+            elif result.lesson:
+                course = result.lesson.course
+
+            if not course:
+                continue
+
+            if course.id not in courses_data:
+                total_assignments = course.assignments.filter(is_published=True).count()
+                total_practice_lessons = course.lessons.filter(
+                    is_published=True,
+                    lesson_type__in=['practice', 'mixed']
+                ).count()
+
+                courses_data[course.id] = {
+                    'course_id': str(course.id),
+                    'course_title': course.title,
+                    'total_assignments': total_assignments + total_practice_lessons,
+                    'completed_assignments': 0,
+                    'total_score': 0,
+                    'max_possible_score': 0,
+                }
+
+            if result.assignment:
+                max_score = result.assignment.max_score
+            elif result.lesson:
+                max_score = result.lesson.max_score
+            else:
+                max_score = 0
+
+            courses_data[course.id]['max_possible_score'] += max_score
+            if result.is_completed:
+                courses_data[course.id]['completed_assignments'] += 1
+            courses_data[course.id]['total_score'] += float(result.best_score)
+
+        for data in courses_data.values():
+            if data['total_assignments'] > 0:
+                data['completion_rate'] = round(
+                    data['completed_assignments'] / data['total_assignments'] * 100, 2
+                )
+            else:
+                data['completion_rate'] = 0
+
+            if data['max_possible_score'] > 0:
+                data['percentage_score'] = round(
+                    data['total_score'] / data['max_possible_score'] * 100, 2
+                )
+            else:
+                data['percentage_score'] = 0
+
+        return Response(list(courses_data.values()))
+
+    @action(detail=False, methods=['get'])
+    def student_progress(self, request):
+        """Get a specific student's progress (instructor only)."""
+        if not request.user.is_instructor:
+            return Response(
+                {'detail': 'Only instructors can view student progress.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        student_id = request.query_params.get('student')
+        if not student_id:
+            return Response(
+                {'detail': 'student parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            student = User.objects.get(id=student_id)
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'Student not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Only show progress for courses this instructor owns
+        results = UserResult.objects.filter(
+            student=student
+        ).select_related('assignment__course', 'lesson__course').filter(
+            models.Q(assignment__course__instructor=request.user) |
+            models.Q(lesson__course__instructor=request.user)
+        )
 
         courses_data = {}
         for result in results:
