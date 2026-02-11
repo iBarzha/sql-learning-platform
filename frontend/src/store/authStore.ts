@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
-import authApi, { type LoginData, type RegisterData } from '@/api/auth';
+import authApi, { type LoginData } from '@/api/auth';
 import { getApiErrorMessage } from '@/lib/utils';
 
 interface AuthState {
@@ -11,10 +11,10 @@ interface AuthState {
   error: string | null;
 
   login: (data: LoginData) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
   clearError: () => void;
   setUser: (user: User | null) => void;
 }
@@ -28,37 +28,13 @@ export const useAuthStore = create<AuthState>()(
       error: null,
 
       login: async (data: LoginData) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await authApi.login(data);
-          localStorage.setItem('access_token', response.tokens.access);
-          localStorage.setItem('refresh_token', response.tokens.refresh);
-          set({
-            user: response.user,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error) {
-          set({ error: getApiErrorMessage(error, 'Login failed'), isLoading: false });
-          throw error;
-        }
-      },
-
-      register: async (data: RegisterData) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await authApi.register(data);
-          localStorage.setItem('access_token', response.tokens.access);
-          localStorage.setItem('refresh_token', response.tokens.refresh);
-          set({
-            user: response.user,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error) {
-          set({ error: getApiErrorMessage(error, 'Registration failed'), isLoading: false });
-          throw error;
-        }
+        const response = await authApi.login(data);
+        localStorage.setItem('access_token', response.tokens.access);
+        localStorage.setItem('refresh_token', response.tokens.refresh);
+        set({
+          user: response.user,
+          isAuthenticated: true,
+        });
       },
 
       logout: async () => {
@@ -101,6 +77,17 @@ export const useAuthStore = create<AuthState>()(
           set({ user, isLoading: false });
         } catch (error) {
           set({ error: getApiErrorMessage(error, 'Update failed'), isLoading: false });
+          throw error;
+        }
+      },
+
+      uploadAvatar: async (file: File) => {
+        set({ isLoading: true, error: null });
+        try {
+          const user = await authApi.uploadAvatar(file);
+          set({ user, isLoading: false });
+        } catch (error) {
+          set({ error: getApiErrorMessage(error, 'Avatar upload failed'), isLoading: false });
           throw error;
         }
       },

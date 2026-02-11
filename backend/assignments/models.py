@@ -109,12 +109,10 @@ class Assignment(models.Model):
     def __str__(self):
         return f'{self.title} ({self.course.title})'
 
-    @property
-    def submission_count(self):
+    def get_submission_count(self):
         return self.submissions.count()
 
-    @property
-    def average_score(self):
+    def get_average_score(self):
         from django.db.models import Avg
         avg = self.submissions.filter(score__isnull=False).aggregate(Avg('score'))['score__avg']
         return round(avg, 2) if avg else None

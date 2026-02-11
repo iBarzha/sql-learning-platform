@@ -113,7 +113,7 @@ class MongoDBExecutor(BaseExecutor):
 
     def _parse_query(self, query: str) -> dict:
         """Parse MongoDB query string into components."""
-        query = query.strip()
+        query = query.strip().rstrip(';')
 
         # Remove 'db.' prefix if present
         if query.startswith('db.'):
@@ -133,7 +133,12 @@ class MongoDBExecutor(BaseExecutor):
             raise ValueError('Invalid query format. Missing parentheses.')
 
         operation = rest[:paren_idx]
-        args_str = rest[paren_idx + 1:-1]  # Remove parentheses
+
+        # Find matching closing parenthesis
+        close_paren = rest.rfind(')')
+        if close_paren == -1:
+            raise ValueError('Invalid query format. Missing closing parenthesis.')
+        args_str = rest[paren_idx + 1:close_paren]
 
         # Parse arguments as JSON (with some MongoDB-style relaxation)
         args = self._parse_args(args_str) if args_str.strip() else []
@@ -145,28 +150,42 @@ class MongoDBExecutor(BaseExecutor):
         }
 
     def _parse_args(self, args_str: str) -> list:
-        """Parse MongoDB-style arguments to Python objects."""
+        """Parse MongoDB-style arguments to a list of positional args.
+
+        Always wraps in [...] so that the result is a list of arguments:
+          - find({name: "x"})       → [{"name": "x"}]       (1 arg)
+          - insertMany([{a},{b}])   → [[{a},{b}]]           (1 arg: the array)
+          - updateOne({f}, {$set})  → [{"f"}, {"$set": …}]  (2 args)
+        """
         if not args_str.strip():
             return []
+
+        import re
 
         # Handle common MongoDB shell formats
         args_str = args_str.strip()
 
-        # Try to parse as JSON array first
+        # Convert MongoDB shell types to JSON-compatible values
+        # new Date("...") → "..." (keep as ISO string)
+        args_str = re.sub(r'new\s+Date\(([^)]*)\)', r'\1', args_str)
+        # ObjectId("...") → "..."
+        args_str = re.sub(r'ObjectId\(([^)]*)\)', r'\1', args_str)
+        # NumberInt(...) / NumberLong(...) → the number
+        args_str = re.sub(r'(?:NumberInt|NumberLong)\(([^)]*)\)', r'\1', args_str)
+
+        # Always wrap in array to get list-of-arguments
+        wrapped = f'[{args_str}]'
+
         try:
-            if not args_str.startswith('['):
-                args_str = f'[{args_str}]'
-            return json.loads(args_str)
+            return json.loads(wrapped)
         except json.JSONDecodeError:
             # Try with relaxed JSON (single quotes, unquoted keys)
-            import re
+            relaxed = wrapped
             # Replace single quotes with double quotes
-            relaxed = re.sub(r"'([^']*)'", r'"\1"', args_str)
-            # Quote unquoted keys
-            relaxed = re.sub(r'(\w+):', r'"\1":', relaxed)
+            relaxed = re.sub(r"'([^']*)'", r'"\1"', relaxed)
+            # Quote unquoted keys (word or $word before colon, not already quoted)
+            relaxed = re.sub(r'(?<!["\w])([$\w]+)\s*:', r'"\1":', relaxed)
             try:
-                if not relaxed.startswith('['):
-                    relaxed = f'[{relaxed}]'
                 return json.loads(relaxed)
             except json.JSONDecodeError:
                 raise ValueError(f'Failed to parse arguments: {args_str}')
@@ -188,7 +207,7 @@ class MongoDBExecutor(BaseExecutor):
             'deleteOne': lambda: {'deletedCount': collection.delete_one(*args).deleted_count},
             'deleteMany': lambda: {'deletedCount': collection.delete_many(*args).deleted_count},
             'aggregate': lambda: list(collection.aggregate(*args, maxTimeMS=timeout_ms)),
-            'countDocuments': lambda: {'count': collection.count_documents(*args, maxTimeMS=timeout_ms)},
+            'countDocuments': lambda: {'count': collection.count_documents(args[0] if args else {}, maxTimeMS=timeout_ms)},
             'distinct': lambda: collection.distinct(*args, maxTimeMS=timeout_ms),
         }
 
@@ -204,11 +223,8 @@ class MongoDBExecutor(BaseExecutor):
             return QueryResult(success=True)
 
         try:
-            # Execute schema commands line by line
-            for line in schema_sql.strip().split('\n'):
-                line = line.strip()
-                if line and not line.startswith('//'):
-                    self.execute_query(line, timeout=30)
+            for statement in self._split_statements(schema_sql):
+                self.execute_query(statement, timeout=30)
             return QueryResult(success=True)
         except Exception as e:
             return QueryResult(
@@ -216,16 +232,36 @@ class MongoDBExecutor(BaseExecutor):
                 error_message=f'Schema initialization failed: {e}',
             )
 
+    @staticmethod
+    def _split_statements(text: str) -> list[str]:
+        """Split multiline MongoDB statements by semicolons.
+
+        Joins lines into complete statements so that multiline
+        insertMany([...]) calls are handled correctly.
+        """
+        statements = []
+        current: list[str] = []
+        for line in text.strip().split('\n'):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('//'):
+                continue
+            current.append(stripped)
+            if stripped.endswith(';'):
+                statements.append(' '.join(current))
+                current = []
+        # Leftover without trailing semicolon
+        if current:
+            statements.append(' '.join(current))
+        return statements
+
     def load_data(self, seed_sql: str) -> QueryResult:
         """Load seed data into MongoDB."""
         if not seed_sql.strip():
             return QueryResult(success=True)
 
         try:
-            for line in seed_sql.strip().split('\n'):
-                line = line.strip()
-                if line and not line.startswith('//'):
-                    self.execute_query(line, timeout=30)
+            for statement in self._split_statements(seed_sql):
+                self.execute_query(statement, timeout=30)
             return QueryResult(success=True)
         except Exception as e:
             return QueryResult(

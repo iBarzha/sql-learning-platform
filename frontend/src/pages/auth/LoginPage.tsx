@@ -1,8 +1,10 @@
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
+import { getApiErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +18,10 @@ export function LoginPage() {
   const { t } = useTranslation(['auth', 'common']);
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const { login } = useAuthStore();
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const {
     register,
@@ -30,12 +35,15 @@ export function LoginPage() {
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
   const onSubmit = async (data: LoginFormData) => {
-    clearError();
+    setLoginError(null);
+    setIsLoading(true);
     try {
       await login(data);
       navigate(from, { replace: true });
-    } catch {
-      // Error is handled in store
+    } catch (err) {
+      setLoginError(getApiErrorMessage(err, t('auth:login.error', 'Invalid credentials')));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -50,9 +58,9 @@ export function LoginPage() {
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
-            {error && (
+            {loginError && (
               <Alert variant="destructive" className="rounded-xl">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{loginError}</AlertDescription>
               </Alert>
             )}
             <div className="space-y-2">
@@ -88,12 +96,6 @@ export function LoginPage() {
               {isLoading ? <Spinner size="sm" className="mr-2" /> : null}
               {t('auth:login.submit')}
             </Button>
-            <p className="text-sm text-muted-foreground text-center">
-              {t('auth:login.noAccount')}{' '}
-              <Link to="/register" className="text-primary font-medium hover:underline">
-                {t('auth:login.signUpLink')}
-              </Link>
-            </p>
           </CardFooter>
         </form>
       </Card>

@@ -628,7 +628,7 @@ class SessionManager:
                 'seed_sql': session.seed_sql,
                 'isolation_id': session.isolation_id or '',
                 'created_at': session.created_at,
-                'user_id': session.user_id,
+                'user_id': str(session.user_id) if session.user_id else None,
             }
             self._session_redis.setex(
                 f'session:{session.session_id}',
