@@ -7,6 +7,7 @@ import {
   BookOpen,
   GraduationCap,
   Users,
+  UserPlus,
   Settings,
   Database,
   X,
@@ -19,6 +20,7 @@ import {
   TooltipProvider,
 } from '@/components/ui/tooltip';
 import type { LucideIcon } from 'lucide-react';
+import logoImg from '@/assets/logo.png';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -59,6 +61,12 @@ const navItems: NavItem[] = [
     icon: Users,
     labelKey: 'common:navigation.students',
     roles: ['instructor', 'admin'],
+  },
+  {
+    to: '/users',
+    icon: UserPlus,
+    labelKey: 'common:navigation.users',
+    roles: ['admin'],
   },
   {
     to: '/settings',
@@ -141,9 +149,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="px-2 py-4 border-t border-border/30">
           <div className="flex items-center h-10 overflow-hidden">
             <div className="flex items-center justify-center w-12 shrink-0">
-              <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Database className="h-4 w-4 text-primary" />
-              </div>
+              <img
+                src={logoImg}
+                alt="Logo"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
             </div>
             <span
               className={cn(
@@ -179,9 +191,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Mobile header */}
         <div className="flex items-center justify-between h-14 px-4 border-b border-border/30">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-xl bg-primary flex items-center justify-center">
-              <Database className="h-4 w-4 text-primary-foreground" />
-            </div>
+            <img
+              src={logoImg}
+              alt="Logo"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
             <span className="font-semibold text-sm">{t('common:branding.name')}</span>
           </div>
           <Button
@@ -225,12 +241,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Mobile user info */}
         <div className="border-t border-border/30 p-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-sm font-semibold text-primary">
-                {user?.first_name?.[0]}
-                {user?.last_name?.[0]}
-              </span>
-            </div>
+            {user?.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt={user.full_name}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <span className="text-sm font-semibold text-primary">
+                  {user?.first_name?.[0]}
+                  {user?.last_name?.[0]}
+                </span>
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="font-medium truncate text-sm">{user?.full_name}</p>
               <p className="text-xs text-muted-foreground capitalize">
