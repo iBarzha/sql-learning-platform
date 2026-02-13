@@ -1,10 +1,12 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Max, Min, Prefetch
 
 from .models import Assignment
+from submissions.models import UserResult
 from .serializers import (
     AssignmentListSerializer,
     AssignmentDetailSerializer,
@@ -30,6 +32,16 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if course_id:
             queryset = queryset.filter(course_id=course_id)
 
+        # Prefetch user results for the current user to avoid N+1 in serializers
+        if user.is_authenticated:
+            queryset = queryset.prefetch_related(
+                Prefetch(
+                    'user_results',
+                    queryset=UserResult.objects.filter(student=user),
+                    to_attr='_prefetched_user_results',
+                )
+            )
+
         if user.is_instructor:
             return queryset.filter(course__instructor=user)
         else:
@@ -54,7 +66,6 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
-        from rest_framework.exceptions import NotFound, PermissionDenied
         course_id = self.kwargs.get('course_pk')
         try:
             course = Course.objects.get(id=course_id)
@@ -79,16 +90,20 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         completed_count = assignment.user_results.filter(is_completed=True).count()
         attempted_count = assignment.user_results.count()
 
-        submissions = assignment.submissions.all()
-        scores = [s.score for s in submissions if s.score is not None]
+        score_stats = assignment.submissions.aggregate(
+            total_submissions=Count('id'),
+            average_score=Avg('score'),
+            highest_score=Max('score'),
+            lowest_score=Min('score'),
+        )
 
         return Response({
             'total_students': total_students,
             'attempted_count': attempted_count,
             'completed_count': completed_count,
             'completion_rate': (completed_count / total_students * 100) if total_students > 0 else 0,
-            'total_submissions': submissions.count(),
-            'average_score': sum(scores) / len(scores) if scores else None,
-            'highest_score': max(scores) if scores else None,
-            'lowest_score': min(scores) if scores else None,
+            'total_submissions': score_stats['total_submissions'],
+            'average_score': score_stats['average_score'],
+            'highest_score': score_stats['highest_score'],
+            'lowest_score': score_stats['lowest_score'],
         })
