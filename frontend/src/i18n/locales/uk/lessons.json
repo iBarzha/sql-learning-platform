@@ -41,7 +41,11 @@
     "queryPlaceholder": "Напишіть ваш SQL запит тут...",
     "theory": "Теорія",
     "practice": "Практика",
-    "mixed": "Змішаний"
+    "mixed": "Змішаний",
+    "noTheoryContent": "Теоретичний матеріал відсутній.",
+    "defaultTaskDescription": "Виконайте SQL запит.",
+    "time": "Час: {{ms}}мс",
+    "attachments": "Додатки ({{count}})"
   },
   "attachments": {
     "title": "Додатки ({{count}})"

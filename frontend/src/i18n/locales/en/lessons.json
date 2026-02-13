@@ -41,7 +41,11 @@
     "queryPlaceholder": "Write your SQL query here...",
     "theory": "Theory",
     "practice": "Practice",
-    "mixed": "Mixed"
+    "mixed": "Mixed",
+    "noTheoryContent": "No theory content available.",
+    "defaultTaskDescription": "Complete the SQL query.",
+    "time": "Time: {{ms}}ms",
+    "attachments": "Attachments ({{count}})"
   },
   "attachments": {
     "title": "Attachments ({{count}})"
