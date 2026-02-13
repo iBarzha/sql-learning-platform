@@ -12,9 +12,14 @@ let sqlPromise: Promise<SqlJsStatic> | null = null;
 /** Load the sql.js WASM module (cached after first call). */
 export function initSqlJs(): Promise<SqlJsStatic> {
   if (!sqlPromise) {
-    sqlPromise = initSqlJsModule({
-      locateFile: () => '/sql-wasm.wasm',
-    });
+    sqlPromise = Promise.race([
+      initSqlJsModule({
+        locateFile: () => '/sql-wasm.wasm',
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('SQL.js WASM load timeout (15s)')), 15000)
+      ),
+    ]);
   }
   return sqlPromise;
 }

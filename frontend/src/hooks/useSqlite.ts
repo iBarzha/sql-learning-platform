@@ -55,7 +55,14 @@ export function useSqlite(): UseSqliteReturn {
     };
   }, []);
 
+  const initializingRef = useRef(false);
+
   const initDatabase = useCallback(async (schemaSql: string, seedSql: string): Promise<InitResult> => {
+    if (initializingRef.current) {
+      return { success: false, error: 'Initialization already in progress' };
+    }
+    initializingRef.current = true;
+
     // Close previous DB
     if (dbRef.current) {
       try {
@@ -79,6 +86,8 @@ export function useSqlite(): UseSqliteReturn {
       const msg = err instanceof Error ? err.message : String(err);
       setInitError(msg);
       return { success: false, error: msg };
+    } finally {
+      initializingRef.current = false;
     }
   }, []);
 
