@@ -31,8 +31,7 @@ export function ChangePasswordPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<ChangePasswordFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(changePasswordSchema) as any,
+    resolver: zodResolver(changePasswordSchema),
     defaultValues: {
       old_password: '',
       new_password: '',
