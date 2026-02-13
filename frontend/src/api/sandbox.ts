@@ -48,8 +48,8 @@ const sandboxApi = {
     return response.data;
   },
 
-  executeQuery: async (request: ExecuteQueryRequest): Promise<QueryResult> => {
-    const response = await apiClient.post('/sandbox/execute/', request);
+  executeQuery: async (request: ExecuteQueryRequest, signal?: AbortSignal): Promise<QueryResult> => {
+    const response = await apiClient.post('/sandbox/execute/', request, { signal });
     return response.data;
   },
 
