@@ -90,6 +90,10 @@ class Enrollment(models.Model):
         db_table = 'enrollments'
         unique_together = ['student', 'course']
         ordering = ['-enrolled_at']
+        indexes = [
+            models.Index(fields=['course', 'status']),
+            models.Index(fields=['student', 'status']),
+        ]
 
     def __str__(self):
         return f'{self.student.email} enrolled in {self.course.title}'
