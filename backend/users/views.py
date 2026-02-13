@@ -2,15 +2,19 @@ import string
 import secrets
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.exceptions import TokenError
+from PIL import Image
 
 from .models import Invite
 from .serializers import (
@@ -51,6 +55,7 @@ class RegisterView(generics.CreateAPIView):
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
+    @method_decorator(ratelimit(key='ip', rate='5/m', method='POST'))
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -92,14 +97,15 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        refresh_token = request.data.get('refresh')
+        if not refresh_token:
+            return Response({'detail': 'Successfully logged out'})
         try:
-            refresh_token = request.data.get('refresh')
-            if refresh_token:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-            return Response({'detail': 'Successfully logged out'})
-        except Exception:
-            return Response({'detail': 'Successfully logged out'})
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except TokenError:
+            pass  # Token already blacklisted or invalid
+        return Response({'detail': 'Successfully logged out'})
 
 
 class MeView(APIView):
@@ -125,6 +131,15 @@ class MeView(APIView):
                     {'avatar': 'Image size must not exceed 2MB.'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            try:
+                img = Image.open(avatar)
+                img.verify()
+                avatar.seek(0)
+            except Exception:
+                return Response(
+                    {'avatar': 'File is not a valid image.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         serializer = UserSerializer(
             request.user, data=request.data, partial=True, context={'request': request}
@@ -137,6 +152,7 @@ class MeView(APIView):
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @method_decorator(ratelimit(key='user', rate='5/m', method='POST'))
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -177,6 +193,7 @@ class SetPasswordView(APIView):
 class InviteAcceptView(APIView):
     permission_classes = [AllowAny]
 
+    @method_decorator(ratelimit(key='ip', rate='5/m', method='POST'))
     def post(self, request):
         serializer = InviteAcceptSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -273,26 +290,34 @@ class AdminCreateUserView(APIView):
             for _ in range(10)
         )
 
-        user = User.objects.create_user(
-            email=serializer.validated_data['email'],
-            password=password,
-            role=serializer.validated_data['role'],
-            must_change_password=True,
-            first_name='',
-            last_name='',
-        )
-
         course_id = serializer.validated_data.get('course_id')
         if course_id:
             try:
                 course = Course.objects.get(id=course_id)
+            except Course.DoesNotExist:
+                return Response(
+                    {'detail': 'Course not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            course = None
+
+        with transaction.atomic():
+            user = User.objects.create_user(
+                email=serializer.validated_data['email'],
+                password=password,
+                role=serializer.validated_data['role'],
+                must_change_password=True,
+                first_name='',
+                last_name='',
+            )
+
+            if course:
                 Enrollment.objects.create(
                     student=user,
                     course=course,
                     status='active',
                 )
-            except Course.DoesNotExist:
-                pass
 
         return Response({
             'user': AdminUserListSerializer(user, context={'request': request}).data,
@@ -325,8 +350,12 @@ class AdminUsersListView(APIView):
                 Q(last_name__icontains=search)
             )
 
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 20))
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(100, max(1, int(request.query_params.get('page_size', 20))))
+        except (ValueError, TypeError):
+            page = 1
+            page_size = 20
         total = queryset.count()
         start = (page - 1) * page_size
         end = start + page_size
