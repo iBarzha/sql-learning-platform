@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { useMyProgress } from '@/hooks/queries/useSubmissions';
@@ -22,6 +22,20 @@ export function ProfilePage() {
   const [success, setSuccess] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Clear success timer on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
+  const showSuccessMessage = useCallback(() => {
+    setSuccess(true);
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    successTimerRef.current = setTimeout(() => setSuccess(false), 3000);
+  }, []);
 
   const isStudent = user?.role === 'student';
   const { data: progress = [], isLoading: progressLoading } = useMyProgress();
@@ -32,8 +46,7 @@ export function ProfilePage() {
       setSuccess(false);
       await updateUser({ first_name: firstName, last_name: lastName });
       setEditing(false);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      showSuccessMessage();
     } catch {
       // Error is handled in store
     }
@@ -54,8 +67,7 @@ export function ProfilePage() {
     try {
       clearError();
       await uploadAvatar(file);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      showSuccessMessage();
     } catch {
       // Error handled in store
     } finally {
