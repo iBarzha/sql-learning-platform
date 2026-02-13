@@ -6,6 +6,8 @@ from rest_framework_nested import routers
 from django.conf import settings
 from django.conf.urls.static import static
 
+from config.health import health_check, readiness_check
+
 from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet, ModuleViewSet, AttachmentViewSet
 from assignments.views import AssignmentViewSet
 from submissions.views import SubmissionViewSet, UserResultViewSet
@@ -32,6 +34,8 @@ lessons_router.register(r'attachments', AttachmentViewSet, basename='lesson-atta
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/health/', health_check),
+    path('api/ready/', readiness_check),
     path('api/auth/', include('users.urls')),
     path('api/', include(router.urls)),
     path('api/', include(courses_router.urls)),
