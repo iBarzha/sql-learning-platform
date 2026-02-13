@@ -32,7 +32,8 @@ export function LoginPage() {
     defaultValues: { email: '', password: '' },
   });
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+  const rawFrom = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+  const from = rawFrom.startsWith('/') && !rawFrom.startsWith('//') ? rawFrom : '/';
 
   const onSubmit = async (data: LoginFormData) => {
     setLoginError(null);

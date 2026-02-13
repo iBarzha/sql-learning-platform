@@ -52,6 +52,13 @@ export function SqlEditor({
     onExecuteRef.current = onExecute;
   }, [onExecute]);
 
+  // Dispose editor on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      editorRef.current?.dispose();
+    };
+  }, []);
+
   const monacoTheme = resolvedTheme === 'dark' ? NOBLE_DARK : NOBLE_LIGHT;
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {

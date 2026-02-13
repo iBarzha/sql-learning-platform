@@ -19,10 +19,19 @@ function getPasswordStrength(password: string): {
   variant: 'destructive' | 'warning' | 'success';
   label: string;
 } {
-  const len = password.length;
-  if (len === 0) return { value: 0, variant: 'destructive', label: '' };
-  if (len < 8) return { value: 25, variant: 'destructive', label: 'weak' };
-  if (len <= 12) return { value: 60, variant: 'warning', label: 'fair' };
+  if (password.length === 0) return { value: 0, variant: 'destructive', label: '' };
+
+  let score = 0;
+  if (password.length >= 8) score += 1;
+  if (password.length >= 12) score += 1;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
+  if (/\d/.test(password)) score += 1;
+  if (/[^a-zA-Z0-9]/.test(password)) score += 1;
+
+  if (score <= 1) return { value: 20, variant: 'destructive', label: 'weak' };
+  if (score <= 2) return { value: 40, variant: 'destructive', label: 'weak' };
+  if (score <= 3) return { value: 60, variant: 'warning', label: 'fair' };
+  if (score <= 4) return { value: 80, variant: 'warning', label: 'good' };
   return { value: 100, variant: 'success', label: 'strong' };
 }
 

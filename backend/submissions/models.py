@@ -66,6 +66,7 @@ class Submission(models.Model):
             models.Index(fields=['student', 'lesson']),
             models.Index(fields=['assignment', 'is_correct']),
             models.Index(fields=['lesson', 'is_correct']),
+            models.Index(fields=['student', 'assignment', '-submitted_at']),
         ]
 
     def __str__(self):

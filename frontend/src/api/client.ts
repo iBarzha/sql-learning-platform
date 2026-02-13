@@ -49,7 +49,8 @@ apiClient.interceptors.response.use(
       _retry?: boolean;
     };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isPublic = PUBLIC_ENDPOINTS.some((ep) => originalRequest.url?.includes(ep));
+    if (error.response?.status === 401 && !originalRequest._retry && !isPublic) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

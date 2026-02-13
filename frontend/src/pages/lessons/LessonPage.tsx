@@ -20,6 +20,7 @@ import {
   Code,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { SqlExerciseBlock } from '@/components/editor/SqlExerciseBlock';
 import type { Submission } from '@/types';
 import { useLesson, useLessonSubmissions, useSubmitLesson } from '@/hooks/queries/useLessons';
@@ -30,6 +31,15 @@ import { useSqlite } from '@/hooks/useSqlite';
 import { formatFileSize, getFileTypeIcon } from '@/components/ui/FileUpload';
 import type { LocalQueryResult } from '@/lib/sqljs';
 import { Paperclip, Download } from 'lucide-react';
+
+// Allow code blocks with language classes for syntax highlighting
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code || []), 'className'],
+  },
+};
 
 export function LessonPage() {
   const { t } = useTranslation('lessons');
@@ -75,7 +85,8 @@ export function LessonPage() {
     if (lesson && isSqlite && lesson.dataset) {
       sqlite.initDatabase(lesson.dataset.schema_sql, lesson.dataset.seed_sql);
     }
-  }, [lesson?.id, isSqlite]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson?.id, isSqlite, sqlite.initDatabase]);
 
   const handleSubmit = useCallback(async () => {
     if (!courseId || !lessonId || !query.trim()) return;
@@ -111,7 +122,7 @@ export function LessonPage() {
   if (!lesson) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">{t('page.notFound')}</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('page.lessonNotFound')}</h2>
         <Link to={`/courses/${courseId}`} className="text-primary hover:underline">
           {t('page.backToCourse')}
         </Link>
@@ -192,6 +203,7 @@ export function LessonPage() {
           <CardContent className="prose prose-sm dark:prose-invert max-w-none pt-6">
             {lesson.theory_content ? (
               <ReactMarkdown
+                rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
                 components={{
                   code({ className, children, ...props }) {
                     if (className === 'language-sql-exercise') {

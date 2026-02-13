@@ -156,7 +156,7 @@ SANDBOX_CONFIG = {
     'POOL_SIZE': int(os.getenv('SANDBOX_POOL_SIZE', '3')),
     'CONTAINER_TIMEOUT': int(os.getenv('SANDBOX_TIMEOUT', '30')),
     'MAX_QUERY_TIME': int(os.getenv('MAX_QUERY_TIME', '10')),
-    'DOCKER_NETWORK': os.getenv('DOCKER_NETWORK', 'sql-learning-platform_sql-learning-sandbox'),
+    'DOCKER_NETWORK': os.getenv('DOCKER_NETWORK', 'sql-learning-sandbox'),
 }
 
 # Database images for sandbox (SQLite runs locally, no container needed)
@@ -172,3 +172,17 @@ RATELIMIT_VIEW = 'config.ratelimit.ratelimited_response'
 
 # File Upload Limits
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Production security settings
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Strict'
+    CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_SAMESITE = 'Strict'
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

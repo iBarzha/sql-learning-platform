@@ -108,24 +108,28 @@ class LessonListSerializer(serializers.ModelSerializer):
             'user_completed', 'user_best_score', 'created_at'
         ]
 
-    def get_user_completed(self, obj):
+    def _get_user_result(self, obj):
+        """Get user result from prefetched data or fall back to query."""
+        if hasattr(obj, '_prefetched_user_results'):
+            results = obj._prefetched_user_results
+            return results[0] if results else None
         request = self.context.get('request')
-        if request and request.user.is_authenticated and obj.lesson_type != 'theory':
+        if request and request.user.is_authenticated:
             from submissions.models import UserResult
-            return UserResult.objects.filter(
-                student=request.user,
-                lesson=obj,
-                is_completed=True
-            ).exists()
+            return UserResult.objects.filter(student=request.user, lesson=obj).first()
         return None
 
+    def get_user_completed(self, obj):
+        if obj.lesson_type == 'theory':
+            return None
+        result = self._get_user_result(obj)
+        return result.is_completed if result else False
+
     def get_user_best_score(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated and obj.lesson_type != 'theory':
-            from submissions.models import UserResult
-            result = UserResult.objects.filter(student=request.user, lesson=obj).first()
-            return result.best_score if result else None
-        return None
+        if obj.lesson_type == 'theory':
+            return None
+        result = self._get_user_result(obj)
+        return result.best_score if result else None
 
 
 class LessonDetailSerializer(serializers.ModelSerializer):
@@ -150,8 +154,14 @@ class LessonDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'course', 'created_at', 'updated_at']
 
     def get_user_completed(self, obj):
+        if obj.lesson_type == 'theory':
+            return None
+        # Use prefetched data if available
+        if hasattr(obj, '_prefetched_user_results'):
+            results = obj._prefetched_user_results
+            return results[0].is_completed if results else False
         request = self.context.get('request')
-        if request and request.user.is_authenticated and obj.lesson_type != 'theory':
+        if request and request.user.is_authenticated:
             from submissions.models import UserResult
             return UserResult.objects.filter(
                 student=request.user,

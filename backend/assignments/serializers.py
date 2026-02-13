@@ -20,19 +20,23 @@ class AssignmentListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'course']
 
-    def get_user_best_score(self, obj):
+    def _get_user_result(self, obj):
+        """Get user result from prefetched data or fall back to query."""
+        if hasattr(obj, '_prefetched_user_results'):
+            results = obj._prefetched_user_results
+            return results[0] if results else None
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            result = obj.user_results.filter(student=request.user).first()
-            return float(result.best_score) if result else None
+            return obj.user_results.filter(student=request.user).first()
         return None
 
+    def get_user_best_score(self, obj):
+        result = self._get_user_result(obj)
+        return float(result.best_score) if result else None
+
     def get_user_completed(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            result = obj.user_results.filter(student=request.user).first()
-            return result.is_completed if result else False
-        return False
+        result = self._get_user_result(obj)
+        return result.is_completed if result else False
 
 
 class AssignmentDetailSerializer(serializers.ModelSerializer):
@@ -60,26 +64,27 @@ class AssignmentDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'course', 'created_at', 'updated_at']
 
-    def get_user_attempts(self, obj):
+    def _get_user_result(self, obj):
+        """Get user result from prefetched data or fall back to query."""
+        if hasattr(obj, '_prefetched_user_results'):
+            results = obj._prefetched_user_results
+            return results[0] if results else None
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            result = obj.user_results.filter(student=request.user).first()
-            return result.total_attempts if result else 0
-        return 0
-
-    def get_user_best_score(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            result = obj.user_results.filter(student=request.user).first()
-            return float(result.best_score) if result else None
+            return obj.user_results.filter(student=request.user).first()
         return None
 
+    def get_user_attempts(self, obj):
+        result = self._get_user_result(obj)
+        return result.total_attempts if result else 0
+
+    def get_user_best_score(self, obj):
+        result = self._get_user_result(obj)
+        return float(result.best_score) if result else None
+
     def get_user_completed(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            result = obj.user_results.filter(student=request.user).first()
-            return result.is_completed if result else False
-        return False
+        result = self._get_user_result(obj)
+        return result.is_completed if result else False
 
 
 class AssignmentCreateSerializer(serializers.ModelSerializer):

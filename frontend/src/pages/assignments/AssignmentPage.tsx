@@ -65,7 +65,8 @@ export function AssignmentPage() {
     if (assignment && isSqlite && assignment.dataset) {
       sqlite.initDatabase(assignment.dataset.schema_sql, assignment.dataset.seed_sql);
     }
-  }, [assignment?.id, isSqlite]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignment?.id, isSqlite, sqlite.initDatabase]);
 
   const handleSubmit = useCallback(async () => {
     if (!courseId || !assignmentId || !query.trim()) return;
@@ -428,7 +429,7 @@ export function AssignmentPage() {
 
                 <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
                   <span>
-                    {t('page.score', { score: currentSubmission.score, max: assignment.max_score })}
+                    {t('page.score', { score: currentSubmission.score ?? 0, max: assignment.max_score })}
                   </span>
                   <span>
                     {t('page.executionTime', { ms: currentSubmission.execution_time_ms })}
@@ -464,7 +465,7 @@ export function AssignmentPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>{t('page.scoreValue', { score: sub.score })}</span>
+                        <span>{t('page.scoreValue', { score: sub.score ?? 0 })}</span>
                         <span>
                           {new Date(sub.submitted_at).toLocaleTimeString()}
                         </span>

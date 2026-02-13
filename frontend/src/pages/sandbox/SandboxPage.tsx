@@ -171,11 +171,19 @@ export function SandboxPage() {
   const [sessionInitialized, setSessionInitialized] = useState(false);
   const prevDbTypeRef = useRef(selectedDbType);
   const prevDatasetRef = useRef(selectedDataset);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Client-side SQLite (sql.js/WASM)
   const sqlite = useSqlite();
   const [sqliteInitialized, setSqliteInitialized] = useState(false);
   const isSqlite = selectedDbType === 'sqlite';
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Reset session when DB type changes
   useEffect(() => {
@@ -240,6 +248,12 @@ export function SandboxPage() {
   const handleExecute = useCallback(async () => {
     if (!query.trim()) return;
 
+    // Cancel any previous in-flight request
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
     try {
       setExecuting(true);
       setError('');
@@ -285,10 +299,11 @@ export function SandboxPage() {
         query: query.trim(),
         session_id: currentSessionId,
         ...(needsInit ? { schema_sql: schemaSql, seed_sql: seedSql } : {}),
-      });
+      }, controller.signal);
 
       // Handle session expired on server (idle > 15 min)
-      if (!needsInit && response.error_message === 'SESSION_EXPIRED') {
+      const expiredMsg = (response.error_message || '').toLowerCase();
+      if (!needsInit && expiredMsg === 'session_expired') {
         currentSessionId = crypto.randomUUID();
         setSessionId(currentSessionId);
         response = await sandboxApi.executeQuery({
@@ -297,20 +312,28 @@ export function SandboxPage() {
           session_id: currentSessionId,
           schema_sql: schemaSql,
           seed_sql: seedSql,
-        });
+        }, controller.signal);
       }
 
       const justInitialized = needsInit || response.session_id === currentSessionId;
-      if (justInitialized && !response.error_message?.includes('Schema init failed')
-          && !response.error_message?.includes('Seed data failed')
-          && response.error_message !== 'SESSION_EXPIRED') {
+      const errMsg = (response.error_message || '').toLowerCase();
+      if (justInitialized
+          && !errMsg.includes('schema init failed')
+          && !errMsg.includes('seed data failed')
+          && errMsg !== 'session_expired') {
         setSessionInitialized(true);
       }
 
       setResult(response);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to execute query'));
+      if (controller.signal.aborted) {
+        setError('Query timed out after 30 seconds');
+      } else {
+        setError(getApiErrorMessage(err, 'Failed to execute query'));
+      }
     } finally {
+      clearTimeout(timeoutId);
+      abortControllerRef.current = null;
       setExecuting(false);
     }
   }, [query, selectedDbType, schemaSql, seedSql, sessionId, sessionInitialized, isSqlite, sqlite, sqliteInitialized]);

@@ -25,7 +25,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
 class SubmissionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Submission
-        fields = ['assignment', 'query']
+        fields = ['query']
 
 
 class SubmissionResultSerializer(serializers.ModelSerializer):
