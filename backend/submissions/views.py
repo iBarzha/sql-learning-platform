@@ -1,6 +1,7 @@
 """Views for submission handling with sandbox execution and grading."""
 
-from django.db import models
+from django.db import models, transaction
+from django.db.models import Count, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -17,9 +18,27 @@ from .serializers import (
     UserResultSerializer,
 )
 from assignments.models import Assignment
-from courses.models import Lesson
+from courses.models import Course, Enrollment, Lesson
 from sandbox.services import execute_query
 from grading.models import get_grading_service
+
+
+def _get_course_stats(course_ids):
+    """Pre-fetch assignment/lesson counts per course to avoid N+1 queries."""
+    courses = Course.objects.filter(id__in=course_ids).annotate(
+        total_assignments=Count('assignments', filter=Q(assignments__is_published=True)),
+        total_practice_lessons=Count(
+            'lessons',
+            filter=Q(lessons__is_published=True, lessons__lesson_type__in=['practice', 'mixed'])
+        ),
+    )
+    return {
+        c.id: {
+            'total_assignments': c.total_assignments,
+            'total_practice_lessons': c.total_practice_lessons,
+        }
+        for c in courses
+    }
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
@@ -138,17 +157,18 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get or create user result
-        if assignment:
-            user_result, _ = UserResult.objects.get_or_create(
-                student=request.user,
-                assignment=assignment
-            )
-        else:
-            user_result, _ = UserResult.objects.get_or_create(
-                student=request.user,
-                lesson=lesson
-            )
+        # Get or create user result (atomic to prevent race conditions)
+        with transaction.atomic():
+            if assignment:
+                user_result, _ = UserResult.objects.get_or_create(
+                    student=request.user,
+                    assignment=assignment
+                )
+            else:
+                user_result, _ = UserResult.objects.get_or_create(
+                    student=request.user,
+                    lesson=lesson
+                )
 
         if max_attempts and user_result.total_attempts >= max_attempts:
             return Response(
@@ -248,7 +268,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             submissions = submissions.filter(lesson_id=lesson_id)
 
         submissions = submissions.select_related(
-            'assignment', 'lesson'
+            'student', 'assignment', 'lesson'
         ).order_by('-submitted_at')
 
         serializer = SubmissionSerializer(submissions, many=True)
@@ -294,8 +314,19 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
             student=request.user
         ).select_related('assignment__course', 'lesson__course')
 
+        # Collect course IDs first, then pre-fetch stats in one query
+        course_ids = set()
+        result_list = list(results)
+        for result in result_list:
+            if result.assignment and result.assignment.course:
+                course_ids.add(result.assignment.course.id)
+            elif result.lesson and result.lesson.course:
+                course_ids.add(result.lesson.course.id)
+
+        course_stats = _get_course_stats(course_ids)
+
         courses_data = {}
-        for result in results:
+        for result in result_list:
             course = None
             if result.assignment:
                 course = result.assignment.course
@@ -306,16 +337,13 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
                 continue
 
             if course.id not in courses_data:
-                total_assignments = course.assignments.filter(is_published=True).count()
-                total_practice_lessons = course.lessons.filter(
-                    is_published=True,
-                    lesson_type__in=['practice', 'mixed']
-                ).count()
+                stats = course_stats.get(course.id, {})
+                total = stats.get('total_assignments', 0) + stats.get('total_practice_lessons', 0)
 
                 courses_data[course.id] = {
                     'course_id': str(course.id),
                     'course_title': course.title,
-                    'total_assignments': total_assignments + total_practice_lessons,
+                    'total_assignments': total,
                     'completed_assignments': 0,
                     'total_score': 0,
                     'max_possible_score': 0,
@@ -384,8 +412,19 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
             models.Q(lesson__course__instructor=request.user)
         )
 
+        # Pre-fetch course stats to avoid N+1
+        course_ids = set()
+        result_list = list(results)
+        for result in result_list:
+            if result.assignment and result.assignment.course:
+                course_ids.add(result.assignment.course.id)
+            elif result.lesson and result.lesson.course:
+                course_ids.add(result.lesson.course.id)
+
+        course_stats = _get_course_stats(course_ids)
+
         courses_data = {}
-        for result in results:
+        for result in result_list:
             course = None
             if result.assignment:
                 course = result.assignment.course
@@ -396,16 +435,13 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
                 continue
 
             if course.id not in courses_data:
-                total_assignments = course.assignments.filter(is_published=True).count()
-                total_practice_lessons = course.lessons.filter(
-                    is_published=True,
-                    lesson_type__in=['practice', 'mixed']
-                ).count()
+                stats = course_stats.get(course.id, {})
+                total = stats.get('total_assignments', 0) + stats.get('total_practice_lessons', 0)
 
                 courses_data[course.id] = {
                     'course_id': str(course.id),
                     'course_title': course.title,
-                    'total_assignments': total_assignments + total_practice_lessons,
+                    'total_assignments': total,
                     'completed_assignments': 0,
                     'total_score': 0,
                     'max_possible_score': 0,
