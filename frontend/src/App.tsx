@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -7,23 +7,27 @@ import { useAuthStore } from '@/store/authStore';
 import { usePreferencesStore } from '@/store/preferencesStore';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { MainLayout } from '@/components/layout';
-import { LoginPage, ChangePasswordPage } from '@/pages/auth';
-import { DashboardPage } from '@/pages/dashboard';
-import { CoursesListPage, CourseDetailPage } from '@/pages/courses';
-import { LessonPage } from '@/pages/lessons';
-import { AssignmentPage } from '@/pages/assignments';
-import { ProfilePage } from '@/pages/profile';
-import { SandboxPage } from '@/pages/sandbox';
-import {
-  MyCoursesPage,
-  CourseFormPage,
-  CourseManagePage,
-  LessonFormPage,
-  StudentsPage,
-  AllStudentsPage,
-} from '@/pages/instructor';
-import { SettingsPage, UserManagementPage } from '@/pages/admin';
 import { Spinner } from '@/components/ui/spinner';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+
+// Lazy-loaded page components
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
+const ChangePasswordPage = lazy(() => import('@/pages/auth/ChangePasswordPage').then(m => ({ default: m.ChangePasswordPage })));
+const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const CoursesListPage = lazy(() => import('@/pages/courses/CoursesListPage').then(m => ({ default: m.CoursesListPage })));
+const CourseDetailPage = lazy(() => import('@/pages/courses/CourseDetailPage').then(m => ({ default: m.CourseDetailPage })));
+const LessonPage = lazy(() => import('@/pages/lessons/LessonPage').then(m => ({ default: m.LessonPage })));
+const AssignmentPage = lazy(() => import('@/pages/assignments/AssignmentPage').then(m => ({ default: m.AssignmentPage })));
+const ProfilePage = lazy(() => import('@/pages/profile/ProfilePage').then(m => ({ default: m.ProfilePage })));
+const SandboxPage = lazy(() => import('@/pages/sandbox/SandboxPage').then(m => ({ default: m.SandboxPage })));
+const MyCoursesPage = lazy(() => import('@/pages/instructor/MyCoursesPage').then(m => ({ default: m.MyCoursesPage })));
+const CourseFormPage = lazy(() => import('@/pages/instructor/CourseFormPage').then(m => ({ default: m.CourseFormPage })));
+const CourseManagePage = lazy(() => import('@/pages/instructor/CourseManagePage').then(m => ({ default: m.CourseManagePage })));
+const LessonFormPage = lazy(() => import('@/pages/instructor/LessonFormPage').then(m => ({ default: m.LessonFormPage })));
+const StudentsPage = lazy(() => import('@/pages/instructor/StudentsPage').then(m => ({ default: m.StudentsPage })));
+const AllStudentsPage = lazy(() => import('@/pages/instructor/AllStudentsPage').then(m => ({ default: m.AllStudentsPage })));
+const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const UserManagementPage = lazy(() => import('@/pages/admin/UserManagementPage').then(m => ({ default: m.UserManagementPage })));
 
 function AppRoutes() {
   const { isAuthenticated, isLoading, fetchUser, user } = useAuthStore();
@@ -52,6 +56,7 @@ function AppRoutes() {
   const isAdmin = user?.role === 'admin';
 
   return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Spinner size="lg" /></div>}>
     <Routes>
       {/* Public routes */}
       <Route
@@ -125,16 +130,19 @@ function AppRoutes() {
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
