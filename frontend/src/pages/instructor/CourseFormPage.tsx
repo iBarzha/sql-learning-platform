@@ -51,8 +51,7 @@ export function CourseFormPage() {
     watch,
     formState: { errors, isSubmitting },
   } = useForm<CourseFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(courseSchema) as any,
+    resolver: zodResolver(courseSchema),
     defaultValues: {
       title: '',
       description: '',
