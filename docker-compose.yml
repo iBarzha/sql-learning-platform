@@ -12,11 +12,18 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    mem_limit: 512m
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-network
 
@@ -43,6 +50,14 @@ services:
       - backend_media:/app/media
     ports:
       - "8000:8000"
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/ready/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
@@ -51,11 +66,16 @@ services:
       sandbox-mariadb:
         condition: service_healthy
       sandbox-mongodb:
-        condition: service_started
+        condition: service_healthy
       sandbox-redis:
-        condition: service_started
+        condition: service_healthy
       session-redis:
-        condition: service_started
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-network
       - sql-learning-sandbox
@@ -73,6 +93,19 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8000
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:5173 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-network
 
@@ -87,8 +120,23 @@ services:
       - ./frontend/dist:/usr/share/nginx/html:ro
       - backend_static:/app/staticfiles:ro
       - backend_media:/app/media:ro
+    mem_limit: 128m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-network
     profiles:
@@ -107,11 +155,18 @@ services:
       POSTGRES_PASSWORD: sandbox
     volumes:
       - ./docker/sandbox-postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    mem_limit: 256m
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sandbox -d sandbox"]
       interval: 5s
       timeout: 3s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-sandbox
 
@@ -125,11 +180,18 @@ services:
       MARIADB_ROOT_PASSWORD: rootpassword
     volumes:
       - ./docker/sandbox-mariadb-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    mem_limit: 256m
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       timeout: 3s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-sandbox
 
@@ -138,12 +200,36 @@ services:
     container_name: sql-sandbox-mongodb
     environment:
       MONGO_INITDB_DATABASE: sandbox
+    mem_limit: 256m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-sandbox
 
   sandbox-redis:
     image: redis:7-alpine
     container_name: sql-sandbox-redis
+    mem_limit: 64m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-sandbox
 
@@ -151,6 +237,21 @@ services:
   session-redis:
     image: redis:7-alpine
     container_name: sql-session-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - session_redis_data:/data
+    mem_limit: 128m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - sql-learning-sandbox
 
@@ -164,3 +265,4 @@ volumes:
   postgres_data:
   backend_static:
   backend_media:
+  session_redis_data:
