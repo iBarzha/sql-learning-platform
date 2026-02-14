@@ -67,6 +67,8 @@ class Submission(models.Model):
             models.Index(fields=['assignment', 'is_correct']),
             models.Index(fields=['lesson', 'is_correct']),
             models.Index(fields=['student', 'assignment', '-submitted_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['student', '-submitted_at']),
         ]
 
     def __str__(self):
@@ -116,6 +118,18 @@ class UserResult(models.Model):
         indexes = [
             models.Index(fields=['student', 'assignment']),
             models.Index(fields=['student', 'lesson']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['student', 'assignment'],
+                condition=models.Q(assignment__isnull=False),
+                name='unique_student_assignment_result',
+            ),
+            models.UniqueConstraint(
+                fields=['student', 'lesson'],
+                condition=models.Q(lesson__isnull=False),
+                name='unique_student_lesson_result',
+            ),
         ]
 
     def __str__(self):
