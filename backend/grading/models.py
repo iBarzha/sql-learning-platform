@@ -1,5 +1,6 @@
 """Grading service for evaluating SQL submissions."""
 
+import re
 from dataclasses import dataclass
 from typing import Optional
 from decimal import Decimal
@@ -157,9 +158,9 @@ class GradingService:
         )
 
     def _check_forbidden_keywords(self, query: str, forbidden: list[str]) -> dict:
-        """Check for forbidden keywords in query."""
+        """Check for forbidden keywords in query using word boundary matching."""
         query_upper = query.upper()
-        found = [kw for kw in forbidden if kw.upper() in query_upper]
+        found = [kw for kw in forbidden if re.search(rf'\b{re.escape(kw.upper())}\b', query_upper)]
 
         return {
             'passed': len(found) == 0,
@@ -168,9 +169,9 @@ class GradingService:
         }
 
     def _check_required_keywords(self, query: str, required: list[str]) -> dict:
-        """Check for required keywords in query."""
+        """Check for required keywords in query using word boundary matching."""
         query_upper = query.upper()
-        missing = [kw for kw in required if kw.upper() not in query_upper]
+        missing = [kw for kw in required if not re.search(rf'\b{re.escape(kw.upper())}\b', query_upper)]
 
         if not required:
             return {'passed': True, 'score': 100, 'missing': []}
