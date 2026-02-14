@@ -58,5 +58,10 @@
     "noData": "No data available",
     "confirmDelete": "Are you sure you want to delete?",
     "pageNotFound": "Page not found"
+  },
+  "errors": {
+    "somethingWentWrong": "Something went wrong",
+    "reloadPage": "Reload page",
+    "sessionExpired": "Your session has expired. Please log in again."
   }
 }

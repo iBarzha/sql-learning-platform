@@ -22,10 +22,8 @@ class SubmissionSerializer(serializers.ModelSerializer):
         ]
 
 
-class SubmissionCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Submission
-        fields = ['query']
+class SubmissionCreateSerializer(serializers.Serializer):
+    query = serializers.CharField(max_length=50000)
 
 
 class SubmissionResultSerializer(serializers.ModelSerializer):

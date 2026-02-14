@@ -111,6 +111,9 @@ _SQL_RULES = [
     (r'\bcreate\s+server\b', MESSAGES['network']),
     (r'\bcreate\s+foreign\b', MESSAGES['network']),
 
+    # ── UNION-based information disclosure ──────────────────
+    (r'\bunion\s+(?:all\s+)?select\b', MESSAGES['info_leak']),
+
     # ── Information leaking ─────────────────────────────────
     (r'\bpg_ls_dir\b', MESSAGES['info_leak']),
     (r'\bpg_ls_logdir\b', MESSAGES['info_leak']),
@@ -206,14 +209,31 @@ _MONGO_BLOCKED_PATTERNS = [
 _COMPILED_MONGO_RULES = [(re.compile(pat, re.IGNORECASE), msg) for pat, msg in _MONGO_BLOCKED_PATTERNS]
 
 
+def _decode_unicode_escapes(text: str) -> str:
+    r"""Decode Unicode escape sequences (\\uXXXX) to catch obfuscation attempts."""
+    try:
+        # Decode \uXXXX sequences
+        return text.encode('utf-8').decode('unicode_escape')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return text
+
+
 def validate_mongodb(query: str) -> None:
     """Validate MongoDB query.
 
     Raises QueryBlockedError if the query contains dangerous patterns.
     """
-    for pattern, message in _COMPILED_MONGO_RULES:
-        if pattern.search(query):
-            raise QueryBlockedError(message)
+    # Check both raw query and decoded Unicode escapes to prevent obfuscation
+    variants = [query]
+    if '\\u' in query or '\\x' in query:
+        decoded = _decode_unicode_escapes(query)
+        if decoded != query:
+            variants.append(decoded)
+
+    for variant in variants:
+        for pattern, message in _COMPILED_MONGO_RULES:
+            if pattern.search(variant):
+                raise QueryBlockedError(message)
 
 
 # ═══════════════════════════════════════════════════════════════

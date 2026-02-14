@@ -1,5 +1,6 @@
 """MySQL/MariaDB query executor."""
 
+import logging
 import pymysql
 from pymysql.cursors import DictCursor
 
@@ -10,6 +11,8 @@ from ..exceptions import (
     QueryTimeoutError,
     QuerySyntaxError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MySQLExecutor(BaseExecutor):
@@ -60,11 +63,11 @@ class MySQLExecutor(BaseExecutor):
             with self._connection.cursor() as cur:
                 # Set query timeout (MariaDB uses max_statement_time in seconds)
                 try:
-                    cur.execute(f'SET max_statement_time = {timeout}')
+                    cur.execute('SET max_statement_time = %s', [timeout])
                 except pymysql.Error:
                     # Fallback for MySQL (uses max_execution_time in milliseconds)
                     try:
-                        cur.execute(f'SET max_execution_time = {timeout * 1000}')
+                        cur.execute('SET max_execution_time = %s', [timeout * 1000])
                     except pymysql.Error:
                         pass  # If neither works, proceed without timeout
 
@@ -95,14 +98,17 @@ class MySQLExecutor(BaseExecutor):
         except pymysql.err.OperationalError as e:
             if 'max_execution_time' in str(e).lower() or e.args[0] == 3024:
                 raise QueryTimeoutError(f'Query exceeded {timeout}s timeout')
+            error_msg = str(e.args[1]) if len(e.args) > 1 else str(e)
+            logger.warning(f'MySQL operational error: {e}')
             return QueryResult(
                 success=False,
-                error_message=str(e.args[1]) if len(e.args) > 1 else str(e),
+                error_message=error_msg,
             )
         except pymysql.err.ProgrammingError as e:
             raise QuerySyntaxError(str(e.args[1]) if len(e.args) > 1 else str(e))
         except pymysql.Error as e:
             error_msg = str(e.args[1]) if len(e.args) > 1 else str(e)
+            logger.warning(f'MySQL error: {e}')
             return QueryResult(
                 success=False,
                 error_message=error_msg,

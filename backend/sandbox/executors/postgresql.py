@@ -1,5 +1,6 @@
 """PostgreSQL query executor."""
 
+import logging
 import psycopg2
 from psycopg2 import sql, extensions
 from psycopg2.extras import RealDictCursor
@@ -11,6 +12,8 @@ from ..exceptions import (
     QueryTimeoutError,
     QuerySyntaxError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PostgreSQLExecutor(BaseExecutor):
@@ -63,7 +66,7 @@ class PostgreSQLExecutor(BaseExecutor):
                 # statement_timeout is set at ROLE level (sandbox_student)
                 # Only set as fallback when connecting as admin user
                 try:
-                    cur.execute(f'SET statement_timeout = {timeout * 1000}')
+                    cur.execute('SET statement_timeout = %s', [timeout * 1000])
                 except Exception:
                     pass  # ROLE-level timeout takes precedence
 
@@ -96,6 +99,7 @@ class PostgreSQLExecutor(BaseExecutor):
         except psycopg2.errors.SyntaxError as e:
             raise QuerySyntaxError(str(e))
         except psycopg2.Error as e:
+            logger.warning(f'PostgreSQL query error: {e}')
             error_msg = str(e).split('\n')[0]  # Get first line of error
             return QueryResult(
                 success=False,

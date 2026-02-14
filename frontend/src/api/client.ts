@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { useAuthStore } from '@/store/authStore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -68,6 +69,7 @@ apiClient.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token');
 
       if (!refreshToken) {
+        useAuthStore.getState().setUser(null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         window.location.href = '/login';
@@ -92,6 +94,7 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
+        useAuthStore.getState().setUser(null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         window.location.href = '/login';

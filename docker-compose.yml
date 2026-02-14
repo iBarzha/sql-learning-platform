@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: sql_learning
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -34,7 +34,7 @@ services:
       dockerfile: Dockerfile
     container_name: sql-learning-backend
     environment:
-      - DEBUG=True
+      - DEBUG=${DEBUG:-True}
       - SECRET_KEY=your-secret-key-change-in-production
       - DB_NAME=sql_learning
       - DB_USER=postgres
