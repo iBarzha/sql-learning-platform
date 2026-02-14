@@ -142,6 +142,14 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Validate nested URL consistency (lesson/assignment belongs to this course)
+        course_pk = self.kwargs.get('course_pk')
+        if course_pk and str(course.id) != str(course_pk):
+            return Response(
+                {'detail': 'Resource does not belong to this course'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Check enrollment
         if not course.enrollments.filter(
             student=request.user, status='active'
@@ -157,29 +165,30 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get or create user result (atomic to prevent race conditions)
+        # Get or create user result (atomic with row locking to prevent race conditions)
         with transaction.atomic():
             if assignment:
-                user_result, _ = UserResult.objects.get_or_create(
+                user_result, _ = UserResult.objects.select_for_update().get_or_create(
                     student=request.user,
                     assignment=assignment
                 )
             else:
-                user_result, _ = UserResult.objects.get_or_create(
+                user_result, _ = UserResult.objects.select_for_update().get_or_create(
                     student=request.user,
                     lesson=lesson
                 )
 
-        if max_attempts and user_result.total_attempts >= max_attempts:
-            return Response(
-                {'detail': 'Maximum attempts reached'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            if max_attempts and user_result.total_attempts >= max_attempts:
+                return Response(
+                    {'detail': 'Maximum attempts reached'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        attempt_number = user_result.total_attempts + 1
+            attempt_number = user_result.total_attempts + 1
+
         student_query = serializer.validated_data['query']
 
-        # Create submission with pending status
+        # Create submission with running status
         submission = Submission.objects.create(
             student=request.user,
             assignment=assignment,
@@ -189,64 +198,74 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             status=Submission.Status.RUNNING,
         )
 
-        # Execute query in sandbox
-        schema_sql = dataset.schema_sql if dataset else ''
-        seed_sql = dataset.seed_sql if dataset else ''
+        try:
+            # Execute query in sandbox
+            schema_sql = dataset.schema_sql if dataset else ''
+            seed_sql = dataset.seed_sql if dataset else ''
 
-        execution_response = execute_query(
-            database_type=course.database_type,
-            query=student_query,
-            schema_sql=schema_sql,
-            seed_sql=seed_sql,
-            timeout=time_limit,
-            user_id=request.user.id,
-            submission_id=submission.id,
-            dataset_id=dataset.id if dataset else None,
-        )
-
-        # Update submission with execution result
-        submission.execution_time_ms = execution_response.execution_time_ms
-
-        if execution_response.success and execution_response.result:
-            submission.status = Submission.Status.COMPLETED
-            submission.result = execution_response.result.to_dict()
-        else:
-            submission.status = Submission.Status.ERROR
-            submission.error_message = execution_response.error_message
-            submission.result = {'success': False, 'error_message': execution_response.error_message}
-
-        # Grade the submission
-        grading_service = get_grading_service()
-
-        # Execute expected query to get expected result if not stored
-        if expected_query and not expected_result:
-            expected_response = execute_query(
+            execution_response = execute_query(
                 database_type=course.database_type,
-                query=expected_query,
+                query=student_query,
                 schema_sql=schema_sql,
                 seed_sql=seed_sql,
                 timeout=time_limit,
+                user_id=request.user.id,
+                submission_id=submission.id,
+                dataset_id=dataset.id if dataset else None,
             )
-            if expected_response.success and expected_response.result:
-                expected_result = expected_response.result.to_dict()
 
-        grading_result = grading_service.grade(
-            student_result=submission.result or {},
-            expected_result=expected_result,
-            expected_query=expected_query,
-            required_keywords=required_keywords,
-            forbidden_keywords=forbidden_keywords,
-            order_matters=order_matters,
-            partial_match=partial_match,
-            max_score=max_score,
-            student_query=student_query,
-        )
+            # Update submission with execution result
+            submission.execution_time_ms = execution_response.execution_time_ms
 
-        submission.score = grading_result.score
-        submission.is_correct = grading_result.is_correct
-        submission.feedback = grading_result.feedback
-        submission.graded_at = timezone.now()
-        submission.save()
+            if execution_response.success and execution_response.result:
+                submission.status = Submission.Status.COMPLETED
+                submission.result = execution_response.result.to_dict()
+            else:
+                submission.status = Submission.Status.ERROR
+                submission.error_message = execution_response.error_message
+                submission.result = {'success': False, 'error_message': execution_response.error_message}
+
+            # Grade the submission
+            grading_service = get_grading_service()
+
+            # Execute expected query to get expected result if not stored
+            if expected_query and not expected_result:
+                expected_response = execute_query(
+                    database_type=course.database_type,
+                    query=expected_query,
+                    schema_sql=schema_sql,
+                    seed_sql=seed_sql,
+                    timeout=time_limit,
+                )
+                if expected_response.success and expected_response.result:
+                    expected_result = expected_response.result.to_dict()
+
+            grading_result = grading_service.grade(
+                student_result=submission.result or {},
+                expected_result=expected_result,
+                expected_query=expected_query,
+                required_keywords=required_keywords,
+                forbidden_keywords=forbidden_keywords,
+                order_matters=order_matters,
+                partial_match=partial_match,
+                max_score=max_score,
+                student_query=student_query,
+            )
+
+            submission.score = grading_result.score
+            submission.is_correct = grading_result.is_correct
+            submission.feedback = grading_result.feedback
+            submission.graded_at = timezone.now()
+            submission.save()
+        except Exception as e:
+            submission.status = Submission.Status.ERROR
+            submission.error_message = f'Grading failed: {e}'
+            submission.save()
+            user_result.update_from_submission(submission)
+            return Response(
+                SubmissionResultSerializer(submission).data,
+                status=status.HTTP_201_CREATED
+            )
 
         # Update user result
         user_result.update_from_submission(submission)
@@ -312,7 +331,7 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         """Get current user's progress across all enrolled courses."""
         results = UserResult.objects.filter(
             student=request.user
-        ).select_related('assignment__course', 'lesson__course')
+        ).select_related('assignment__course', 'lesson__course')[:5000]
 
         # Collect course IDs first, then pre-fetch stats in one query
         course_ids = set()
@@ -410,7 +429,7 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         ).select_related('assignment__course', 'lesson__course').filter(
             models.Q(assignment__course__instructor=request.user) |
             models.Q(lesson__course__instructor=request.user)
-        )
+        )[:5000]
 
         # Pre-fetch course stats to avoid N+1
         course_ids = set()
