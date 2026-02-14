@@ -1,6 +1,6 @@
 {
   "welcome": {
-    "title": "Welcome back, {{name}}!",
+    "title": "Dashboard",
     "defaultName": "User",
     "instructorSubtitle": "Manage your courses and track student progress.",
     "studentSubtitle": "Continue your SQL learning and practice."

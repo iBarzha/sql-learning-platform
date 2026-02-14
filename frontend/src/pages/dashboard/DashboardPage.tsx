@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { StatCard } from '@/components/charts/StatCard';
-import { BookOpen, CheckCircle, Clock, TrendingUp, ArrowRight, Sparkles } from 'lucide-react';
+import { BookOpen, CheckCircle, Clock, TrendingUp, ArrowRight } from 'lucide-react';
 import { useCourses } from '@/hooks/queries/useCourses';
 import { useMyProgress } from '@/hooks/queries/useSubmissions';
 
@@ -104,12 +104,9 @@ export function DashboardPage() {
     <div className="space-y-8">
       {/* Welcome section */}
       <div className="rounded-2xl bg-gradient-to-r from-primary/10 to-primary/5 p-8">
-        <div className="flex items-center gap-2 mb-2">
-          <h1 className="text-3xl font-bold tracking-tight">
-            {t('dashboard:welcome.title', { name: user?.first_name || t('dashboard:welcome.defaultName') })}
-          </h1>
-          <Sparkles className="h-6 w-6 text-primary" />
-        </div>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">
+            {t('dashboard:welcome.title')}
+        </h1>
         <p className="text-muted-foreground text-lg">
           {user?.role === 'instructor'
             ? t('dashboard:welcome.instructorSubtitle')
