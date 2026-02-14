@@ -130,8 +130,8 @@ class SessionManager:
             session = self._sessions.get(session_id)
             if session and session.database_type == database_type:
                 # Verify ownership — prevent session hijacking
-                if session.user_id is not None and user_id is not None:
-                    if session.user_id != user_id:
+                if session.user_id is not None:
+                    if user_id is None or session.user_id != user_id:
                         raise DatabaseConnectionError(
                             'Session belongs to another user.'
                         )
@@ -202,8 +202,8 @@ class SessionManager:
                     error_message='SESSION_EXPIRED',
                 )
             # Verify ownership
-            if session.user_id is not None and user_id is not None:
-                if session.user_id != user_id:
+            if session.user_id is not None:
+                if user_id is None or session.user_id != user_id:
                     return QueryResult(
                         success=False,
                         error_message='Session belongs to another user.',
@@ -221,10 +221,10 @@ class SessionManager:
                         session.executor.connect()
                         # Restore PostgreSQL search_path after reconnect
                         if session.database_type == 'postgresql' and session.isolation_id:
+                            from psycopg2 import sql as psql
                             with session.executor._connection.cursor() as cur:
-                                cur.execute(
-                                    f'SET search_path TO "{session.isolation_id}"'
-                                )
+                                cur.execute(psql.SQL('SET search_path TO {}').format(
+                                    psql.Identifier(session.isolation_id)))
                     except Exception as e:
                         return QueryResult(
                             success=False,
@@ -342,21 +342,19 @@ class SessionManager:
         admin_conn.set_isolation_level(extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         try:
             with admin_conn.cursor() as cur:
-                cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{isolation_id}"')
+                from psycopg2 import sql as psql
+                cur.execute(psql.SQL('CREATE SCHEMA IF NOT EXISTS {}').format(
+                    psql.Identifier(isolation_id)))
                 # Grant privileges to sandbox_student (defense-in-depth)
                 if student_config:
-                    cur.execute(
-                        f'GRANT ALL ON SCHEMA "{isolation_id}" '
-                        f'TO sandbox_student'
-                    )
-                    cur.execute(
-                        f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{isolation_id}" '
-                        f'GRANT ALL ON TABLES TO sandbox_student'
-                    )
-                    cur.execute(
-                        f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{isolation_id}" '
-                        f'GRANT ALL ON SEQUENCES TO sandbox_student'
-                    )
+                    cur.execute(psql.SQL('GRANT ALL ON SCHEMA {} TO sandbox_student').format(
+                        psql.Identifier(isolation_id)))
+                    cur.execute(psql.SQL('ALTER DEFAULT PRIVILEGES IN SCHEMA {} '
+                        'GRANT ALL ON TABLES TO sandbox_student').format(
+                        psql.Identifier(isolation_id)))
+                    cur.execute(psql.SQL('ALTER DEFAULT PRIVILEGES IN SCHEMA {} '
+                        'GRANT ALL ON SEQUENCES TO sandbox_student').format(
+                        psql.Identifier(isolation_id)))
         finally:
             admin_conn.close()
 
@@ -374,7 +372,9 @@ class SessionManager:
 
         # Set search_path to the isolated schema
         with executor._connection.cursor() as cur:
-            cur.execute(f'SET search_path TO "{isolation_id}"')
+            from psycopg2 import sql as psql
+            cur.execute(psql.SQL('SET search_path TO {}').format(
+                psql.Identifier(isolation_id)))
 
         if schema_sql:
             result = executor.initialize_schema(schema_sql)
@@ -417,16 +417,17 @@ class SessionManager:
         )
         try:
             with admin_conn.cursor() as cur:
-                cur.execute(f'CREATE DATABASE IF NOT EXISTS `{isolation_id}`')
+                safe_id = isolation_id.replace('`', '``')
+                cur.execute(f'CREATE DATABASE IF NOT EXISTS `{safe_id}`')
                 # Grant to admin user (for schema setup)
                 cur.execute(
-                    f"GRANT ALL PRIVILEGES ON `{isolation_id}`.* "
+                    f"GRANT ALL PRIVILEGES ON `{safe_id}`.* "
                     f"TO '{config.user}'@'%'"
                 )
                 # Grant to restricted student user (defense-in-depth)
                 if student_config:
                     cur.execute(
-                        f"GRANT ALL PRIVILEGES ON `{isolation_id}`.* "
+                        f"GRANT ALL PRIVILEGES ON `{safe_id}`.* "
                         f"TO 'sandbox_student'@'%'"
                     )
                 cur.execute('FLUSH PRIVILEGES')
@@ -585,8 +586,10 @@ class SessionManager:
                 connect_timeout=10,
             )
             conn.set_isolation_level(extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+            from psycopg2 import sql as psql
             with conn.cursor() as cur:
-                cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+                cur.execute(psql.SQL('DROP SCHEMA IF EXISTS {} CASCADE').format(
+                    psql.Identifier(schema_name)))
             conn.close()
         except Exception as e:
             logger.warning(f'Failed to drop PG schema {schema_name}: {e}')
@@ -609,7 +612,8 @@ class SessionManager:
                 autocommit=True,
             )
             with conn.cursor() as cur:
-                cur.execute(f'DROP DATABASE IF EXISTS `{db_name}`')
+                safe_name = db_name.replace('`', '``')
+                cur.execute(f'DROP DATABASE IF EXISTS `{safe_name}`')
             conn.close()
         except Exception as e:
             logger.warning(f'Failed to drop MariaDB database {db_name}: {e}')
