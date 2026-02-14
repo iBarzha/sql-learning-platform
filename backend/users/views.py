@@ -37,6 +37,7 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
+    @method_decorator(ratelimit(key='ip', rate='5/h', method='POST'))
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -168,6 +169,7 @@ class SetPasswordView(APIView):
     """For users who must change their password."""
     permission_classes = [IsAuthenticated]
 
+    @method_decorator(ratelimit(key='user', rate='5/m', method='POST'))
     def post(self, request):
         if not request.user.must_change_password:
             return Response(
@@ -276,7 +278,7 @@ class AdminCreateUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if request.user.role != 'admin':
+        if not request.user.is_superuser and request.user.role != 'admin':
             return Response(
                 {'detail': 'Admin access required'},
                 status=status.HTTP_403_FORBIDDEN
@@ -330,7 +332,7 @@ class AdminUsersListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if request.user.role != 'admin':
+        if not request.user.is_superuser and request.user.role != 'admin':
             return Response(
                 {'detail': 'Admin access required'},
                 status=status.HTTP_403_FORBIDDEN
