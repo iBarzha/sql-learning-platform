@@ -32,7 +32,7 @@ export const attachmentsApi = {
     const response = await apiClient.post(
       `/courses/${courseId}/lessons/${lessonId}/attachments/`,
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      { headers: { 'Content-Type': undefined } },
     );
     return response.data;
   },
