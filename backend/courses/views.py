@@ -111,15 +111,18 @@ class CourseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if course.max_students:
-            current_count = course.enrollments.filter(status='active').count()
-            if current_count >= course.max_students:
-                return Response(
-                    {'detail': 'Course is full'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        with transaction.atomic():
+            # Lock the course row to prevent concurrent over-enrollment
+            course = Course.objects.select_for_update().get(pk=course.pk)
+            if course.max_students:
+                current_count = course.enrollments.filter(status='active').count()
+                if current_count >= course.max_students:
+                    return Response(
+                        {'detail': 'Course is full'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            enrollment = Enrollment.objects.create(student=request.user, course=course)
 
-        enrollment = Enrollment.objects.create(student=request.user, course=course)
         return Response(
             EnrollmentSerializer(enrollment).data,
             status=status.HTTP_201_CREATED
@@ -152,15 +155,18 @@ class CourseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if course.max_students:
-            current_count = course.enrollments.filter(status='active').count()
-            if current_count >= course.max_students:
-                return Response(
-                    {'detail': 'Course is full'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        with transaction.atomic():
+            # Lock the course row to prevent concurrent over-enrollment
+            course = Course.objects.select_for_update().get(pk=course.pk)
+            if course.max_students:
+                current_count = course.enrollments.filter(status='active').count()
+                if current_count >= course.max_students:
+                    return Response(
+                        {'detail': 'Course is full'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            enrollment = Enrollment.objects.create(student=request.user, course=course)
 
-        enrollment = Enrollment.objects.create(student=request.user, course=course)
         # Return course data along with enrollment
         course_data = CourseDetailSerializer(
             Course.objects.annotate(
