@@ -1,6 +1,7 @@
 """MongoDB query executor."""
 
 import json
+import logging
 from pymongo import MongoClient
 from pymongo.errors import (
     ConnectionFailure,
@@ -16,6 +17,8 @@ from ..exceptions import (
     QueryTimeoutError,
     QuerySyntaxError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MongoDBExecutor(BaseExecutor):
@@ -99,6 +102,7 @@ class MongoDBExecutor(BaseExecutor):
         except ExecutionTimeout:
             raise QueryTimeoutError(f'Query exceeded {timeout}s timeout')
         except OperationFailure as e:
+            logger.warning(f'MongoDB operation error: {e}')
             return QueryResult(
                 success=False,
                 error_message=str(e),
@@ -106,6 +110,7 @@ class MongoDBExecutor(BaseExecutor):
         except ValueError as e:
             raise QuerySyntaxError(str(e))
         except PyMongoError as e:
+            logger.warning(f'MongoDB error: {e}')
             return QueryResult(
                 success=False,
                 error_message=str(e),
