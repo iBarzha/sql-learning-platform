@@ -40,6 +40,20 @@ import { SqlEditor } from '@/components/editor/SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
 import { useDatabaseTypes, useSandboxDatasets } from '@/hooks/queries/useSandbox';
 
+/** Generate a UUID that works on HTTP (non-secure) contexts. */
+function generateSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return generateSessionId();
+  }
+  // Fallback for HTTP: use crypto.getRandomValues
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
+
 interface QuickExample {
   labelKey: string;
   schema: string;
@@ -288,7 +302,7 @@ export function SandboxPage() {
       // ── Other DBs: execute on server with session ────────────
       let currentSessionId = sessionId;
       if (!currentSessionId) {
-        currentSessionId = crypto.randomUUID();
+        currentSessionId = generateSessionId();
         setSessionId(currentSessionId);
       }
 
@@ -304,7 +318,7 @@ export function SandboxPage() {
       // Handle session expired on server (idle > 15 min)
       const expiredMsg = (response.error_message || '').toLowerCase();
       if (!needsInit && expiredMsg === 'session_expired') {
-        currentSessionId = crypto.randomUUID();
+        currentSessionId = generateSessionId();
         setSessionId(currentSessionId);
         response = await sandboxApi.executeQuery({
           database_type: selectedDbType,
