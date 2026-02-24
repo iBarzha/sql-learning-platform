@@ -8,7 +8,7 @@ class DatasetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dataset
         fields = [
-            'id', 'name', 'description', 'schema_sql', 'seed_sql',
+            'id', 'name', 'description', 'database_type', 'schema_sql', 'seed_sql',
             'is_default', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -69,9 +69,10 @@ class CourseCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'title', 'description', 'database_type', 'is_published',
+            'id', 'title', 'description', 'database_type', 'is_published',
             'max_students', 'start_date', 'end_date'
         ]
+        read_only_fields = ['id']
 
     def create(self, validated_data):
         validated_data['instructor'] = self.context['request'].user
