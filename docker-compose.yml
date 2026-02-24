@@ -4,14 +4,16 @@ services:
     image: postgres:15-alpine
     container_name: sql-learning-db
     environment:
-      POSTGRES_DB: sql_learning
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME:-sql_learning}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # ports exposed only on localhost for dev; in production remove or use internal only
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     mem_limit: 512m
     restart: unless-stopped
     healthcheck:
@@ -34,22 +36,23 @@ services:
       dockerfile: Dockerfile
     container_name: sql-learning-backend
     environment:
-      - DEBUG=${DEBUG:-True}
-      - SECRET_KEY=your-secret-key-change-in-production
-      - DB_NAME=sql_learning
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DEBUG=${DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - DB_NAME=${DB_NAME:-sql_learning}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
       - DB_HOST=db
       - DB_PORT=5432
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost
-      - MARIADB_ROOT_PASSWORD=rootpassword
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost}
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-rootpassword}
       - SANDBOX_POOL_START=true
     volumes:
-      - ./backend:/app
       - backend_static:/app/staticfiles
       - backend_media:/app/media
+    # Backend exposed only via nginx in production; bind to localhost for dev
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     mem_limit: 512m
     restart: unless-stopped
     healthcheck:
@@ -92,7 +95,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
     mem_limit: 512m
     restart: unless-stopped
     healthcheck:
@@ -111,13 +114,16 @@ services:
 
   # Nginx reverse proxy (production)
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
     container_name: sql-learning-nginx
     ports:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./frontend/dist:/usr/share/nginx/html:ro
       - backend_static:/app/staticfiles:ro
       - backend_media:/app/media:ro
     mem_limit: 128m
@@ -129,8 +135,6 @@ services:
       retries: 3
     depends_on:
       backend:
-        condition: service_healthy
-      frontend:
         condition: service_healthy
     logging:
       driver: "json-file"
@@ -177,7 +181,7 @@ services:
       MARIADB_DATABASE: sandbox
       MARIADB_USER: sandbox
       MARIADB_PASSWORD: sandbox
-      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpassword}
     volumes:
       - ./docker/sandbox-mariadb-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     mem_limit: 256m

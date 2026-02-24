@@ -1,5 +1,8 @@
 node_modules
 dist
 .git
+.env
 .env.local
-coverage
+*.md
+.vscode
+.idea
