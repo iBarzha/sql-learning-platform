@@ -222,19 +222,20 @@ class InviteAcceptView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user = User.objects.create_user(
-            email=invite.email,
-            password=serializer.validated_data['password'],
-            role=invite.role,
-            first_name=serializer.validated_data.get('first_name', ''),
-            last_name=serializer.validated_data.get('last_name', ''),
-        )
+        with transaction.atomic():
+            user = User.objects.create_user(
+                email=invite.email,
+                password=serializer.validated_data['password'],
+                role=invite.role,
+                first_name=serializer.validated_data.get('first_name', ''),
+                last_name=serializer.validated_data.get('last_name', ''),
+            )
 
-        invite.is_used = True
-        invite.save()
+            invite.is_used = True
+            invite.save()
 
-        if invite.course:
-            Enrollment.objects.create(student=user, course=invite.course)
+            if invite.course:
+                Enrollment.objects.create(student=user, course=invite.course)
 
         refresh = RefreshToken.for_user(user)
         return Response({

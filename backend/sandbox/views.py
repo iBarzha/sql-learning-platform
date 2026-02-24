@@ -103,6 +103,16 @@ class SessionResetView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Verify session ownership before allowing reset
+        from .session_manager import get_session_manager
+        manager = get_session_manager()
+        session = manager._sessions.get(session_id)
+        if session and session.user_id is not None and session.user_id != request.user.id:
+            return Response(
+                {'error': 'Not authorized to reset this session'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         pool = get_sandbox_pool()
         pool.reset_session(session_id)
         return Response({'status': 'reset'})
