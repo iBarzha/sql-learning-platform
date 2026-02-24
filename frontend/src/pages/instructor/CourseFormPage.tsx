@@ -25,8 +25,7 @@ import { useCourse, useCreateCourse, useUpdateCourse } from '@/hooks/queries/use
 const DATABASE_TYPES = [
   { value: 'postgresql', label: 'PostgreSQL' },
   { value: 'sqlite', label: 'SQLite' },
-  { value: 'mysql', label: 'MySQL' },
-  { value: 'mariadb', label: 'MariaDB' },
+  { value: 'mariadb', label: 'MariaDB / MySQL' },
   { value: 'mongodb', label: 'MongoDB' },
   { value: 'redis', label: 'Redis' },
 ];

@@ -27,7 +27,7 @@ export interface Course {
   description: string;
   instructor: User;
   instructor_name?: string;
-  database_type: 'postgresql' | 'sqlite' | 'mysql' | 'mariadb' | 'mongodb' | 'redis';
+  database_type: 'postgresql' | 'sqlite' | 'mariadb' | 'mongodb' | 'redis';
   is_published: boolean;
   course_code?: string;
   max_students?: number;
