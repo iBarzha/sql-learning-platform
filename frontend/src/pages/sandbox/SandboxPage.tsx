@@ -43,7 +43,7 @@ import { useDatabaseTypes, useSandboxDatasets } from '@/hooks/queries/useSandbox
 /** Generate a UUID that works on HTTP (non-secure) contexts. */
 function generateSessionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return generateSessionId();
+    return crypto.randomUUID();
   }
   // Fallback for HTTP: use crypto.getRandomValues
   const bytes = new Uint8Array(16);
