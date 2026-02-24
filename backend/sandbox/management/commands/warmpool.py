@@ -11,13 +11,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             'action',
-            choices=['start', 'stop', 'status', 'warm'],
+            choices=['start', 'stop', 'status'],
             help='Action to perform'
-        )
-        parser.add_argument(
-            '--database-type',
-            '-d',
-            help='Database type for warm action'
         )
         parser.add_argument(
             '--foreground',
@@ -27,8 +22,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from sandbox.pool import get_warm_pool, start_warm_pool, stop_warm_pool
-
         action = options['action']
 
         if action == 'start':
@@ -37,22 +30,20 @@ class Command(BaseCommand):
             self.stop_pool()
         elif action == 'status':
             self.show_status()
-        elif action == 'warm':
-            self.warm_database(options['database_type'])
 
     def start_pool(self, foreground: bool):
         """Start the warm pool."""
-        from sandbox.pool import start_warm_pool, get_warm_pool
+        from sandbox.pool import start_sandbox_pool, get_sandbox_pool
 
-        self.stdout.write('Starting warm pool...')
-        start_warm_pool()
+        self.stdout.write('Starting sandbox pool...')
+        start_sandbox_pool()
 
         if foreground:
-            self.stdout.write(self.style.SUCCESS('Warm pool started. Press Ctrl+C to stop.'))
+            self.stdout.write(self.style.SUCCESS('Sandbox pool started. Press Ctrl+C to stop.'))
 
             def signal_handler(sig, frame):
-                self.stdout.write('\nStopping warm pool...')
-                get_warm_pool().stop()
+                self.stdout.write('\nStopping sandbox pool...')
+                get_sandbox_pool().stop()
                 sys.exit(0)
 
             signal.signal(signal.SIGINT, signal_handler)
@@ -63,47 +54,35 @@ class Command(BaseCommand):
             while True:
                 time.sleep(1)
         else:
-            self.stdout.write(self.style.SUCCESS('Warm pool started in background.'))
+            self.stdout.write(self.style.SUCCESS('Sandbox pool started in background.'))
 
     def stop_pool(self):
         """Stop the warm pool."""
-        from sandbox.pool import stop_warm_pool
+        from sandbox.pool import stop_sandbox_pool
 
-        self.stdout.write('Stopping warm pool...')
-        stop_warm_pool()
-        self.stdout.write(self.style.SUCCESS('Warm pool stopped.'))
+        self.stdout.write('Stopping sandbox pool...')
+        stop_sandbox_pool()
+        self.stdout.write(self.style.SUCCESS('Sandbox pool stopped.'))
 
     def show_status(self):
         """Show warm pool status."""
-        from sandbox.pool import get_warm_pool
+        from sandbox.pool import get_sandbox_pool
 
-        pool = get_warm_pool()
+        pool = get_sandbox_pool()
         stats = pool.get_stats()
 
-        self.stdout.write(f"\nWarm Pool Status:")
+        self.stdout.write(f"\nSandbox Pool Status:")
         self.stdout.write(f"  Running: {stats['running']}")
-        self.stdout.write(f"  Total busy: {stats['total_busy']}")
-        self.stdout.write(f"\nPool Configuration:")
-        self.stdout.write(f"  Pool size: {stats['config']['pool_size']}")
-        self.stdout.write(f"  Max age: {stats['config']['max_age']}s")
-        self.stdout.write(f"  Max executions: {stats['config']['max_executions']}")
         self.stdout.write(f"\nDatabase Pools:")
 
         for db_type, pool_stats in stats['pools'].items():
+            available = pool_stats.get('available', 0)
+            busy = pool_stats.get('busy', 0)
             self.stdout.write(
-                f"  {db_type}: {pool_stats['available']} available, "
-                f"{pool_stats['busy']} busy"
+                f"  {db_type}: {available} available, {busy} busy"
             )
 
-    def warm_database(self, database_type: str):
-        """Pre-warm containers for a specific database."""
-        from sandbox.pool import get_warm_pool
-
-        if not database_type:
-            self.stderr.write(self.style.ERROR('--database-type is required for warm action'))
-            return
-
-        pool = get_warm_pool()
-        self.stdout.write(f'Warming {database_type} containers...')
-        pool._warm_pool(database_type)
-        self.stdout.write(self.style.SUCCESS(f'{database_type} containers warmed.'))
+        sqlite_stats = stats.get('sqlite', {})
+        self.stdout.write(
+            f"  sqlite: {sqlite_stats.get('available', 1)} available (in-memory)"
+        )
