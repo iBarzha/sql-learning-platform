@@ -83,7 +83,7 @@ services:
       - sql-learning-network
       - sql-learning-sandbox
 
-  # React frontend (development)
+  # React frontend (development only)
   frontend:
     build:
       context: ./frontend
@@ -111,6 +111,8 @@ services:
         max-file: "3"
     networks:
       - sql-learning-network
+    profiles:
+      - dev
 
   # Nginx reverse proxy (production)
   nginx:

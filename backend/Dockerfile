@@ -31,8 +31,8 @@ RUN useradd -m -u 1000 -s /bin/bash django
 # Copy project
 COPY . .
 
-# Collect static files (as root, before switching user)
-RUN python manage.py collectstatic --noinput 2>/dev/null; \
+# Make entrypoint executable and set ownership
+RUN chmod +x /app/entrypoint.sh && \
     chown -R django:django /app
 
 # Switch to non-root user
@@ -44,5 +44,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/health/ || exit 1
 
-# Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "60", "--graceful-timeout", "30", "config.wsgi:application"]
+ENTRYPOINT ["/app/entrypoint.sh"]
