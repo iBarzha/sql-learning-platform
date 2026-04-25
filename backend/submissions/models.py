@@ -31,6 +31,13 @@ class Submission(models.Model):
         null=True,
         blank=True
     )
+    exercise = models.ForeignKey(
+        'courses.LessonExercise',
+        on_delete=models.CASCADE,
+        related_name='submissions',
+        null=True,
+        blank=True
+    )
     query = models.TextField(help_text='The submitted SQL query')
     status = models.CharField(
         max_length=20,
@@ -98,6 +105,13 @@ class UserResult(models.Model):
         null=True,
         blank=True
     )
+    exercise = models.ForeignKey(
+        'courses.LessonExercise',
+        on_delete=models.CASCADE,
+        related_name='user_results',
+        null=True,
+        blank=True
+    )
     best_submission = models.ForeignKey(
         Submission,
         on_delete=models.SET_NULL,
@@ -118,6 +132,7 @@ class UserResult(models.Model):
         indexes = [
             models.Index(fields=['student', 'assignment']),
             models.Index(fields=['student', 'lesson']),
+            models.Index(fields=['student', 'exercise']),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -127,8 +142,13 @@ class UserResult(models.Model):
             ),
             models.UniqueConstraint(
                 fields=['student', 'lesson'],
-                condition=models.Q(lesson__isnull=False),
+                condition=models.Q(lesson__isnull=False) & models.Q(exercise__isnull=True),
                 name='unique_student_lesson_result',
+            ),
+            models.UniqueConstraint(
+                fields=['student', 'exercise'],
+                condition=models.Q(exercise__isnull=False),
+                name='unique_student_exercise_result',
             ),
         ]
 

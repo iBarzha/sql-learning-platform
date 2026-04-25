@@ -24,6 +24,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
 class SubmissionCreateSerializer(serializers.Serializer):
     query = serializers.CharField(max_length=50000)
+    exercise_id = serializers.UUIDField(required=False)
 
 
 class SubmissionResultSerializer(serializers.ModelSerializer):

@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from assignments.models import Assignment
-from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
+from .models import Course, Enrollment, Dataset, Lesson, LessonExercise, Module, Attachment
 from .serializers import (
     CourseListSerializer,
     CourseDetailSerializer,
@@ -260,9 +260,9 @@ class CourseViewSet(viewsets.ModelViewSet):
                 )
                 module_map[old_id] = new_mod
 
-            # Clone lessons
+            # Clone lessons (and their exercises)
             for lesson in course.lessons.all():
-                Lesson.objects.create(
+                new_lesson = Lesson.objects.create(
                     course=new_course,
                     module=module_map.get(lesson.module_id),
                     title=lesson.title,
@@ -270,20 +270,26 @@ class CourseViewSet(viewsets.ModelViewSet):
                     lesson_type=lesson.lesson_type,
                     order=lesson.order,
                     theory_content=lesson.theory_content,
-                    practice_description=lesson.practice_description,
-                    practice_initial_code=lesson.practice_initial_code,
-                    expected_query=lesson.expected_query,
-                    expected_result=lesson.expected_result,
-                    required_keywords=lesson.required_keywords,
-                    forbidden_keywords=lesson.forbidden_keywords,
-                    order_matters=lesson.order_matters,
-                    max_score=lesson.max_score,
                     time_limit_seconds=lesson.time_limit_seconds,
                     max_attempts=lesson.max_attempts,
-                    hints=lesson.hints,
-                    dataset=dataset_map.get(lesson.dataset_id),
                     is_published=lesson.is_published,
                 )
+                for ex in lesson.exercises.all():
+                    LessonExercise.objects.create(
+                        lesson=new_lesson,
+                        order=ex.order,
+                        title=ex.title,
+                        description=ex.description,
+                        initial_code=ex.initial_code,
+                        expected_query=ex.expected_query,
+                        expected_result=ex.expected_result,
+                        required_keywords=ex.required_keywords,
+                        forbidden_keywords=ex.forbidden_keywords,
+                        order_matters=ex.order_matters,
+                        max_score=ex.max_score,
+                        hints=ex.hints,
+                        dataset=dataset_map.get(ex.dataset_id),
+                    )
 
             # Clone assignments
             for asn in Assignment.objects.filter(course=course):
