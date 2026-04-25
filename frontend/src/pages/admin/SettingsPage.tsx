@@ -226,32 +226,56 @@ export function SettingsPage() {
             {sandbox.error ? (
               <p className="text-sm text-destructive">{sandbox.error}</p>
             ) : (
-              <div className="space-y-2 text-sm">
-                {Object.entries(sandbox).map(([k, v]) => {
-                  if (typeof v === 'object' && v !== null) {
-                    return (
-                      <div key={k}>
-                        <div className="text-muted-foreground capitalize mb-1">{k.replace(/_/g, ' ')}</div>
-                        <div className="grid grid-cols-3 gap-2">
-                          {Object.entries(v as Record<string, unknown>).map(([dbType, val]) => (
-                            <div key={dbType} className="rounded-md border border-border/60 px-2 py-1">
-                              <span className="font-mono text-xs">{dbType}</span>{' '}
-                              <span className="text-muted-foreground">
-                                {typeof val === 'boolean' ? (val ? 'ok' : 'fail') : String(val)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Pool running</span>
+                  {sandbox.running ? (
+                    <Badge variant="success">yes</Badge>
+                  ) : (
+                    <Badge variant="destructive">no</Badge>
+                  )}
+                </div>
+                {(() => {
+                  const buckets: Array<{ name: string; available: number; busy: number }> = [];
+                  const pools = (sandbox as Record<string, unknown>).pools as
+                    | Record<string, { available?: number; busy?: number }>
+                    | undefined;
+                  if (pools) {
+                    for (const [name, info] of Object.entries(pools)) {
+                      buckets.push({
+                        name,
+                        available: info?.available ?? 0,
+                        busy: info?.busy ?? 0,
+                      });
+                    }
+                  }
+                  // sqlite is reported as a top-level key
+                  const sqlite = (sandbox as Record<string, unknown>).sqlite as
+                    | { available?: number; busy?: number }
+                    | undefined;
+                  if (sqlite && !buckets.find((b) => b.name === 'sqlite')) {
+                    buckets.push({
+                      name: 'sqlite',
+                      available: sqlite.available ?? 0,
+                      busy: sqlite.busy ?? 0,
+                    });
+                  }
+                  if (buckets.length === 0) {
+                    return <p className="text-xs text-muted-foreground">No pool data</p>;
                   }
                   return (
-                    <div key={k} className="flex items-center justify-between">
-                      <span className="text-muted-foreground capitalize">{k.replace(/_/g, ' ')}</span>
-                      <span className="font-mono">{String(v)}</span>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {buckets.map((b) => (
+                        <div key={b.name} className="rounded-md border border-border/60 px-3 py-2 flex items-center justify-between">
+                          <span className="font-mono text-xs uppercase">{b.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            <span className="text-foreground">{b.available}</span> available · {b.busy} busy
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   );
-                })}
+                })()}
               </div>
             )}
           </CardContent>
