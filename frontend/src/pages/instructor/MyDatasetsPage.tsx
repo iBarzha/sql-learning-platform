@@ -22,7 +22,7 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
-import { Database, Plus, Upload, Edit, Trash2, Play } from 'lucide-react';
+import { Database, Plus, Upload, Edit, Trash2, Play, Sparkles } from 'lucide-react';
 import datasetsApi, { type Dataset, type DatasetPreviewResult } from '@/api/datasets';
 import {
   useMyDatasets,
@@ -77,6 +77,14 @@ export function MyDatasetsPage() {
   const [previewResult, setPreviewResult] = useState<DatasetPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI generation state
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [genTopic, setGenTopic] = useState('');
+  const [genSize, setGenSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [genDbType, setGenDbType] = useState('sqlite');
+  const [genLoading, setGenLoading] = useState(false);
+  const [genError, setGenError] = useState('');
 
   function openNew() {
     setForm(emptyForm);
@@ -166,6 +174,33 @@ export function MyDatasetsPage() {
     }
   }
 
+  async function handleGenerate() {
+    setGenError('');
+    setGenLoading(true);
+    try {
+      const result = await datasetsApi.generate({
+        topic: genTopic,
+        size: genSize,
+        database_type: genDbType,
+      });
+      // Prefill the create form with the AI output
+      setForm({
+        name: result.name,
+        description: result.description,
+        database_type: genDbType,
+        schema_sql: result.schema_sql,
+        seed_sql: result.seed_sql,
+      });
+      setEditingId(undefined);
+      setShowGenerator(false);
+      setShowForm(true);
+    } catch (err) {
+      setGenError(getApiErrorMessage(err, 'Generation failed'));
+    } finally {
+      setGenLoading(false);
+    }
+  }
+
   const myDatasets = datasets.filter((d) => isAdmin ? true : !d.created_by || d.created_by === user?.id);
   const grouped = {
     own: myDatasets.filter((d) => d.created_by === user?.id),
@@ -216,6 +251,10 @@ export function MyDatasetsPage() {
           <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4 mr-2" />
             Upload SQL
+          </Button>
+          <Button variant="outline" onClick={() => { setGenError(''); setShowGenerator(true); }}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            Generate with AI
           </Button>
           <Button onClick={openNew}>
             <Plus className="h-4 w-4 mr-2" />
@@ -353,6 +392,79 @@ export function MyDatasetsPage() {
               </div>
             )
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Generator dialog */}
+      <Dialog open={showGenerator} onOpenChange={(o) => !o && !genLoading && setShowGenerator(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Generate Dataset with AI
+            </DialogTitle>
+            <DialogDescription>
+              Describe what you want and Gemini will generate matching schema + seed data.
+              You can edit the result before saving.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {genError && (
+              <Alert variant="destructive">
+                <AlertDescription>{genError}</AlertDescription>
+              </Alert>
+            )}
+            <div className="space-y-2">
+              <Label>Topic *</Label>
+              <Textarea
+                value={genTopic}
+                onChange={(e) => setGenTopic(e.target.value)}
+                placeholder="e.g., A small bookstore with customers, books, authors and orders. Include returns and bestseller flags."
+                rows={3}
+                disabled={genLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Describe entities, relationships, and any specific data you want to see.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Size</Label>
+                <Select value={genSize} onValueChange={(v) => setGenSize(v as 'small' | 'medium' | 'large')} disabled={genLoading}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="small">Small (~10 rows)</SelectItem>
+                    <SelectItem value="medium">Medium (~50 rows)</SelectItem>
+                    <SelectItem value="large">Large (~200 rows)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Database Type</Label>
+                <Select value={genDbType} onValueChange={setGenDbType} disabled={genLoading}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DB_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerator(false)} disabled={genLoading}>
+              Cancel
+            </Button>
+            <Button onClick={handleGenerate} disabled={!genTopic.trim() || genLoading}>
+              {genLoading ? <Spinner size="sm" className="mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              {genLoading ? 'Generating...' : 'Generate'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

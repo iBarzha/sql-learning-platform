@@ -439,6 +439,31 @@ class StandaloneDatasetViewSet(viewsets.ModelViewSet):
             'seed_sql': '\n'.join(seed_lines),
         })
 
+    @action(detail=False, methods=['post'])
+    def generate(self, request):
+        """Generate a dataset (schema + seed) via Gemini AI based on a topic prompt."""
+        from .gemini_service import generate_dataset
+
+        topic = (request.data.get('topic') or '').strip()
+        size = (request.data.get('size') or 'medium').strip()
+        database_type = (request.data.get('database_type') or 'sqlite').strip()
+
+        if not topic:
+            return Response({'detail': 'topic is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(topic) > 500:
+            return Response({'detail': 'topic is too long (max 500 chars)'}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = generate_dataset(topic=topic, size=size, database_type=database_type)
+        if not result.success:
+            return Response({'detail': result.error}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response({
+            'name': result.name,
+            'description': result.description,
+            'schema_sql': result.schema_sql,
+            'seed_sql': result.seed_sql,
+        })
+
     @action(detail=True, methods=['post'])
     def preview(self, request, pk=None):
         """Run the dataset's schema+seed in the sandbox and return the resulting tables."""
