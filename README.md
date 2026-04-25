@@ -1,4 +1,4 @@
-sad# SQL Learning Platform
+# SQL Learning Platform
 
 An interactive platform for learning SQL and NoSQL databases with real-time query execution and automated grading.
 
