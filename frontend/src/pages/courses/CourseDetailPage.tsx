@@ -111,10 +111,13 @@ function LessonsList({
     );
   }
 
-  // Group lessons by module
+  // Group lessons by module. If a lesson references a module the student
+  // can't see (e.g. it's still a draft), surface it under "other" instead
+  // of dropping it silently.
+  const moduleIds = new Set(modules.map((m) => m.id));
   const lessonsByModule = new Map<string | null, Lesson[]>();
   for (const lesson of lessons) {
-    const key = lesson.module ?? null;
+    const key = lesson.module && moduleIds.has(lesson.module) ? lesson.module : null;
     if (!lessonsByModule.has(key)) {
       lessonsByModule.set(key, []);
     }
