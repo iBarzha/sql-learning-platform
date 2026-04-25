@@ -76,6 +76,15 @@ const datasetsApi = {
     );
     return response.data;
   },
+
+  generate: async (params: {
+    topic: string;
+    size: 'small' | 'medium' | 'large';
+    database_type: string;
+  }): Promise<{ name: string; description: string; schema_sql: string; seed_sql: string }> => {
+    const response = await apiClient.post('/datasets/generate/', params);
+    return response.data;
+  },
 };
 
 export default datasetsApi;

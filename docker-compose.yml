@@ -46,6 +46,8 @@ services:
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost}
       - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-rootpassword}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENABLE_HTTPS=${ENABLE_HTTPS:-False}
       - SANDBOX_POOL_START=true
     volumes:
       - backend_static:/app/staticfiles
