@@ -119,7 +119,7 @@ Respond with ONLY a JSON object (no prose, no markdown fences) of this exact sha
         },
     }
     try:
-        resp = requests.post(url, json=payload, timeout=60)
+        resp = requests.post(url, json=payload, timeout=110)
     except requests.RequestException as e:
         logger.exception('Gemini HTTP request failed')
         return GenerationResult(success=False, error=f'Gemini request failed: {e}')
