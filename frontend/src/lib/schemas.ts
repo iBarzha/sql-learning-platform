@@ -62,7 +62,7 @@ export const lessonSchema = z.object({
   max_attempts: z.number().positive().optional().nullable(),
   hints: z.array(z.string()).default([]),
   dataset_id: z.string().optional().nullable(),
-  module_id: z.string().optional().nullable(),
+  module_id: z.string().min(1, 'Module is required'),
   is_published: z.boolean().default(false),
 });
 

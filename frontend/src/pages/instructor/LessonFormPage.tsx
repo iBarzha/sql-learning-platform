@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -38,6 +38,8 @@ export function LessonFormPage() {
   const { t } = useTranslation('instructor');
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedModuleId = searchParams.get('module') ?? undefined;
   const isEditing = Boolean(lessonId);
 
   const { data: existingLesson, isLoading: lessonLoading } = useLesson(
@@ -84,7 +86,7 @@ export function LessonFormPage() {
       max_attempts: undefined,
       hints: [],
       dataset_id: undefined,
-      module_id: undefined,
+      module_id: preselectedModuleId ?? '',
       is_published: false,
     },
   });
@@ -114,7 +116,7 @@ export function LessonFormPage() {
         max_attempts: existingLesson.max_attempts ?? undefined,
         hints: existingLesson.hints || [],
         dataset_id: existingLesson.dataset?.id ?? undefined,
-        module_id: existingLesson.module ?? undefined,
+        module_id: existingLesson.module ?? '',
         is_published: existingLesson.is_published,
       });
     }
@@ -127,7 +129,6 @@ export function LessonFormPage() {
         ...data,
         max_attempts: data.max_attempts ?? undefined,
         dataset_id: data.dataset_id ?? undefined,
-        module_id: data.module_id ?? undefined,
       };
       if (isEditing) {
         await updateLessonMutation.mutateAsync(payload);
@@ -237,15 +238,21 @@ export function LessonFormPage() {
               </div>
             </div>
 
-            {modules.length > 0 && (
+            {modules.length === 0 ? (
+              <Alert variant="destructive">
+                <AlertDescription>{t('lessonForm.noModulesAvailable')}</AlertDescription>
+              </Alert>
+            ) : (
               <div className="space-y-2">
-                <Label>{t('lessonForm.module')}</Label>
-                <Select value={watch('module_id') ?? '__none__'} onValueChange={(val) => setValue('module_id', val === '__none__' ? undefined : val)}>
+                <Label>{t('lessonForm.module')} *</Label>
+                <Select
+                  value={watch('module_id') || ''}
+                  onValueChange={(val) => setValue('module_id', val, { shouldValidate: true })}
+                >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder={t('lessonForm.selectModule')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">{t('lessonForm.noModule')}</SelectItem>
                     {modules.map((mod) => (
                       <SelectItem key={mod.id} value={mod.id}>
                         {mod.title}
@@ -253,6 +260,9 @@ export function LessonFormPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.module_id && (
+                  <p className="text-sm text-destructive">{errors.module_id.message}</p>
+                )}
               </div>
             )}
           </CardContent>

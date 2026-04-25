@@ -12,7 +12,7 @@ export interface Lesson {
   description: string;
   lesson_type: LessonType;
   order: number;
-  module?: string;
+  module: string;
   theory_content?: string;
   practice_description?: string;
   practice_initial_code?: string;
@@ -58,7 +58,7 @@ export interface CreateLessonData {
   max_attempts?: number;
   hints?: string[];
   dataset_id?: string;
-  module_id?: string;
+  module_id: string;
   is_published?: boolean;
 }
 
