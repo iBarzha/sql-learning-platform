@@ -58,3 +58,14 @@ class IsSubmissionOwner(permissions.BasePermission):
         if obj.student == request.user:
             return True
         return obj.assignment.course.instructor == request.user
+
+
+class IsAdmin(permissions.BasePermission):
+    """Only allow admin role users."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        return (
+            user.is_authenticated
+            and (getattr(user, 'role', None) == 'admin' or user.is_superuser)
+        )
