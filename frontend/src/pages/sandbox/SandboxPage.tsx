@@ -650,35 +650,53 @@ export function SandboxPage() {
           )}
 
           {/* Quick examples */}
-          {!result && (
-            <Card variant="glass">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{t('quickStart')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  {t('tryExamples')}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(QUICK_EXAMPLES[selectedDbType] || []).map((example) => (
-                    <Button
-                      key={example.labelKey}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        resetSessionState();
-                        setSchemaSql(example.schema);
-                        setSeedSql(example.seed);
-                        setQuery(example.query);
-                      }}
-                    >
-                      {t(example.labelKey)}
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {!result && (() => {
+            const activeDataset = selectedDataset
+              ? datasets.find((d) => d.id === selectedDataset)
+              : null;
+            const datasetQueries = activeDataset?.quick_start_queries || {};
+            const baseExamples = QUICK_EXAMPLES[selectedDbType] || [];
+            const visibleExamples = activeDataset
+              ? baseExamples.filter((ex) => ex.labelKey in datasetQueries)
+              : baseExamples;
+
+            if (visibleExamples.length === 0) return null;
+
+            return (
+              <Card variant="glass">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t('quickStart')}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('tryExamples')}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {visibleExamples.map((example) => (
+                      <Button
+                        key={example.labelKey}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (activeDataset) {
+                            // Dataset selected: keep its schema/seed, only swap the query
+                            setQuery(datasetQueries[example.labelKey]);
+                          } else {
+                            resetSessionState();
+                            setSchemaSql(example.schema);
+                            setSeedSql(example.seed);
+                            setQuery(example.query);
+                          }
+                        }}
+                      >
+                        {t(example.labelKey)}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
       </div>
     </div>

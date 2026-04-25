@@ -14,6 +14,7 @@ export interface SandboxDataset {
   database_type: string;
   schema_sql: string;
   seed_sql: string;
+  quick_start_queries?: Record<string, string>;
 }
 
 export interface ExecuteQueryRequest {

@@ -9,7 +9,7 @@ class DatasetSerializer(serializers.ModelSerializer):
         model = Dataset
         fields = [
             'id', 'name', 'description', 'database_type', 'schema_sql', 'seed_sql',
-            'is_default', 'created_at', 'updated_at'
+            'quick_start_queries', 'is_default', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

@@ -212,6 +212,11 @@ class Dataset(models.Model):
     )
     schema_sql = models.TextField(help_text='SQL to create tables and schema')
     seed_sql = models.TextField(blank=True, help_text='SQL to populate initial data')
+    quick_start_queries = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Mapping of example key to query string, e.g. {"basicSelect": "SELECT * FROM artists;"}'
+    )
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
