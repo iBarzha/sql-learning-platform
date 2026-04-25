@@ -136,7 +136,7 @@ class LessonListSerializer(serializers.ModelSerializer):
 class LessonDetailSerializer(serializers.ModelSerializer):
     dataset = DatasetSerializer(read_only=True)
     dataset_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
-    module_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    module_id = serializers.UUIDField(write_only=True, required=False)
     course_title = serializers.CharField(source='course.title', read_only=True)
     database_type = serializers.CharField(source='course.database_type', read_only=True)
     user_completed = serializers.SerializerMethodField()
@@ -183,7 +183,7 @@ class LessonDetailSerializer(serializers.ModelSerializer):
 
 class LessonCreateSerializer(serializers.ModelSerializer):
     dataset_id = serializers.UUIDField(required=False, allow_null=True)
-    module_id = serializers.UUIDField(required=False, allow_null=True)
+    module_id = serializers.UUIDField(required=True)
 
     class Meta:
         model = Lesson
@@ -195,18 +195,18 @@ class LessonCreateSerializer(serializers.ModelSerializer):
             'hints', 'dataset_id', 'module_id', 'is_published'
         ]
 
+    def validate_module_id(self, value):
+        course = self.context.get('course')
+        if course and not Module.objects.filter(id=value, course=course).exists():
+            raise serializers.ValidationError('Module does not belong to this course.')
+        return value
+
     def create(self, validated_data):
         dataset_id = validated_data.pop('dataset_id', None)
-        module_id = validated_data.pop('module_id', None)
-        lesson = Lesson.objects.create(**validated_data)
-        changed = False
+        module_id = validated_data.pop('module_id')
+        lesson = Lesson.objects.create(module_id=module_id, **validated_data)
         if dataset_id:
             lesson.dataset_id = dataset_id
-            changed = True
-        if module_id:
-            lesson.module_id = module_id
-            changed = True
-        if changed:
             lesson.save()
         return lesson
 

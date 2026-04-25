@@ -256,124 +256,29 @@ export function CourseManagePage() {
         </Alert>
       )}
 
-      {/* Modules */}
-      {modules.length > 0 && (
-        <Card variant="glass">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>{t('courseManage.modules')}</CardTitle>
-                <CardDescription>
-                  {t('courseManage.modulesCount', { count: modules.length })}
-                </CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => setShowAddModule(!showAddModule)}
-              >
-                <FolderPlus className="h-4 w-4 mr-2" />
-                {t('courseManage.addModule')}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {showAddModule && (
-              <div className="flex gap-2 mb-4">
-                <Input
-                  placeholder={t('courseManage.moduleTitlePlaceholder')}
-                  value={newModuleTitle}
-                  onChange={(e) => setNewModuleTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddModule();
-                    }
-                  }}
-                />
-                <Button onClick={handleAddModule} disabled={!newModuleTitle.trim()}>
-                  {t('courseManage.add')}
-                </Button>
-              </div>
-            )}
-            <div className="space-y-2">
-              {modules.map((mod) => (
-                <div
-                  key={mod.id}
-                  className="flex items-center gap-4 p-3 rounded-xl border border-border/50 hover:bg-muted/30 transition-colors"
-                >
-                  <div className="text-muted-foreground cursor-move">
-                    <GripVertical className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">{mod.title}</span>
-                      <Badge variant="outline">{mod.lesson_count} {t('courseManage.lessons').toLowerCase()}</Badge>
-                      {!mod.is_published && (
-                        <Badge variant="secondary">{t('courseManage.draft')}</Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => toggleModulePublish(mod)}
-                      title={mod.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
-                    >
-                      {mod.is_published ? (
-                        <Eye className="h-4 w-4" />
-                      ) : (
-                        <EyeOff className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteModuleId(mod.id)}
-                      title={t('courseManage.deleteModule')}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Lessons */}
+      {/* Modules with nested lessons */}
       <Card variant="glass">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>{t('courseManage.lessons')}</CardTitle>
+              <CardTitle>{t('courseManage.modules')}</CardTitle>
               <CardDescription>
-                {t('courseManage.lessonsCount', { count: lessons.length })}
+                {modules.length === 0
+                  ? t('courseManage.noModulesYet')
+                  : t('courseManage.modulesCount', { count: modules.length })}
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              {modules.length === 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAddModule(!showAddModule)}
-                >
-                  <FolderPlus className="h-4 w-4 mr-2" />
-                  {t('courseManage.addModule')}
-                </Button>
-              )}
-              <Link to={`/courses/${courseId}/lessons/new`}>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('courseManage.addLesson')}
-                </Button>
-              </Link>
-            </div>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddModule(!showAddModule)}
+            >
+              <FolderPlus className="h-4 w-4 mr-2" />
+              {t('courseManage.addModule')}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {modules.length === 0 && showAddModule && (
+          {showAddModule && (
             <div className="flex gap-2 mb-4">
               <Input
                 placeholder={t('courseManage.moduleTitlePlaceholder')}
@@ -391,82 +296,147 @@ export function CourseManagePage() {
               </Button>
             </div>
           )}
-          {lessons.length === 0 ? (
+
+          {modules.length === 0 ? (
             <div className="text-center py-12">
               <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-medium text-lg mb-2">{t('courseManage.noLessons')}</h3>
+              <h3 className="font-medium text-lg mb-2">{t('courseManage.noModulesTitle')}</h3>
               <p className="text-muted-foreground mb-4">
-                {t('courseManage.noLessonsDesc')}
+                {t('courseManage.noModulesDesc')}
               </p>
-              <Link to={`/courses/${courseId}/lessons/new`}>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('courseManage.addFirstLesson')}
-                </Button>
-              </Link>
+              <Button onClick={() => setShowAddModule(true)}>
+                <FolderPlus className="h-4 w-4 mr-2" />
+                {t('courseManage.addFirstModule')}
+              </Button>
             </div>
           ) : (
-            <div className="space-y-2">
-              {lessons.map((lesson, index) => {
-                const TypeIcon = LESSON_TYPE_ICONS[lesson.lesson_type];
+            <div className="space-y-4">
+              {modules.map((mod) => {
+                const moduleLessons = lessons.filter((l) => l.module === mod.id);
                 return (
                   <div
-                    key={lesson.id}
-                    className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 transition-colors"
+                    key={mod.id}
+                    className="rounded-xl border border-border/60 bg-card/50"
                   >
-                    <div className="text-muted-foreground cursor-move">
-                      <GripVertical className="h-5 w-5" />
-                    </div>
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
-                      {index + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium truncate">{lesson.title}</h3>
-                        <Badge variant="outline" className="shrink-0">
-                          <TypeIcon className="h-3 w-3 mr-1" />
-                          {t(`courseManage.${lesson.lesson_type}`)}
-                        </Badge>
-                        {!lesson.is_published && (
-                          <Badge variant="secondary" className="shrink-0">
-                            {t('courseManage.draft')}
-                          </Badge>
-                        )}
+                    {/* Module header */}
+                    <div className="flex items-center gap-4 p-4 border-b border-border/50">
+                      <div className="text-muted-foreground cursor-move">
+                        <GripVertical className="h-5 w-5" />
                       </div>
-                      {lesson.description && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          {lesson.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => toggleLessonPublish(lesson)}
-                        title={lesson.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
-                      >
-                        {lesson.is_published ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Link to={`/courses/${courseId}/lessons/${lesson.id}/edit`}>
-                        <Button variant="ghost" size="icon" title="Edit">
-                          <Edit className="h-4 w-4" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold truncate">{mod.title}</span>
+                          <Badge variant="outline">
+                            {moduleLessons.length} {t('courseManage.lessons').toLowerCase()}
+                          </Badge>
+                          {!mod.is_published && (
+                            <Badge variant="secondary">{t('courseManage.draft')}</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Link to={`/courses/${courseId}/lessons/new?module=${mod.id}`}>
+                          <Button variant="ghost" size="sm">
+                            <Plus className="h-4 w-4 mr-1" />
+                            {t('courseManage.addLesson')}
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleModulePublish(mod)}
+                          title={mod.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
+                        >
+                          {mod.is_published ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
                         </Button>
-                      </Link>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteLessonId(lesson.id)}
-                        title={t('courseManage.deleteLesson')}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteModuleId(mod.id)}
+                          title={t('courseManage.deleteModule')}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
+
+                    {/* Lessons inside module */}
+                    {moduleLessons.length === 0 ? (
+                      <div className="p-4 text-sm text-muted-foreground text-center">
+                        {t('courseManage.noLessonsInModule')}
+                      </div>
+                    ) : (
+                      <div className="p-2 space-y-1">
+                        {moduleLessons.map((lesson, index) => {
+                          const TypeIcon = LESSON_TYPE_ICONS[lesson.lesson_type];
+                          return (
+                            <div
+                              key={lesson.id}
+                              className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/30 transition-colors"
+                            >
+                              <div className="text-muted-foreground cursor-move">
+                                <GripVertical className="h-4 w-4" />
+                              </div>
+                              <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-medium">
+                                {index + 1}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-medium truncate">{lesson.title}</h3>
+                                  <Badge variant="outline" className="shrink-0">
+                                    <TypeIcon className="h-3 w-3 mr-1" />
+                                    {t(`courseManage.${lesson.lesson_type}`)}
+                                  </Badge>
+                                  {!lesson.is_published && (
+                                    <Badge variant="secondary" className="shrink-0">
+                                      {t('courseManage.draft')}
+                                    </Badge>
+                                  )}
+                                </div>
+                                {lesson.description && (
+                                  <p className="text-sm text-muted-foreground truncate">
+                                    {lesson.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => toggleLessonPublish(lesson)}
+                                  title={lesson.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
+                                >
+                                  {lesson.is_published ? (
+                                    <Eye className="h-4 w-4" />
+                                  ) : (
+                                    <EyeOff className="h-4 w-4" />
+                                  )}
+                                </Button>
+                                <Link to={`/courses/${courseId}/lessons/${lesson.id}/edit`}>
+                                  <Button variant="ghost" size="icon" title="Edit">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteLessonId(lesson.id)}
+                                  title={t('courseManage.deleteLesson')}
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}

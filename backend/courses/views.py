@@ -409,6 +409,13 @@ class LessonViewSet(viewsets.ModelViewSet):
             return LessonCreateSerializer
         return LessonDetailSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        course_id = self.kwargs.get('course_pk')
+        if course_id:
+            ctx['course'] = Course.objects.filter(id=course_id).first()
+        return ctx
+
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsAuthenticated(), IsInstructor()]
