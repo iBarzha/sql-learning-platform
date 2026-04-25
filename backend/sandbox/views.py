@@ -187,6 +187,7 @@ class PublicDatasetsView(APIView):
                 'database_type': dataset.database_type,
                 'schema_sql': dataset.schema_sql,
                 'seed_sql': dataset.seed_sql,
+                'quick_start_queries': dataset.quick_start_queries or {},
             })
 
         return Response(datasets)

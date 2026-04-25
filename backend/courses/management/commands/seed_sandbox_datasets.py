@@ -1021,6 +1021,132 @@ DATASETS = [
 ]
 
 
+# Per-dataset Quick Start example queries.
+# Keys must match QUICK_EXAMPLES labelKey values in frontend SandboxPage.tsx
+# (sqlite: basicSelect/groupBy/join, postgresql: basicSelect/windowFunctions/jsonQueries,
+#  mariadb: basicSelect/groupBy/subquery, mongodb: find/aggregate/update,
+#  redis: strings/lists/sortedSets). Missing keys hide the corresponding button.
+QUICK_START_QUERIES = {
+    # ── SQLite ──
+    'E-commerce Store': {
+        'basicSelect': 'SELECT * FROM products;',
+        'groupBy': 'SELECT category, COUNT(*) AS count, AVG(price) AS avg_price\nFROM products\nGROUP BY category;',
+        'join': 'SELECT c.name, SUM(o.total) AS total_spent\nFROM customers c\nJOIN orders o ON c.id = o.customer_id\nGROUP BY c.id, c.name;',
+    },
+    'Library System': {
+        'basicSelect': 'SELECT * FROM books;',
+        'groupBy': 'SELECT genre, COUNT(*) AS book_count\nFROM books\nGROUP BY genre;',
+        'join': 'SELECT b.title, a.name AS author\nFROM books b\nJOIN authors a ON b.author_id = a.id;',
+    },
+    'School Database': {
+        'basicSelect': 'SELECT * FROM students;',
+        'groupBy': 'SELECT grade_level, COUNT(*) AS students\nFROM students\nGROUP BY grade_level;',
+        'join': 'SELECT s.name AS student, c.name AS class, g.score\nFROM grades g\nJOIN students s ON g.student_id = s.id\nJOIN classes c ON g.class_id = c.id;',
+    },
+    'Hospital Records': {
+        'basicSelect': 'SELECT * FROM patients;',
+        'groupBy': 'SELECT specialty, COUNT(*) AS doctor_count\nFROM doctors\nGROUP BY specialty;',
+        'join': 'SELECT p.name AS patient, d.name AS doctor, a.diagnosis\nFROM appointments a\nJOIN patients p ON a.patient_id = p.id\nJOIN doctors d ON a.doctor_id = d.id;',
+    },
+    'Music Collection': {
+        'basicSelect': 'SELECT * FROM artists;',
+        'groupBy': 'SELECT genre, COUNT(*) AS artist_count\nFROM artists\nGROUP BY genre;',
+        'join': 'SELECT s.title AS song, a.title AS album, ar.name AS artist\nFROM songs s\nJOIN albums a ON s.album_id = a.id\nJOIN artists ar ON a.artist_id = ar.id;',
+    },
+    # ── PostgreSQL ──
+    'HR System': {
+        'basicSelect': 'SELECT * FROM employees;',
+        'windowFunctions': 'SELECT name, department_id, salary,\n  RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) AS dept_rank\nFROM employees;',
+    },
+    'Banking Database': {
+        'basicSelect': 'SELECT * FROM accounts;',
+        'windowFunctions': 'SELECT id, customer_id, balance,\n  RANK() OVER (PARTITION BY customer_id ORDER BY balance DESC) AS rank_per_customer\nFROM accounts;',
+    },
+    'Real Estate': {
+        'basicSelect': 'SELECT * FROM properties;',
+        'windowFunctions': 'SELECT id, city, price,\n  ROW_NUMBER() OVER (PARTITION BY city ORDER BY price DESC) AS rank_in_city\nFROM properties;',
+    },
+    'Social Network': {
+        'basicSelect': 'SELECT * FROM posts;',
+        'windowFunctions': 'SELECT user_id, content, likes,\n  RANK() OVER (PARTITION BY user_id ORDER BY likes DESC) AS post_rank\nFROM posts;',
+    },
+    'Logistics Tracker': {
+        'basicSelect': 'SELECT * FROM warehouses;',
+        'windowFunctions': 'SELECT warehouse_id, product_id, quantity,\n  RANK() OVER (PARTITION BY warehouse_id ORDER BY quantity DESC) AS stock_rank\nFROM inventory;',
+    },
+    # ── MariaDB ──
+    'Restaurant Manager': {
+        'basicSelect': 'SELECT * FROM menu_items;',
+        'groupBy': 'SELECT category, COUNT(*) AS count, AVG(price) AS avg_price\nFROM menu_items\nGROUP BY category;',
+        'subquery': 'SELECT name\nFROM staff\nWHERE id IN (SELECT staff_id FROM orders);',
+    },
+    'Gym Membership': {
+        'basicSelect': 'SELECT * FROM members;',
+        'groupBy': 'SELECT membership_type, COUNT(*) AS count\nFROM members\nGROUP BY membership_type;',
+        'subquery': 'SELECT name\nFROM members\nWHERE id IN (SELECT member_id FROM attendance);',
+    },
+    'Hotel Booking': {
+        'basicSelect': 'SELECT * FROM rooms;',
+        'groupBy': 'SELECT room_type_id, COUNT(*) AS count\nFROM rooms\nGROUP BY room_type_id;',
+        'subquery': 'SELECT name\nFROM guests\nWHERE id IN (SELECT guest_id FROM reservations);',
+    },
+    'Cinema Database': {
+        'basicSelect': 'SELECT * FROM movies;',
+        'groupBy': 'SELECT genre, COUNT(*) AS count\nFROM movies\nGROUP BY genre;',
+        'subquery': 'SELECT title\nFROM movies\nWHERE id IN (SELECT movie_id FROM showtimes);',
+    },
+    'Car Dealership': {
+        'basicSelect': 'SELECT * FROM vehicles;',
+        'groupBy': 'SELECT make, COUNT(*) AS count, AVG(price) AS avg_price\nFROM vehicles\nGROUP BY make;',
+        'subquery': 'SELECT make, model\nFROM vehicles\nWHERE id IN (SELECT vehicle_id FROM sales);',
+    },
+    # ── MongoDB ──
+    'Blog Platform': {
+        'find': 'db.posts.find({ likes: { $gt: 20 } });',
+        'aggregate': 'db.posts.aggregate([\n  { $group: { _id: "$author", total_likes: { $sum: "$likes" }, posts: { $sum: 1 } } }\n]);',
+        'update': 'db.posts.updateMany(\n  { likes: { $gt: 30 } },\n  { $set: { featured: true } }\n);',
+    },
+    'IoT Sensor Data': {
+        'find': 'db.readings.find({ unit: "celsius" });',
+        'aggregate': 'db.readings.aggregate([\n  { $group: { _id: "$device_id", avg_value: { $avg: "$value" }, count: { $sum: 1 } } }\n]);',
+        'update': 'db.devices.updateMany(\n  { status: "inactive" },\n  { $set: { needs_maintenance: true } }\n);',
+    },
+    'Game Scores': {
+        'find': 'db.players.find({ level: { $gte: 40 } });',
+        'aggregate': 'db.scores.aggregate([\n  { $group: { _id: "$username", total_score: { $sum: "$score" }, games: { $sum: 1 } } }\n]);',
+        'update': 'db.players.updateMany(\n  { level: { $gte: 50 } },\n  { $set: { veteran: true } }\n);',
+    },
+    'Product Catalog': {
+        'find': 'db.products.find({ stock: { $lt: 100 } });',
+        'aggregate': 'db.products.aggregate([\n  { $group: { _id: "$category", avg_price: { $avg: "$price" }, count: { $sum: 1 } } }\n]);',
+        'update': 'db.products.updateMany(\n  { price: { $gt: 100 } },\n  { $set: { premium: true } }\n);',
+    },
+    'Chat Messages': {
+        'find': 'db.messages.find({ room: "general" });',
+        'aggregate': 'db.messages.aggregate([\n  { $group: { _id: "$from", message_count: { $sum: 1 } } }\n]);',
+        'update': 'db.users.updateMany(\n  { status: "offline" },\n  { $set: { notify_email: true } }\n);',
+    },
+    # ── Redis ── (keys absent for structures the dataset does not contain)
+    'Session Store': {
+        'strings': 'MGET session:user:1001 session:user:1002 session:user:1003',
+    },
+    'Leaderboard': {
+        'sortedSets': 'ZRANGE leaderboard:global 0 -1 WITHSCORES',
+    },
+    'Cache Layer': {
+        'strings': 'GET cache:stats:visitors',
+        'lists': 'LRANGE cache:recent_products 0 -1',
+    },
+    'Rate Limiter': {
+        'strings': 'GET ratelimit:api:/login:192.168.1.1',
+    },
+    'Task Queue': {
+        'strings': 'GET queue:stats:processed',
+        'lists': 'LRANGE queue:high 0 -1',
+    },
+}
+
+
 class Command(BaseCommand):
     help = 'Seed 25 standalone sandbox datasets (5 per database type)'
 
@@ -1037,21 +1163,27 @@ class Command(BaseCommand):
             self.stdout.write(f'Deleted {count} existing standalone datasets.')
 
         created = 0
+        updated = 0
         for data in DATASETS:
-            _, was_created = Dataset.objects.get_or_create(
-                name=data['name'],
+            name = data['name']
+            obj, was_created = Dataset.objects.update_or_create(
+                name=name,
                 course=None,
                 defaults={
                     'database_type': data['database_type'],
                     'description': data['description'],
                     'schema_sql': data['schema_sql'],
                     'seed_sql': data['seed_sql'],
+                    'quick_start_queries': QUICK_START_QUERIES.get(name, {}),
                 },
             )
             if was_created:
                 created += 1
-                self.stdout.write(f'  Created: {data["name"]} ({data["database_type"]})')
+                self.stdout.write(f'  Created: {name} ({data["database_type"]})')
             else:
-                self.stdout.write(f'  Exists:  {data["name"]} ({data["database_type"]})')
+                updated += 1
+                self.stdout.write(f'  Updated: {name} ({data["database_type"]})')
 
-        self.stdout.write(self.style.SUCCESS(f'\nDone! Created {created} new datasets.'))
+        self.stdout.write(self.style.SUCCESS(
+            f'\nDone! Created {created}, updated {updated} datasets.'
+        ))
