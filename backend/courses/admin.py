@@ -25,10 +25,10 @@ class EnrollmentAdmin(admin.ModelAdmin):
 
 @admin.register(Dataset)
 class DatasetAdmin(admin.ModelAdmin):
-    list_display = ('name', 'course', 'is_default', 'created_at')
-    list_filter = ('is_default',)
-    search_fields = ('name', 'description')
-    raw_id_fields = ('course',)
+    list_display = ('name', 'course', 'created_by', 'database_type', 'is_default', 'created_at')
+    list_filter = ('is_default', 'database_type')
+    search_fields = ('name', 'description', 'created_by__email')
+    raw_id_fields = ('course', 'created_by')
 
 
 @admin.register(Lesson)

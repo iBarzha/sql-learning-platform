@@ -5,13 +5,17 @@ from users.serializers import UserSerializer
 
 
 class DatasetSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.full_name', read_only=True, default=None)
+    created_by = serializers.UUIDField(source='created_by_id', read_only=True)
+
     class Meta:
         model = Dataset
         fields = [
             'id', 'name', 'description', 'database_type', 'schema_sql', 'seed_sql',
-            'quick_start_queries', 'is_default', 'created_at', 'updated_at'
+            'quick_start_queries', 'is_default', 'created_by', 'created_by_name',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_by', 'created_by_name', 'created_at', 'updated_at']
 
 
 class CourseListSerializer(serializers.ModelSerializer):
