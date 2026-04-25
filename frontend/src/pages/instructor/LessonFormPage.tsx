@@ -470,15 +470,18 @@ export function LessonFormPage() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Total Time Limit (seconds)</Label>
+                  <Label>Total Time Limit (minutes)</Label>
                   <Input
                     type="number"
                     min="1"
-                    value={watch('time_limit_seconds')}
-                    onChange={(e) => setValue('time_limit_seconds', parseInt(e.target.value) || 600)}
+                    value={Math.round((watch('time_limit_seconds') ?? 600) / 60)}
+                    onChange={(e) => {
+                      const minutes = parseInt(e.target.value) || 10;
+                      setValue('time_limit_seconds', minutes * 60);
+                    }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Shared timer running across all exercises (e.g., 600 = 10 minutes for all).
+                    Shared timer running across all exercises (e.g., 120 = 2 hours for all).
                   </p>
                 </div>
                 <div className="space-y-2">
