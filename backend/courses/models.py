@@ -154,30 +154,15 @@ class Lesson(models.Model):
     # Theory content
     theory_content = models.TextField(blank=True, help_text='Markdown supported')
 
-    # Practice content
-    practice_description = models.TextField(blank=True, help_text='Task description')
-    practice_initial_code = models.TextField(blank=True, help_text='Initial code template')
-    expected_query = models.TextField(blank=True, help_text='Expected SQL query')
-    expected_result = models.JSONField(null=True, blank=True)
-
-    # Grading options
-    required_keywords = models.JSONField(default=list, blank=True)
-    forbidden_keywords = models.JSONField(default=list, blank=True)
-    order_matters = models.BooleanField(default=False)
-    max_score = models.PositiveIntegerField(default=100)
-    time_limit_seconds = models.PositiveIntegerField(default=60)
-    max_attempts = models.PositiveIntegerField(null=True, blank=True)
-
-    # Hints
-    hints = models.JSONField(default=list, blank=True)
-
-    # Dataset for practice
-    dataset = models.ForeignKey(
-        'Dataset',
-        on_delete=models.SET_NULL,
+    # Lesson-wide practice settings (exercises live in LessonExercise)
+    time_limit_seconds = models.PositiveIntegerField(
+        default=600,
+        help_text='Total time for all practice exercises in this lesson'
+    )
+    max_attempts = models.PositiveIntegerField(
         null=True,
         blank=True,
-        related_name='lessons'
+        help_text='Per-exercise attempt limit (null = unlimited)'
     )
 
     is_published = models.BooleanField(default=False)
@@ -190,6 +175,43 @@ class Lesson(models.Model):
 
     def __str__(self):
         return f'{self.title} ({self.course.title})'
+
+
+class LessonExercise(models.Model):
+    """A single SQL practice task inside a lesson. A lesson can have many."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.CASCADE,
+        related_name='exercises'
+    )
+    order = models.PositiveIntegerField(default=0)
+    title = models.CharField(max_length=255, default='Exercise')
+    description = models.TextField(blank=True, help_text='Task description')
+    initial_code = models.TextField(blank=True, help_text='Initial code template')
+    expected_query = models.TextField(blank=True, help_text='Expected SQL query')
+    expected_result = models.JSONField(null=True, blank=True)
+    required_keywords = models.JSONField(default=list, blank=True)
+    forbidden_keywords = models.JSONField(default=list, blank=True)
+    order_matters = models.BooleanField(default=False)
+    max_score = models.PositiveIntegerField(default=100)
+    hints = models.JSONField(default=list, blank=True)
+    dataset = models.ForeignKey(
+        'Dataset',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='exercises'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'lesson_exercises'
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f'{self.lesson.title}: {self.title}'
 
 
 class Dataset(models.Model):

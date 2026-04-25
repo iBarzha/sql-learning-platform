@@ -18,7 +18,7 @@ from .serializers import (
     UserResultSerializer,
 )
 from assignments.models import Assignment
-from courses.models import Course, Enrollment, Lesson
+from courses.models import Course, Enrollment, Lesson, LessonExercise
 from sandbox.services import execute_query
 from grading.models import get_grading_service
 
@@ -83,6 +83,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
 
         assignment = None
         lesson = None
+        exercise = None
         course = None
 
         if assignment_id:
@@ -110,32 +111,44 @@ class SubmissionViewSet(viewsets.ModelViewSet):
 
         elif lesson_id:
             try:
-                lesson = Lesson.objects.select_related(
-                    'course', 'dataset'
-                ).get(id=lesson_id)
+                lesson = Lesson.objects.select_related('course').get(id=lesson_id)
             except Lesson.DoesNotExist:
                 return Response(
                     {'detail': 'Lesson not found'},
                     status=status.HTTP_404_NOT_FOUND
                 )
-            course = lesson.course
-            max_attempts = lesson.max_attempts
-            is_published = lesson.is_published
-            dataset = lesson.dataset
-            expected_query = lesson.expected_query
-            expected_result = lesson.expected_result
-            required_keywords = lesson.required_keywords or []
-            forbidden_keywords = lesson.forbidden_keywords or []
-            order_matters = lesson.order_matters
-            partial_match = False
-            max_score = lesson.max_score
-            time_limit = lesson.time_limit_seconds or 60
-
             if lesson.lesson_type == 'theory':
                 return Response(
                     {'detail': 'This lesson has no practice component'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            exercise_id = serializer.validated_data.get('exercise_id')
+            if not exercise_id:
+                return Response(
+                    {'detail': 'exercise_id is required for lesson submissions'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            try:
+                exercise = LessonExercise.objects.select_related('dataset').get(
+                    id=exercise_id, lesson=lesson
+                )
+            except LessonExercise.DoesNotExist:
+                return Response(
+                    {'detail': 'Exercise not found in this lesson'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            course = lesson.course
+            max_attempts = lesson.max_attempts
+            is_published = lesson.is_published
+            dataset = exercise.dataset
+            expected_query = exercise.expected_query
+            expected_result = exercise.expected_result
+            required_keywords = exercise.required_keywords or []
+            forbidden_keywords = exercise.forbidden_keywords or []
+            order_matters = exercise.order_matters
+            partial_match = False
+            max_score = exercise.max_score
+            time_limit = lesson.time_limit_seconds or 600
         else:
             return Response(
                 {'detail': 'Assignment or lesson ID required'},
@@ -175,7 +188,8 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             else:
                 user_result, _ = UserResult.objects.select_for_update().get_or_create(
                     student=request.user,
-                    lesson=lesson
+                    exercise=exercise,
+                    defaults={'lesson': lesson},
                 )
 
             if max_attempts and user_result.total_attempts >= max_attempts:
@@ -193,6 +207,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             student=request.user,
             assignment=assignment,
             lesson=lesson,
+            exercise=exercise if lesson else None,
             query=student_query,
             attempt_number=attempt_number,
             status=Submission.Status.RUNNING,
@@ -370,8 +385,8 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
 
             if result.assignment:
                 max_score = result.assignment.max_score
-            elif result.lesson:
-                max_score = result.lesson.max_score
+            elif result.exercise:
+                max_score = result.exercise.max_score
             else:
                 max_score = 0
 
@@ -468,8 +483,8 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
 
             if result.assignment:
                 max_score = result.assignment.max_score
-            elif result.lesson:
-                max_score = result.lesson.max_score
+            elif result.exercise:
+                max_score = result.exercise.max_score
             else:
                 max_score = 0
 

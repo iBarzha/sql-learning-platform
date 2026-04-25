@@ -46,22 +46,31 @@ export const courseSchema = z.object({
 
 export type CourseFormData = z.infer<typeof courseSchema>;
 
-export const lessonSchema = z.object({
+export const exerciseSchema = z.object({
+  id: z.string().optional(),
+  order: z.number().default(0),
   title: z.string().min(1, 'Title is required').max(255),
   description: z.string().default(''),
-  lesson_type: z.enum(['theory', 'practice', 'mixed']),
-  theory_content: z.string().default(''),
-  practice_description: z.string().default(''),
-  practice_initial_code: z.string().default(''),
+  initial_code: z.string().default(''),
   expected_query: z.string().default(''),
   required_keywords: z.array(z.string()).default([]),
   forbidden_keywords: z.array(z.string()).default([]),
   order_matters: z.boolean().default(false),
   max_score: z.number().positive().default(100),
-  time_limit_seconds: z.number().positive().default(60),
-  max_attempts: z.number().positive().optional().nullable(),
   hints: z.array(z.string()).default([]),
   dataset_id: z.string().optional().nullable(),
+});
+
+export type ExerciseFormData = z.infer<typeof exerciseSchema>;
+
+export const lessonSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(255),
+  description: z.string().default(''),
+  lesson_type: z.enum(['theory', 'practice', 'mixed']),
+  theory_content: z.string().default(''),
+  time_limit_seconds: z.number().positive().default(600),
+  max_attempts: z.number().positive().optional().nullable(),
+  exercises: z.array(exerciseSchema).default([]),
   module_id: z.string().min(1, 'Module is required'),
   is_published: z.boolean().default(false),
 });

@@ -59,7 +59,8 @@ export function useDeleteLesson(courseId: string) {
 export function useSubmitLesson(courseId: string, lessonId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (query: string) => lessonsApi.submit(courseId, lessonId, query),
+    mutationFn: ({ query, exerciseId }: { query: string; exerciseId: string }) =>
+      lessonsApi.submit(courseId, lessonId, query, exerciseId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['lesson', courseId, lessonId, 'submissions'] });
       qc.invalidateQueries({ queryKey: ['lesson', courseId, lessonId] });
