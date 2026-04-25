@@ -64,10 +64,12 @@ export function useEnrollCourse(courseId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => coursesApi.enroll(courseId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['course', courseId] });
-      qc.invalidateQueries({ queryKey: ['courses'] });
-      qc.invalidateQueries({ queryKey: ['enrollments'] });
+    onSuccess: async () => {
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ['course', courseId] }),
+        qc.invalidateQueries({ queryKey: ['courses'] }),
+        qc.invalidateQueries({ queryKey: ['enrollments'] }),
+      ]);
     },
   });
 }
@@ -87,10 +89,12 @@ export function useUnenrollCourse(courseId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => coursesApi.unenroll(courseId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['course', courseId] });
-      qc.invalidateQueries({ queryKey: ['courses'] });
-      qc.invalidateQueries({ queryKey: ['enrollments'] });
+    onSuccess: async () => {
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ['course', courseId] }),
+        qc.invalidateQueries({ queryKey: ['courses'] }),
+        qc.invalidateQueries({ queryKey: ['enrollments'] }),
+      ]);
     },
   });
 }

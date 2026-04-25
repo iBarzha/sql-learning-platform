@@ -1,7 +1,7 @@
 import os
 
 from django.db import transaction
-from django.db.models import Count, Exists, Max, OuterRef, Prefetch
+from django.db.models import Count, Exists, Max, OuterRef, Prefetch, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -600,7 +600,11 @@ class ModuleViewSet(viewsets.ModelViewSet):
             lesson_count=Count('lessons', distinct=True)
         )
         if not user.is_instructor:
-            queryset = queryset.filter(is_published=True)
+            # Students see modules that are either published themselves
+            # or contain at least one published lesson (so they have something to show).
+            queryset = queryset.filter(
+                Q(is_published=True) | Q(lessons__is_published=True)
+            ).distinct()
         return queryset.order_by('order', 'created_at')
 
     def get_serializer_class(self):
