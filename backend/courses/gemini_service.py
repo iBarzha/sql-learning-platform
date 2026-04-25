@@ -81,12 +81,7 @@ def generate_dataset(topic: str, size: str, database_type: str) -> GenerationRes
     if size not in SIZE_LIMITS:
         return GenerationResult(success=False, error=f'Invalid size: {size}')
 
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        return GenerationResult(success=False, error='google-generativeai package is not installed')
-
-    genai.configure(api_key=api_key)
+    import requests
 
     prompt = f"""You are a database expert generating a teaching dataset.
 
@@ -112,14 +107,38 @@ Respond with ONLY a JSON object (no prose, no markdown fences) of this exact sha
 }}
 """
 
+    url = (
+        'https://generativelanguage.googleapis.com/v1beta/'
+        f'models/gemini-2.5-flash:generateContent?key={api_key}'
+    )
+    payload = {
+        'contents': [{'parts': [{'text': prompt}]}],
+        'generationConfig': {
+            'temperature': 0.7,
+            'responseMimeType': 'application/json',
+        },
+    }
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
-        text = (response.text or '').strip()
-    except Exception as e:
-        logger.exception('Gemini generation failed')
-        return GenerationResult(success=False, error=f'Gemini API call failed: {e}')
+        resp = requests.post(url, json=payload, timeout=110)
+    except requests.RequestException as e:
+        logger.exception('Gemini HTTP request failed')
+        return GenerationResult(success=False, error=f'Gemini request failed: {e}')
 
+    if resp.status_code != 200:
+        logger.error('Gemini returned %s: %s', resp.status_code, resp.text[:500])
+        return GenerationResult(
+            success=False,
+            error=f'Gemini API error {resp.status_code}: {resp.text[:200]}',
+        )
+
+    try:
+        data = resp.json()
+        text = data['candidates'][0]['content']['parts'][0]['text']
+    except (KeyError, IndexError, ValueError) as e:
+        logger.exception('Unexpected Gemini response shape')
+        return GenerationResult(success=False, error=f'Unexpected response from Gemini: {e}')
+
+    text = (text or '').strip()
     if not text:
         return GenerationResult(success=False, error='Gemini returned an empty response')
 
