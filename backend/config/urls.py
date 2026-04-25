@@ -8,12 +8,21 @@ from django.conf.urls.static import static
 
 from config.health import health_check, readiness_check
 
-from courses.views import CourseViewSet, DatasetViewSet, EnrollmentViewSet, LessonViewSet, ModuleViewSet, AttachmentViewSet
+from courses.views import (
+    CourseViewSet,
+    DatasetViewSet,
+    StandaloneDatasetViewSet,
+    EnrollmentViewSet,
+    LessonViewSet,
+    ModuleViewSet,
+    AttachmentViewSet,
+)
 from assignments.views import AssignmentViewSet
 from submissions.views import SubmissionViewSet, UserResultViewSet
 
 router = DefaultRouter()
 router.register(r'courses', CourseViewSet, basename='course')
+router.register(r'datasets', StandaloneDatasetViewSet, basename='dataset')
 router.register(r'enrollments', EnrollmentViewSet, basename='enrollment')
 router.register(r'submissions', SubmissionViewSet, basename='submission')
 router.register(r'results', UserResultViewSet, basename='result')

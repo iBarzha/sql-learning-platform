@@ -10,6 +10,7 @@ import {
   UserPlus,
   Settings,
   Database,
+  Library,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,12 @@ const navItems: NavItem[] = [
     to: '/my-courses',
     icon: GraduationCap,
     labelKey: 'common:navigation.myCourses',
+    roles: ['instructor', 'admin'],
+  },
+  {
+    to: '/my-datasets',
+    icon: Library,
+    labelKey: 'common:navigation.myDatasets',
     roles: ['instructor', 'admin'],
   },
   {

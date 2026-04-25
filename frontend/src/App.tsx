@@ -21,6 +21,7 @@ const AssignmentPage = lazy(() => import('@/pages/assignments/AssignmentPage').t
 const ProfilePage = lazy(() => import('@/pages/profile/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const SandboxPage = lazy(() => import('@/pages/sandbox/SandboxPage').then(m => ({ default: m.SandboxPage })));
 const MyCoursesPage = lazy(() => import('@/pages/instructor/MyCoursesPage').then(m => ({ default: m.MyCoursesPage })));
+const MyDatasetsPage = lazy(() => import('@/pages/instructor/MyDatasetsPage').then(m => ({ default: m.MyDatasetsPage })));
 const CourseFormPage = lazy(() => import('@/pages/instructor/CourseFormPage').then(m => ({ default: m.CourseFormPage })));
 const CourseManagePage = lazy(() => import('@/pages/instructor/CourseManagePage').then(m => ({ default: m.CourseManagePage })));
 const LessonFormPage = lazy(() => import('@/pages/instructor/LessonFormPage').then(m => ({ default: m.LessonFormPage })));
@@ -86,6 +87,10 @@ function AppRoutes() {
         <Route
           path="my-courses"
           element={isInstructor ? <MyCoursesPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="my-datasets"
+          element={isInstructor ? <MyDatasetsPage /> : <Navigate to="/" replace />}
         />
         <Route
           path="courses/new"

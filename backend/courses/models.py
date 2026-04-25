@@ -225,6 +225,14 @@ class Dataset(models.Model):
         blank=True,
         related_name='datasets'
     )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='datasets',
+        help_text='Instructor who created this dataset (null = system dataset)'
+    )
     database_type = models.CharField(
         max_length=20,
         choices=Course.DatabaseType.choices,
