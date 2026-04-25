@@ -135,7 +135,8 @@ services:
     mem_limit: 128m
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"]
+      # http://localhost/ may issue a 301 to HTTPS; treat any HTTP response code as alive.
+      test: ["CMD-SHELL", "wget -q -O /dev/null -S http://localhost/ 2>&1 | grep -qE 'HTTP/1.1 (200|301|302)' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
