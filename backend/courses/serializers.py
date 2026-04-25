@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Exists, OuterRef
-from .models import Course, Enrollment, Dataset, Lesson, Module, Attachment
+from .models import Course, Enrollment, Dataset, Lesson, LessonExercise, Module, Attachment
 from users.serializers import UserSerializer
 
 
@@ -96,49 +96,72 @@ class JoinByCodeSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=8)
 
 
+class LessonExerciseSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
+    dataset = DatasetSerializer(read_only=True)
+    dataset_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+
+    class Meta:
+        model = LessonExercise
+        fields = [
+            'id', 'order', 'title', 'description', 'initial_code',
+            'expected_query', 'expected_result',
+            'required_keywords', 'forbidden_keywords', 'order_matters',
+            'max_score', 'hints', 'dataset', 'dataset_id',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+
 class LessonListSerializer(serializers.ModelSerializer):
-    dataset_name = serializers.CharField(source='dataset.name', read_only=True)
     user_completed = serializers.SerializerMethodField()
     user_best_score = serializers.SerializerMethodField()
+    exercise_count = serializers.IntegerField(source='exercises.count', read_only=True)
 
     class Meta:
         model = Lesson
         fields = [
             'id', 'title', 'description', 'lesson_type', 'order',
-            'module', 'is_published', 'max_score', 'dataset_name',
+            'module', 'is_published', 'exercise_count',
             'user_completed', 'user_best_score', 'created_at'
         ]
 
-    def _get_user_result(self, obj):
-        """Get user result from prefetched data or fall back to query."""
+    def _get_user_results(self, obj):
         if hasattr(obj, '_prefetched_user_results'):
-            results = obj._prefetched_user_results
-            return results[0] if results else None
+            return obj._prefetched_user_results
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             from submissions.models import UserResult
-            return UserResult.objects.filter(student=request.user, lesson=obj).first()
-        return None
+            return list(UserResult.objects.filter(student=request.user, lesson=obj))
+        return []
 
     def get_user_completed(self, obj):
         if obj.lesson_type == 'theory':
             return None
-        result = self._get_user_result(obj)
-        return result.is_completed if result else False
+        results = self._get_user_results(obj)
+        if not results:
+            return False
+        # Lesson is complete only if every exercise has a completed result.
+        exercise_ids = {ex.id for ex in obj.exercises.all()}
+        if not exercise_ids:
+            return False
+        completed = {r.exercise_id for r in results if r.is_completed and r.exercise_id}
+        return exercise_ids.issubset(completed)
 
     def get_user_best_score(self, obj):
         if obj.lesson_type == 'theory':
             return None
-        result = self._get_user_result(obj)
-        return result.best_score if result else None
+        results = self._get_user_results(obj)
+        if not results:
+            return None
+        return sum((r.best_score for r in results if r.exercise_id), start=0)
 
 
 class LessonDetailSerializer(serializers.ModelSerializer):
-    dataset = DatasetSerializer(read_only=True)
-    dataset_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     module_id = serializers.UUIDField(write_only=True, required=False)
     course_title = serializers.CharField(source='course.title', read_only=True)
     database_type = serializers.CharField(source='course.database_type', read_only=True)
+    exercises = LessonExerciseSerializer(many=True, required=False)
     user_completed = serializers.SerializerMethodField()
 
     class Meta:
@@ -146,10 +169,8 @@ class LessonDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'course', 'course_title', 'database_type', 'title', 'description',
             'lesson_type', 'order', 'module', 'module_id',
-            'theory_content', 'practice_description', 'practice_initial_code',
-            'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
-            'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
-            'hints', 'dataset', 'dataset_id', 'is_published',
+            'theory_content', 'time_limit_seconds', 'max_attempts',
+            'exercises', 'is_published',
             'user_completed', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'course', 'created_at', 'updated_at']
@@ -157,42 +178,67 @@ class LessonDetailSerializer(serializers.ModelSerializer):
     def get_user_completed(self, obj):
         if obj.lesson_type == 'theory':
             return None
-        # Use prefetched data if available
-        if hasattr(obj, '_prefetched_user_results'):
-            results = obj._prefetched_user_results
-            return results[0].is_completed if results else False
         request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            from submissions.models import UserResult
-            return UserResult.objects.filter(
-                student=request.user,
-                lesson=obj,
-                is_completed=True
-            ).exists()
-        return None
+        if not (request and request.user.is_authenticated):
+            return None
+        from submissions.models import UserResult
+        exercise_ids = list(obj.exercises.values_list('id', flat=True))
+        if not exercise_ids:
+            return False
+        completed_count = UserResult.objects.filter(
+            student=request.user,
+            exercise_id__in=exercise_ids,
+            is_completed=True,
+        ).count()
+        return completed_count == len(exercise_ids)
 
     def update(self, instance, validated_data):
-        dataset_id = validated_data.pop('dataset_id', None)
         module_id = validated_data.pop('module_id', None)
-        if dataset_id is not None:
-            instance.dataset_id = dataset_id
+        exercises_data = validated_data.pop('exercises', None)
         if module_id is not None:
             instance.module_id = module_id
-        return super().update(instance, validated_data)
+        instance = super().update(instance, validated_data)
+        if exercises_data is not None:
+            self._sync_exercises(instance, exercises_data)
+        return instance
+
+    @staticmethod
+    def _sync_exercises(lesson, exercises_data):
+        existing = {str(e.id): e for e in lesson.exercises.all()}
+        seen_ids = set()
+        for idx, ex_data in enumerate(exercises_data):
+            dataset_id = ex_data.pop('dataset_id', None)
+            ex_data.setdefault('order', idx)
+            ex_id = ex_data.pop('id', None)
+            if ex_id and str(ex_id) in existing:
+                ex = existing[str(ex_id)]
+                for field, val in ex_data.items():
+                    setattr(ex, field, val)
+                ex.dataset_id = dataset_id
+                ex.save()
+                seen_ids.add(str(ex_id))
+            else:
+                LessonExercise.objects.create(
+                    lesson=lesson,
+                    dataset_id=dataset_id,
+                    **ex_data,
+                )
+        # Delete exercises not present in the payload
+        for ex_id, ex in existing.items():
+            if ex_id not in seen_ids:
+                ex.delete()
 
 
 class LessonCreateSerializer(serializers.ModelSerializer):
-    dataset_id = serializers.UUIDField(required=False, allow_null=True)
     module_id = serializers.UUIDField(required=True)
+    exercises = LessonExerciseSerializer(many=True, required=False)
 
     class Meta:
         model = Lesson
         fields = [
             'title', 'description', 'lesson_type', 'order',
-            'theory_content', 'practice_description', 'practice_initial_code',
-            'expected_query', 'expected_result', 'required_keywords', 'forbidden_keywords',
-            'order_matters', 'max_score', 'time_limit_seconds', 'max_attempts',
-            'hints', 'dataset_id', 'module_id', 'is_published'
+            'theory_content', 'time_limit_seconds', 'max_attempts',
+            'module_id', 'exercises', 'is_published'
         ]
 
     def validate_module_id(self, value):
@@ -202,12 +248,18 @@ class LessonCreateSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        dataset_id = validated_data.pop('dataset_id', None)
         module_id = validated_data.pop('module_id')
+        exercises_data = validated_data.pop('exercises', [])
         lesson = Lesson.objects.create(module_id=module_id, **validated_data)
-        if dataset_id:
-            lesson.dataset_id = dataset_id
-            lesson.save()
+        for idx, ex_data in enumerate(exercises_data):
+            dataset_id = ex_data.pop('dataset_id', None)
+            order = ex_data.pop('order', idx)
+            LessonExercise.objects.create(
+                lesson=lesson,
+                order=order,
+                dataset_id=dataset_id,
+                **ex_data,
+            )
         return lesson
 
 

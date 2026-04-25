@@ -91,8 +91,10 @@ export interface Submission {
   id: string;
   student: string;
   student_name?: string;
-  assignment: string;
+  assignment?: string;
   assignment_title?: string;
+  lesson?: string;
+  exercise?: string;
   query: string;
   status: 'pending' | 'running' | 'completed' | 'error' | 'timeout';
   result?: QueryResult;

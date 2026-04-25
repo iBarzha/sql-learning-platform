@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,11 +18,15 @@ import {
   ChevronLeft,
   BookOpen,
   Code,
+  Clock,
+  Paperclip,
+  Download,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { SqlExerciseBlock } from '@/components/editor/SqlExerciseBlock';
 import type { Submission } from '@/types';
+import type { LessonExercise } from '@/api/lessons';
 import { useLesson, useLessonSubmissions, useSubmitLesson } from '@/hooks/queries/useLessons';
 import { useAttachments } from '@/hooks/queries/useAttachments';
 import { getApiErrorMessage } from '@/lib/utils';
@@ -30,9 +34,7 @@ import { SqlEditor } from '@/components/editor/SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
 import { formatFileSize, getFileTypeIcon } from '@/components/ui/FileUpload';
 import type { LocalQueryResult } from '@/lib/sqljs';
-import { Paperclip, Download } from 'lucide-react';
 
-// Allow code blocks with language classes for syntax highlighting
 const sanitizeSchema = {
   ...defaultSchema,
   attributes: {
@@ -40,6 +42,234 @@ const sanitizeSchema = {
     code: [...(defaultSchema.attributes?.code || []), 'className'],
   },
 };
+
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+interface ExercisePanelProps {
+  exercise: LessonExercise;
+  databaseType?: string;
+  query: string;
+  onChangeQuery: (q: string) => void;
+  onSubmit: () => void;
+  isSubmitting: boolean;
+  submission: Submission | null;
+  localResult: LocalQueryResult | null;
+  canSubmit: boolean;
+  attemptsLeft?: number;
+  maxAttempts?: number;
+}
+
+function ExercisePanel({
+  exercise,
+  query,
+  onChangeQuery,
+  onSubmit,
+  isSubmitting,
+  submission,
+  localResult,
+  canSubmit,
+  attemptsLeft,
+  maxAttempts,
+  databaseType,
+}: ExercisePanelProps) {
+  const { t } = useTranslation('lessons');
+  const [showHint, setShowHint] = useState(false);
+  const [hintIndex, setHintIndex] = useState(0);
+
+  const hints = exercise.hints || [];
+  const isSqlite = databaseType === 'sqlite';
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{exercise.title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap">
+              {exercise.description || t('page.defaultTaskDescription')}
+            </p>
+          </CardContent>
+        </Card>
+
+        {hints.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4" />
+                  {t('page.hints')}
+                </CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => setShowHint(!showHint)}>
+                  {showHint ? t('page.hide') : t('page.show')}
+                </Button>
+              </div>
+            </CardHeader>
+            {showHint && (
+              <CardContent>
+                <div className="flex items-center justify-between mb-2">
+                  <Button variant="ghost" size="icon" disabled={hintIndex === 0} onClick={() => setHintIndex((i) => i - 1)}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {t('page.hintOf', { current: hintIndex + 1, total: hints.length })}
+                  </span>
+                  <Button variant="ghost" size="icon" disabled={hintIndex >= hints.length - 1} onClick={() => setHintIndex((i) => i + 1)}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm bg-muted p-3 rounded-md">{hints[hintIndex]}</p>
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        {exercise.dataset && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('page.databaseSchema')}</CardTitle>
+              <CardDescription>{exercise.dataset.name}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-48">
+                {exercise.dataset.schema_sql}
+              </pre>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('page.yourQuery')}</CardTitle>
+            <CardDescription>
+              {t('page.pressCtrlEnter')}
+              {maxAttempts && ` • ${t('page.attemptsLeft', { count: attemptsLeft })}`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SqlEditor
+              value={query}
+              onChange={onChangeQuery}
+              height="192px"
+              readOnly={!canSubmit}
+              onExecute={onSubmit}
+              placeholder={t('page.queryPlaceholder')}
+            />
+            <div className="flex items-center justify-end mt-4">
+              <Button onClick={onSubmit} disabled={isSubmitting || !query.trim() || !canSubmit}>
+                {isSubmitting ? <Spinner size="sm" className="mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                {t('page.runQuery')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {isSqlite && localResult && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">{t('page.queryOutput')}</CardTitle>
+                <Badge variant="outline">{localResult.execution_time_ms}ms ({t('page.local')})</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {localResult.error_message && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertDescription className="font-mono text-xs">{localResult.error_message}</AlertDescription>
+                </Alert>
+              )}
+              {localResult.success && localResult.columns.length > 0 && (
+                <div className="overflow-auto max-h-48 border rounded-md">
+                  <Table className="w-full text-sm">
+                    <TableHeader className="bg-muted sticky top-0">
+                      <TableRow>
+                        {localResult.columns.map((col, i) => (
+                          <TableHead key={i} className="px-2 py-1 text-left font-medium border-b">{col}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {localResult.rows.slice(0, 10).map((row, i) => (
+                        <TableRow key={i} className="border-b">
+                          {(row as unknown[]).map((cell, j) => (
+                            <TableCell key={j} className="px-2 py-1 font-mono text-xs">
+                              {cell === null ? <span className="text-muted-foreground italic">NULL</span> : String(cell)}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {submission && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">{t('page.result')}</CardTitle>
+                {submission.is_correct ? (
+                  <Badge variant="success">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    {t('page.correct')}
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    {t('page.incorrect')}
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {submission.status === 'error' && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertDescription>{submission.error_message}</AlertDescription>
+                </Alert>
+              )}
+              {submission.result && (
+                <div className="overflow-auto">
+                  <Table className="w-full text-sm">
+                    <TableHeader>
+                      <TableRow className="border-b">
+                        {submission.result.columns.map((col: string, i: number) => (
+                          <TableHead key={i} className="px-2 py-1 text-left font-medium">{col}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {submission.result.rows.slice(0, 10).map((row: unknown[], i: number) => (
+                        <TableRow key={i} className="border-b">
+                          {row.map((cell, j) => (
+                            <TableCell key={j} className="px-2 py-1">{String(cell ?? 'NULL')}</TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+                <span>{t('page.score', { score: submission.score, max: exercise.max_score })}</span>
+                <span>{t('page.time', { ms: submission.execution_time_ms })}</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function LessonPage() {
   const { t } = useTranslation('lessons');
@@ -52,64 +282,88 @@ export function LessonPage() {
   const submitMutation = useSubmitLesson(courseId!, lessonId!);
   const loading = lessonLoading || subsLoading;
 
-  const [query, setQuery] = useState('');
-  const [queryInitialized, setQueryInitialized] = useState(false);
-  const [currentSubmission, setCurrentSubmission] = useState<Submission | null>(null);
-  const [localResult, setLocalResult] = useState<LocalQueryResult | null>(null);
-  const [showHint, setShowHint] = useState(false);
-  const [hintIndex, setHintIndex] = useState(0);
+  const exercises = useMemo<LessonExercise[]>(() => lesson?.exercises ?? [], [lesson?.exercises]);
+  const [activeExerciseIdx, setActiveExerciseIdx] = useState(0);
+  // Per-exercise local UI state
+  const [queries, setQueries] = useState<Record<string, string>>({});
+  const [submissionsByExercise, setSubmissionsByExercise] = useState<Record<string, Submission | null>>({});
+  const [localResultByExercise, setLocalResultByExercise] = useState<Record<string, LocalQueryResult | null>>({});
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'theory' | 'practice'>('theory');
+  const [timerStart, setTimerStart] = useState<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
 
-  // Client-side SQLite for instant preview
   const sqlite = useSqlite();
-
-  // Set initial query from submissions or lesson initial code
-  useEffect(() => {
-    if (!queryInitialized && !loading && lesson) {
-      if (submissions.length > 0) {
-        setQuery(submissions[0].query);
-      } else if (lesson.practice_initial_code) {
-        setQuery(lesson.practice_initial_code);
-      }
-      if (lesson.lesson_type === 'practice') {
-        setActiveTab('practice');
-      }
-      setQueryInitialized(true);
-    }
-  }, [loading, lesson, submissions, queryInitialized]);
-
-  // Initialize local SQLite DB for SQLite courses
   const isSqlite = lesson?.database_type === 'sqlite';
+
+  // Initialize per-exercise queries from existing submissions or initial code
   useEffect(() => {
-    if (lesson && isSqlite && lesson.dataset) {
-      sqlite.initDatabase(lesson.dataset.schema_sql, lesson.dataset.seed_sql);
+    if (!lesson) return;
+    setQueries((prev) => {
+      const updated = { ...prev };
+      for (const ex of exercises) {
+        if (!ex.id) continue;
+        if (updated[ex.id] !== undefined) continue;
+        const exerciseSub = submissions.find((s: Submission) => s.exercise === ex.id);
+        updated[ex.id] = exerciseSub?.query ?? ex.initial_code ?? '';
+      }
+      return updated;
+    });
+    if (lesson.lesson_type === 'practice') {
+      setActiveTab('practice');
+    }
+  }, [lesson, exercises, submissions]);
+
+  // Initialize SQLite for the active exercise's dataset
+  const activeExercise = exercises[activeExerciseIdx];
+  useEffect(() => {
+    if (lesson && isSqlite && activeExercise?.dataset) {
+      sqlite.initDatabase(activeExercise.dataset.schema_sql, activeExercise.dataset.seed_sql || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson?.id, isSqlite, sqlite.initDatabase]);
+  }, [lesson?.id, isSqlite, activeExercise?.id, sqlite.initDatabase]);
+
+  // Shared timer: starts on first practice tab visit
+  useEffect(() => {
+    if (activeTab === 'practice' && timerStart === null && lesson?.lesson_type !== 'theory') {
+      setTimerStart(Date.now());
+    }
+  }, [activeTab, timerStart, lesson?.lesson_type]);
+
+  useEffect(() => {
+    if (timerStart === null) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [timerStart]);
+
+  const totalSeconds = lesson?.time_limit_seconds ?? 600;
+  const elapsed = timerStart ? Math.floor((now - timerStart) / 1000) : 0;
+  const remaining = Math.max(totalSeconds - elapsed, 0);
+  const timeUp = timerStart !== null && remaining === 0;
 
   const handleSubmit = useCallback(async () => {
-    if (!courseId || !lessonId || !query.trim()) return;
+    if (!courseId || !lessonId || !activeExercise?.id) return;
+    const exId = activeExercise.id;
+    const q = queries[exId] ?? '';
+    if (!q.trim()) return;
 
-    // For SQLite: show local results immediately
     if (isSqlite && sqlite.isReady) {
-      const result = sqlite.execute(query.trim());
-      setLocalResult(result);
+      const result = sqlite.execute(q.trim());
+      setLocalResultByExercise((prev) => ({ ...prev, [exId]: result }));
     }
 
-    // Always submit to server for grading
     try {
       setError('');
-      setCurrentSubmission(null);
-      if (!isSqlite) setLocalResult(null);
-      const submission = await submitMutation.mutateAsync(query.trim());
-      setCurrentSubmission(submission);
+      setSubmissionsByExercise((prev) => ({ ...prev, [exId]: null }));
+      if (!isSqlite) {
+        setLocalResultByExercise((prev) => ({ ...prev, [exId]: null }));
+      }
+      const sub = await submitMutation.mutateAsync({ query: q.trim(), exerciseId: exId });
+      setSubmissionsByExercise((prev) => ({ ...prev, [exId]: sub }));
     } catch (err) {
       setError(getApiErrorMessage(err, t('page.failedSubmit')));
     }
-  }, [courseId, lessonId, query, isSqlite, sqlite, submitMutation]);
-
-  // Ctrl+Enter is handled by Monaco editor's onExecute prop
+  }, [courseId, lessonId, activeExercise?.id, queries, isSqlite, sqlite, submitMutation, t]);
 
   if (loading) {
     return (
@@ -130,22 +384,24 @@ export function LessonPage() {
     );
   }
 
-  const hints = lesson.hints || [];
-  const maxAttempts = lesson.max_attempts;
-  const attemptsUsed = submissions.length;
-  const attemptsLeft = maxAttempts ? maxAttempts - attemptsUsed : undefined;
-  const canSubmit = !maxAttempts || (attemptsLeft !== undefined && attemptsLeft > 0);
-  const hasPractice = lesson.lesson_type !== 'theory';
+  const hasPractice = lesson.lesson_type !== 'theory' && exercises.length > 0;
   const hasTheory = lesson.lesson_type !== 'practice';
+  const maxAttempts = lesson.max_attempts;
+  const attemptsForActive = activeExercise?.id
+    ? submissions.filter((s: Submission) => s.exercise === activeExercise.id).length
+    : 0;
+  const attemptsLeft = maxAttempts ? maxAttempts - attemptsForActive : undefined;
+  const canSubmit = !timeUp && (!maxAttempts || (attemptsLeft !== undefined && attemptsLeft > 0));
+
+  const activeExId = activeExercise?.id;
+  const activeQuery = activeExId ? queries[activeExId] ?? '' : '';
+  const activeSub = activeExId ? submissionsByExercise[activeExId] ?? null : null;
+  const activeLocal = activeExId ? localResultByExercise[activeExId] ?? null : null;
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate(`/courses/${courseId}`)}
-        >
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/courses/${courseId}`)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -181,7 +437,12 @@ export function LessonPage() {
         </Alert>
       )}
 
-      {/* Tabs for mixed lessons */}
+      {timeUp && (
+        <Alert variant="destructive">
+          <AlertDescription>{t('page.timeIsUp', { defaultValue: "Time is up. You can no longer submit answers." })}</AlertDescription>
+        </Alert>
+      )}
+
       {lesson.lesson_type === 'mixed' && (
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'theory' | 'practice')}>
           <TabsList>
@@ -197,7 +458,6 @@ export function LessonPage() {
         </Tabs>
       )}
 
-      {/* Theory content */}
       {hasTheory && (activeTab === 'theory' || lesson.lesson_type === 'theory') && (
         <Card>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none pt-6">
@@ -230,7 +490,6 @@ export function LessonPage() {
         </Card>
       )}
 
-      {/* Attachments */}
       {attachments.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -262,249 +521,59 @@ export function LessonPage() {
         </Card>
       )}
 
-      {/* Practice content */}
       {hasPractice && (activeTab === 'practice' || lesson.lesson_type === 'practice') && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Left: Task description */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('page.task')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="whitespace-pre-wrap">
-                  {lesson.practice_description || t('page.defaultTaskDescription')}
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Hints */}
-            {hints.length > 0 && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Lightbulb className="h-4 w-4" />
-                      {t('page.hints')}
-                    </CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowHint(!showHint)}
-                    >
-                      {showHint ? t('page.hide') : t('page.show')}
-                    </Button>
-                  </div>
-                </CardHeader>
-                {showHint && (
-                  <CardContent>
-                    <div className="flex items-center justify-between mb-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={hintIndex === 0}
-                        onClick={() => setHintIndex((i) => i - 1)}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {t('page.hintOf', { current: hintIndex + 1, total: hints.length })}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={hintIndex >= hints.length - 1}
-                        onClick={() => setHintIndex((i) => i + 1)}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-sm bg-muted p-3 rounded-md">{hints[hintIndex]}</p>
-                  </CardContent>
-                )}
-              </Card>
-            )}
-
-            {/* Dataset schema */}
-            {lesson.dataset && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">{t('page.databaseSchema')}</CardTitle>
-                  <CardDescription>{lesson.dataset.name}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-48">
-                    {lesson.dataset.schema_sql}
-                  </pre>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Right: Query editor and results */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('page.yourQuery')}</CardTitle>
-                <CardDescription>
-                  {t('page.pressCtrlEnter')}
-                  {maxAttempts && ` \u2022 ${t('page.attemptsLeft', { count: attemptsLeft })}`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <SqlEditor
-                  value={query}
-                  onChange={setQuery}
-                  height="192px"
-                  readOnly={!canSubmit}
-                  onExecute={handleSubmit}
-                  placeholder={t('page.queryPlaceholder')}
-                />
-                <div className="flex items-center justify-between mt-4">
-                  <span className="text-xs text-muted-foreground">
-                    {t('page.timeLimit', { seconds: lesson.time_limit_seconds })}
+        <div className="space-y-4">
+          {/* Shared timer + exercise tabs */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  <span className="font-mono text-lg">{formatTime(remaining)}</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    {t('page.timeForAll', { defaultValue: 'shared across all exercises' })}
                   </span>
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={submitMutation.isPending || !query.trim() || !canSubmit}
-                  >
-                    {submitMutation.isPending ? (
-                      <Spinner size="sm" className="mr-2" />
-                    ) : (
-                      <Play className="h-4 w-4 mr-2" />
-                    )}
-                    {t('page.runQuery')}
-                  </Button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {exercises.map((ex, idx) => {
+                  const sub = ex.id ? submissionsByExercise[ex.id] : null;
+                  const wasCorrect =
+                    submissions.find((s: Submission) => s.exercise === ex.id && s.is_correct) ||
+                    sub?.is_correct;
+                  return (
+                    <Button
+                      key={ex.id ?? idx}
+                      variant={idx === activeExerciseIdx ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setActiveExerciseIdx(idx)}
+                    >
+                      {wasCorrect && <CheckCircle className="h-3 w-3 mr-1" />}
+                      {ex.title || `Exercise ${idx + 1}`}
+                    </Button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Local SQLite preview (instant) */}
-            {isSqlite && localResult && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{t('page.queryOutput')}</CardTitle>
-                    <Badge variant="outline">
-                      {localResult.execution_time_ms}ms ({t('page.local')})
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {localResult.error_message && (
-                    <Alert variant="destructive" className="mb-4">
-                      <AlertDescription className="font-mono text-xs">
-                        {localResult.error_message}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  {localResult.success && localResult.columns.length > 0 && (
-                    <div className="overflow-auto max-h-48 border rounded-md">
-                      <Table className="w-full text-sm">
-                        <TableHeader className="bg-muted sticky top-0">
-                          <TableRow>
-                            {localResult.columns.map((col, i) => (
-                              <TableHead key={i} className="px-2 py-1 text-left font-medium border-b">
-                                {col}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {localResult.rows.slice(0, 10).map((row, i) => (
-                            <TableRow key={i} className="border-b">
-                              {(row as unknown[]).map((cell, j) => (
-                                <TableCell key={j} className="px-2 py-1 font-mono text-xs">
-                                  {cell === null ? (
-                                    <span className="text-muted-foreground italic">NULL</span>
-                                  ) : (
-                                    String(cell)
-                                  )}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                  {localResult.success && localResult.affected_rows > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      {t('page.rowsAffected', { count: localResult.affected_rows })}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Grading result */}
-            {currentSubmission && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{t('page.result')}</CardTitle>
-                    {currentSubmission.is_correct ? (
-                      <Badge variant="success">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        {t('page.correct')}
-                      </Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        <XCircle className="h-3 w-3 mr-1" />
-                        {t('page.incorrect')}
-                      </Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {currentSubmission.status === 'error' && (
-                    <Alert variant="destructive" className="mb-4">
-                      <AlertDescription>{currentSubmission.error_message}</AlertDescription>
-                    </Alert>
-                  )}
-
-                  {currentSubmission.result && (
-                    <div className="overflow-auto">
-                      <Table className="w-full text-sm">
-                        <TableHeader>
-                          <TableRow className="border-b">
-                            {currentSubmission.result.columns.map((col: string, i: number) => (
-                              <TableHead key={i} className="px-2 py-1 text-left font-medium">
-                                {col}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {currentSubmission.result.rows.slice(0, 10).map((row: unknown[], i: number) => (
-                            <TableRow key={i} className="border-b">
-                              {row.map((cell, j) => (
-                                <TableCell key={j} className="px-2 py-1">
-                                  {String(cell ?? 'NULL')}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                      {currentSubmission.result.row_count > 10 && (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {t('page.showingRows', { shown: 10, total: currentSubmission.result.row_count })}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
-                    <span>
-                      {t('page.score', { score: currentSubmission.score, max: lesson.max_score })}
-                    </span>
-                    <span>{t('page.time', { ms: currentSubmission.execution_time_ms })}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+          {activeExercise && (
+            <ExercisePanel
+              exercise={activeExercise}
+              databaseType={lesson.database_type}
+              query={activeQuery}
+              onChangeQuery={(q) => {
+                if (activeExId) setQueries((prev) => ({ ...prev, [activeExId]: q }));
+              }}
+              onSubmit={handleSubmit}
+              isSubmitting={submitMutation.isPending}
+              submission={activeSub}
+              localResult={activeLocal}
+              canSubmit={canSubmit}
+              attemptsLeft={attemptsLeft}
+              maxAttempts={maxAttempts}
+            />
+          )}
         </div>
       )}
     </div>

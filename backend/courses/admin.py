@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Course, Enrollment, Dataset, Lesson
+from .models import Course, Enrollment, Dataset, Lesson, LessonExercise
 
 
 @admin.register(Course)
@@ -36,5 +36,13 @@ class LessonAdmin(admin.ModelAdmin):
     list_display = ('title', 'course', 'lesson_type', 'order', 'is_published', 'created_at')
     list_filter = ('lesson_type', 'is_published')
     search_fields = ('title', 'description')
-    raw_id_fields = ('course', 'dataset')
+    raw_id_fields = ('course', 'module')
     ordering = ('course', 'order')
+
+
+@admin.register(LessonExercise)
+class LessonExerciseAdmin(admin.ModelAdmin):
+    list_display = ('title', 'lesson', 'order', 'max_score', 'created_at')
+    search_fields = ('title', 'description')
+    raw_id_fields = ('lesson', 'dataset')
+    ordering = ('lesson', 'order')
