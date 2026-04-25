@@ -11,6 +11,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         model = Submission
         fields = [
             'id', 'student', 'student_name', 'assignment', 'assignment_title',
+            'lesson', 'exercise',
             'query', 'status', 'result', 'error_message', 'execution_time_ms',
             'score', 'is_correct', 'feedback', 'attempt_number',
             'submitted_at', 'graded_at'
@@ -33,7 +34,8 @@ class SubmissionResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = Submission
         fields = [
-            'id', 'query', 'status', 'result', 'error_message',
+            'id', 'lesson', 'exercise', 'assignment',
+            'query', 'status', 'result', 'error_message',
             'execution_time_ms', 'score', 'is_correct', 'feedback',
             'attempt_number', 'submitted_at', 'graded_at'
         ]

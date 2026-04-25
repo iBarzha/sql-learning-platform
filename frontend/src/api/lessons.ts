@@ -3,6 +3,29 @@ import type { PaginatedResponse, Submission } from '@/types';
 
 export type LessonType = 'theory' | 'practice' | 'mixed';
 
+export interface LessonExercise {
+  id?: string;
+  order: number;
+  title: string;
+  description?: string;
+  initial_code?: string;
+  expected_query?: string;
+  expected_result?: unknown;
+  required_keywords?: string[];
+  forbidden_keywords?: string[];
+  order_matters?: boolean;
+  max_score: number;
+  hints?: string[];
+  dataset?: {
+    id: string;
+    name: string;
+    description: string;
+    schema_sql: string;
+    seed_sql: string;
+  } | null;
+  dataset_id?: string;
+}
+
 export interface Lesson {
   id: string;
   course: string;
@@ -14,25 +37,9 @@ export interface Lesson {
   order: number;
   module: string;
   theory_content?: string;
-  practice_description?: string;
-  practice_initial_code?: string;
-  expected_query?: string;
-  expected_result?: unknown;
-  required_keywords?: string[];
-  forbidden_keywords?: string[];
-  order_matters?: boolean;
-  max_score: number;
-  time_limit_seconds?: number;
+  time_limit_seconds: number;
   max_attempts?: number;
-  hints?: string[];
-  dataset?: {
-    id: string;
-    name: string;
-    description: string;
-    schema_sql: string;
-    seed_sql: string;
-  };
-  dataset_name?: string;
+  exercises: LessonExercise[];
   is_published: boolean;
   user_completed?: boolean;
   user_best_score?: number;
@@ -46,18 +53,9 @@ export interface CreateLessonData {
   lesson_type: string;
   order?: number;
   theory_content?: string;
-  practice_description?: string;
-  practice_initial_code?: string;
-  expected_query?: string;
-  expected_result?: unknown;
-  required_keywords?: string[];
-  forbidden_keywords?: string[];
-  order_matters?: boolean;
-  max_score?: number;
   time_limit_seconds?: number;
   max_attempts?: number;
-  hints?: string[];
-  dataset_id?: string;
+  exercises?: LessonExercise[];
   module_id: string;
   is_published?: boolean;
 }
@@ -108,10 +106,10 @@ const lessonsApi = {
   },
 
   // Submit practice
-  submit: async (courseId: string, lessonId: string, query: string) => {
+  submit: async (courseId: string, lessonId: string, query: string, exerciseId: string) => {
     const response = await apiClient.post<Submission>(
       `/courses/${courseId}/lessons/${lessonId}/submissions/`,
-      { query }
+      { query, exercise_id: exerciseId }
     );
     return response.data;
   },
