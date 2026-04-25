@@ -142,11 +142,16 @@ def _get_recent_activity():
     from submissions.models import Submission
 
     User = get_user_model()
-    recent_users = list(
-        User.objects.order_by('-created_at')[:5].values(
-            'id', 'email', 'full_name', 'role', 'created_at', 'last_login'
-        )
-    )
+    recent_users = []
+    for u in User.objects.order_by('-created_at')[:5]:
+        recent_users.append({
+            'id': str(u.id),
+            'email': u.email,
+            'full_name': getattr(u, 'full_name', '') or f'{u.first_name} {u.last_name}'.strip(),
+            'role': u.role,
+            'created_at': u.created_at,
+            'last_login': u.last_login,
+        })
     recent_submissions = []
     for s in (
         Submission.objects.select_related('student', 'lesson', 'exercise', 'assignment')
@@ -165,9 +170,7 @@ def _get_recent_activity():
             'submitted_at': s.submitted_at,
         })
     return {
-        'recent_users': [
-            {**u, 'id': str(u['id'])} for u in recent_users
-        ],
+        'recent_users': recent_users,
         'recent_submissions': recent_submissions,
     }
 
