@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { ArrowLeft, Save, Plus, X, Paperclip, Trash2, ChevronDown, ChevronUp, ListChecks } from 'lucide-react';
 import { useLesson, useCreateLesson, useUpdateLesson } from '@/hooks/queries/useLessons';
-import { useCourseDatasets } from '@/hooks/queries/useCourses';
+import { useMyDatasets } from '@/hooks/queries/useDatasets';
 import { useModules } from '@/hooks/queries/useModules';
 import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/queries/useAttachments';
 import { lessonSchema, type LessonFormData } from '@/lib/schemas';
@@ -230,7 +230,7 @@ export function LessonFormPage() {
     isEditing ? courseId : undefined,
     isEditing ? lessonId : undefined
   );
-  const { data: datasets = [], isLoading: datasetsLoading } = useCourseDatasets(courseId);
+  const { data: datasets = [], isLoading: datasetsLoading } = useMyDatasets();
   const { data: modules = [] } = useModules(courseId);
   const createLesson = useCreateLesson(courseId!);
   const updateLessonMutation = useUpdateLesson(courseId!, lessonId ?? '');

@@ -169,10 +169,19 @@ class PublicDatasetsView(APIView):
         """Return list of public datasets grouped by database type."""
         database_type = request.query_params.get('database_type')
 
-        # Get standalone datasets (no course) + datasets from published courses
+        # Standalone system datasets + datasets from published courses + own datasets (for instructors)
+        user = request.user
         queryset = Dataset.objects.filter(
-            Q(course__isnull=True) | Q(course__is_published=True)
+            Q(course__isnull=True, created_by__isnull=True)  # system datasets
+            | Q(course__is_published=True)  # published course datasets
         ).select_related('course')
+        if user.is_authenticated and user.is_instructor:
+            from django.db.models import Q as DjangoQ
+            queryset = Dataset.objects.filter(
+                DjangoQ(course__isnull=True, created_by__isnull=True)
+                | DjangoQ(course__is_published=True)
+                | DjangoQ(course__isnull=True, created_by=user)
+            ).select_related('course')
 
         if database_type:
             queryset = queryset.filter(database_type=database_type)

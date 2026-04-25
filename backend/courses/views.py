@@ -368,7 +368,109 @@ class DatasetViewSet(viewsets.ModelViewSet):
             raise NotFound('Course not found')
         if course.instructor != self.request.user:
             raise PermissionDenied('Not authorized to add datasets to this course')
-        serializer.save(course_id=course_id)
+        serializer.save(course_id=course_id, created_by=self.request.user)
+
+
+class StandaloneDatasetViewSet(viewsets.ModelViewSet):
+    """Datasets owned by an instructor (course=None) or system datasets.
+
+    Visible to instructors/admins. Each instructor sees their own datasets
+    plus system datasets (created_by=null). Admins see all.
+    """
+    serializer_class = DatasetSerializer
+    permission_classes = [IsAuthenticated, IsInstructor]
+    pagination_class = None
+
+    def get_queryset(self):
+        user = self.request.user
+        # Standalone (course=None) datasets only
+        queryset = Dataset.objects.filter(course__isnull=True).select_related('created_by')
+        if not user.is_superuser:
+            from django.db.models import Q
+            queryset = queryset.filter(Q(created_by=user) | Q(created_by__isnull=True))
+        return queryset.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, course=None)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        user = self.request.user
+        if instance.created_by and instance.created_by != user and not user.is_superuser:
+            raise PermissionDenied('You can only edit your own datasets')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        if instance.created_by and instance.created_by != user and not user.is_superuser:
+            raise PermissionDenied('You can only delete your own datasets')
+        instance.delete()
+
+    @action(detail=False, methods=['post'])
+    def upload_sql(self, request):
+        """Parse an uploaded .sql/.txt file into schema_sql + seed_sql."""
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'detail': 'file is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if file.size > 5 * 1024 * 1024:
+            return Response({'detail': 'File too large (max 5MB)'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            content = file.read().decode('utf-8', errors='replace')
+        except Exception as e:
+            return Response({'detail': f'Failed to read file: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Naive split: CREATE/ALTER/DROP go to schema, INSERT/UPDATE/DELETE go to seed
+        schema_lines = []
+        seed_lines = []
+        for raw in content.split(';'):
+            stmt = raw.strip()
+            if not stmt:
+                continue
+            head = stmt.lstrip().upper()
+            if head.startswith(('CREATE', 'ALTER', 'DROP')):
+                schema_lines.append(stmt + ';')
+            elif head.startswith(('INSERT', 'UPDATE', 'DELETE')):
+                seed_lines.append(stmt + ';')
+            else:
+                # Comments or other statements: keep with schema
+                schema_lines.append(stmt + ';')
+        return Response({
+            'schema_sql': '\n'.join(schema_lines),
+            'seed_sql': '\n'.join(seed_lines),
+        })
+
+    @action(detail=True, methods=['post'])
+    def preview(self, request, pk=None):
+        """Run the dataset's schema+seed in the sandbox and return the resulting tables."""
+        from sandbox.services import execute_query
+        dataset = self.get_object()
+        # Pick a sensible default query per database type
+        default_queries = {
+            'sqlite': "SELECT name FROM sqlite_master WHERE type='table';",
+            'postgresql': "SELECT tablename FROM pg_tables WHERE schemaname='public';",
+            'mariadb': "SHOW TABLES;",
+            'mongodb': "db.getCollectionNames();",
+            'redis': "KEYS *",
+        }
+        query = request.data.get('query') or default_queries.get(dataset.database_type, '')
+        if not query:
+            return Response({'detail': 'No preview query for this database type'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        response = execute_query(
+            database_type=dataset.database_type,
+            query=query,
+            schema_sql=dataset.schema_sql,
+            seed_sql=dataset.seed_sql,
+            timeout=15,
+            user_id=request.user.id,
+            dataset_id=dataset.id,
+        )
+        if response.success and response.result:
+            return Response(response.result.to_dict())
+        return Response({
+            'success': False,
+            'error_message': response.error_message,
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class EnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
