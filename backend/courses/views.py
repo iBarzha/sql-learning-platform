@@ -552,8 +552,13 @@ class LessonViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = Lesson.objects.filter(course_id=course_id)
 
-        # Students only see published lessons
-        if not user.is_instructor:
+        # Drafts are for the course owner and admins; everyone else sees published lessons.
+        owns_course = (
+            user.is_authenticated
+            and (getattr(user, 'role', None) == 'admin' or user.is_superuser
+                 or Course.objects.filter(id=course_id, instructor=user).exists())
+        )
+        if not owns_course:
             queryset = queryset.filter(is_published=True)
 
         # Prefetch user results for the current user to avoid N+1 in serializers

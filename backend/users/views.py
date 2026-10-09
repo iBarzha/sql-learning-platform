@@ -438,9 +438,17 @@ class AdminUserDetailView(APIView):
 
         if 'role' in data:
             user.role = data['role']
+            # IsAdmin also honours is_superuser, so a demoted admin must lose the flags
+            # or the role change would not take away anything.
+            is_admin = user.role == 'admin'
+            user.is_staff = is_admin
+            if not is_admin:
+                user.is_superuser = False
         if 'is_active' in data:
             user.is_active = data['is_active']
-        user.save(update_fields=['role', 'is_active', 'updated_at'])
+        user.save(update_fields=['role', 'is_active', 'is_staff', 'is_superuser', 'updated_at'])
+        if not user.is_active:
+            _revoke_sessions(user)
 
         return Response(AdminUserListSerializer(user, context={'request': request}).data)
 
@@ -484,8 +492,17 @@ class AdminResetPasswordView(APIView):
         user.set_password(password)
         user.must_change_password = True
         user.save(update_fields=['password', 'must_change_password', 'updated_at'])
+        _revoke_sessions(user)
 
         return Response({
             'user': AdminUserListSerializer(user, context={'request': request}).data,
             'temporary_password': password,
         })
+
+
+def _revoke_sessions(user) -> None:
+    """Blacklist every refresh token the user holds; access tokens expire within minutes."""
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)

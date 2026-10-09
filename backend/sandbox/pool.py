@@ -210,7 +210,7 @@ class SandboxPool:
         # ── Security: validate query before execution ───────
         try:
             if database_type in ('sqlite', 'postgresql', 'mariadb'):
-                validate_sql(query)
+                validate_sql(query, database_type)
             elif database_type == 'mongodb':
                 validate_mongodb(query)
             elif database_type == 'redis':
@@ -300,7 +300,7 @@ class SandboxPool:
         for query in queries:
             try:
                 if database_type in ('sqlite', 'postgresql', 'mariadb'):
-                    validate_sql(query)
+                    validate_sql(query, database_type)
                 elif database_type == 'mongodb':
                     validate_mongodb(query)
                 elif database_type == 'redis':
@@ -342,7 +342,7 @@ class SandboxPool:
         # Security: validate query (same as stateless path)
         try:
             if database_type in ('sqlite', 'postgresql', 'mariadb'):
-                validate_sql(query)
+                validate_sql(query, database_type)
             elif database_type == 'mongodb':
                 validate_mongodb(query)
             elif database_type == 'redis':

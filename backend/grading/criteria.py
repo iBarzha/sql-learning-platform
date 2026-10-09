@@ -363,7 +363,9 @@ class Context:
                 self.shape_error = MSG['multiple']
             elif self.kind == KIND_SELECT and student_kind == STATEMENT_DML:
                 self.shape_error = MSG['dml_for_select']
-        self._hidden_started: Optional[float] = None
+        # The time budget covers the whole grading, so a slow primary phase cannot be
+        # followed by another full budget of hidden-dataset runs.
+        self._started = time.monotonic()
         self._dataset_cache: dict[int, Verdict] = {}
 
     # ── parsing ──
@@ -526,9 +528,7 @@ class Context:
         if self.diff is not None and self.diff.kind == cmp.KIND_COLUMN_COUNT:
             verdict = Verdict(False, MSG['columns_block'])
         else:
-            if self._hidden_started is None:
-                self._hidden_started = time.monotonic()
-            if time.monotonic() - self._hidden_started > HIDDEN_BUDGET_SECONDS:
+            if time.monotonic() - self._started > HIDDEN_BUDGET_SECONDS:
                 verdict = Verdict(False, MSG['budget'])
             elif self.matches_on_dataset(dataset):
                 verdict = Verdict(True)

@@ -139,8 +139,17 @@ class LessonExerciseSerializer(serializers.ModelSerializer):
         return criteria_summary(self._db_type(), obj)
 
 
-# Fields that reveal the answer. Students must never receive them.
+# Fields that reveal the answer. Only the course owner and admins receive them.
 EXERCISE_SOLUTION_FIELDS = ('expected_query', 'expected_result', 'check_datasets', 'criteria')
+
+
+def can_see_solutions(user, course) -> bool:
+    """The course owner and admins; another instructor is a reader like any student."""
+    if not (user and user.is_authenticated):
+        return False
+    if getattr(user, 'role', None) == 'admin' or user.is_superuser:
+        return True
+    return course is not None and course.instructor_id == user.id
 
 
 def criteria_task(db_type, data):
@@ -283,7 +292,7 @@ class LessonDetailSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        if not (user and user.is_authenticated and user.is_instructor):
+        if not can_see_solutions(user, instance.course):
             for exercise in data.get('exercises') or []:
                 for name in EXERCISE_SOLUTION_FIELDS:
                     exercise.pop(name, None)

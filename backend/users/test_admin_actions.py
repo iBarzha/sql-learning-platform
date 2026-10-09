@@ -131,3 +131,60 @@ class AdminUserActionsTestCase(APITestCase):
         row = resp.data['results'][0]
         self.assertIn('last_login', row)
         self.assertIn('is_active', row)
+
+
+class PrivilegeRevocationTests(APITestCase):
+    """Role and password changes must take effect for sessions that already exist."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email='admin@test.com', password='x', role=User.Role.ADMIN,
+            is_staff=True, is_superuser=True)
+        self.second = User.objects.create_user(
+            email='second@test.com', password='x', role=User.Role.ADMIN,
+            is_staff=True, is_superuser=True)
+        self.student = User.objects.create_user(
+            email='student@test.com', password='x', role=User.Role.STUDENT)
+
+    def url(self, user, suffix=''):
+        return f'/api/auth/admin/users/{user.id}/{suffix}'
+
+    def refresh_token_for(self, email):
+        self.client.force_authenticate(None)
+        resp = self.client.post('/api/auth/login/', {'email': email, 'password': 'x'},
+                                format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        return resp.data['tokens']['refresh']
+
+    def test_demoting_an_admin_clears_superuser_flags(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.patch(self.url(self.second), {'role': 'instructor'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.second.refresh_from_db()
+        self.assertFalse(self.second.is_superuser)
+        self.assertFalse(self.second.is_staff)
+        self.client.force_authenticate(self.second)
+        self.assertEqual(self.client.get('/api/auth/admin/users/').status_code, 403)
+
+    def test_promoting_to_admin_sets_staff_flag(self):
+        self.client.force_authenticate(self.admin)
+        self.client.patch(self.url(self.student), {'role': 'admin'}, format='json')
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_staff)
+
+    def test_password_reset_revokes_existing_sessions(self):
+        refresh = self.refresh_token_for('student@test.com')
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.post(self.url(self.student, 'reset-password/')).status_code,
+                         200)
+        self.client.force_authenticate(None)
+        resp = self.client.post('/api/auth/token/refresh/', {'refresh': refresh}, format='json')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_deactivation_revokes_existing_sessions(self):
+        refresh = self.refresh_token_for('student@test.com')
+        self.client.force_authenticate(self.admin)
+        self.client.patch(self.url(self.student), {'is_active': False}, format='json')
+        self.client.force_authenticate(None)
+        resp = self.client.post('/api/auth/token/refresh/', {'refresh': refresh}, format='json')
+        self.assertEqual(resp.status_code, 401)

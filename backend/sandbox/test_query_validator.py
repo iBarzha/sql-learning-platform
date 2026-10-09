@@ -74,3 +74,50 @@ class DangerousQueriesAreBlockedTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ParserDifferentialTests(unittest.TestCase):
+    """The stripper must not hide code the database will execute (parser-differential gaps)."""
+
+    def assertBlocked(self, sql, database_type=None):
+        with self.assertRaises(QueryBlockedError):
+            validate_sql(sql, database_type)
+
+    def assertAllowed(self, sql, database_type=None):
+        try:
+            validate_sql(sql, database_type)
+        except QueryBlockedError as err:
+            self.fail(f'blocked legitimate query {sql!r}: {err.message}')
+
+    def test_mysql_backslash_escaped_quote_cannot_hide_a_call(self):
+        # MariaDB reads 'abc\'' as the string abc' and then runs LOAD_FILE.
+        self.assertBlocked("SELECT 'abc\\'', LOAD_FILE('/etc/passwd'), 'x'", 'mariadb')
+        self.assertBlocked("SELECT 'abc\\'', LOAD_FILE('/etc/passwd'), 'x'")
+
+    def test_mysql_double_quoted_string_cannot_hide_a_call(self):
+        self.assertBlocked("SELECT \"'\", LOAD_FILE('/etc/passwd'), \"'\"", 'mariadb')
+        self.assertBlocked("SELECT \"'\", LOAD_FILE('/etc/passwd'), \"'\"")
+
+    def test_postgres_dollar_quoting_cannot_hide_a_call(self):
+        self.assertBlocked("SELECT $$'$$, pg_read_file('x'), $$'$$", 'postgresql')
+        self.assertBlocked("SELECT $$'$$, pg_read_file('x'), $$'$$")
+
+    def test_postgres_tagged_dollar_quoting_cannot_hide_a_call(self):
+        self.assertBlocked("SELECT $q$'$q$, pg_read_file('x'), $q$'$q$", 'postgresql')
+
+    def test_postgres_escape_string_cannot_hide_a_call(self):
+        self.assertBlocked("SELECT E'\\'', pg_read_file('x'), 'x'", 'postgresql')
+
+    def test_mysql_hash_comment_does_not_disarm_a_rule(self):
+        self.assertBlocked("SELECT 1 # harmless\n UNION SELECT * FROM mysql.user", 'mariadb')
+
+    def test_backslash_in_a_plain_literal_is_still_fine(self):
+        self.assertAllowed("SELECT 'C:\\temp', name FROM t WHERE name = 'Grant'", 'postgresql')
+        self.assertAllowed("SELECT 'C:\\\\temp', name FROM t WHERE name = 'Grant'", 'mariadb')
+
+    def test_dollar_quoted_text_is_still_fine(self):
+        self.assertAllowed("SELECT $$it's a grant$$ AS note FROM t", 'postgresql')
+
+    def test_quoted_identifier_still_catches_the_catalog(self):
+        self.assertBlocked('SELECT * FROM "pg_shadow"', 'postgresql')
+        self.assertBlocked('SELECT * FROM `mysql`.`user`', 'mariadb')

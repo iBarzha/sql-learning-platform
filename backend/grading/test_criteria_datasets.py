@@ -111,3 +111,15 @@ class TruncationTests(unittest.TestCase):
         r2 = evaluate(t, 'SELECT a FROM t', self.fake_runner([[5]]))
         self.assertFalse(verdicts(r2)['complete'])
         self.assertEqual(detail(r2, 'complete'), MSG['mismatch'])
+
+
+class BudgetClockTests(unittest.TestCase):
+    def test_budget_counts_from_the_start_of_grading(self):
+        """A slow primary phase leaves less time for hidden datasets, not a fresh 45 s."""
+        from unittest import mock
+        # Context creation reads the clock at 0; by the first hidden dataset 46 s passed.
+        ticks = iter([0.0, 46.0, 46.0, 46.0, 46.0, 46.0])
+        with mock.patch('grading.criteria.time.monotonic', side_effect=lambda: next(ticks)):
+            t = company(hidden=[EMPTY_DEPT])
+            r = evaluate(t, COUNT_PER_DEPT, sqlite_runner())
+        self.assertEqual(detail(r, 'dataset:1'), MSG['budget'])
