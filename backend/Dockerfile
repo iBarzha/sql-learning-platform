@@ -31,8 +31,10 @@ RUN useradd -m -u 1000 -s /bin/bash django
 # Copy project
 COPY . .
 
-# Make entrypoint executable and set ownership
-RUN chmod +x /app/entrypoint.sh && \
+# Make entrypoint executable and set ownership. The sed drops Windows line endings,
+# which otherwise break the shebang when the sources were copied from a Windows checkout.
+RUN sed -i 's/\r$//' /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh && \
     chown -R django:django /app
 
 # Switch to non-root user
