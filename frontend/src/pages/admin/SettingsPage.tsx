@@ -324,7 +324,7 @@ export function SettingsPage() {
                 {activity.recent_users.map((u) => (
                   <div key={u.id} className="flex items-center justify-between text-sm py-1 border-b border-border/40 last:border-0">
                     <div>
-                      <div className="font-medium">{u.full_name || u.email}</div>
+                      <div className="font-medium">{u.full_name || '—'}</div>
                       <div className="text-xs text-muted-foreground">{u.email}</div>
                     </div>
                     <div className="text-right">

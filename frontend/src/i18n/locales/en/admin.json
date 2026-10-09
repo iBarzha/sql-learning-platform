@@ -56,6 +56,25 @@
     "noUsers": "No users found",
     "noUsersYet": "No users yet",
     "mustChangePassword": "Must change password",
-    "createdAt": "Created"
+    "createdAt": "Created",
+    "noName": "No name",
+    "you": "you",
+    "roleStudent": "Student",
+    "roleInstructor": "Instructor",
+    "roleAdmin": "Admin",
+    "active": "Active",
+    "inactive": "Inactive",
+    "lastLogin": "Last login",
+    "neverLoggedIn": "never logged in",
+    "resetPassword": "Reset password",
+    "resetPasswordTitle": "New temporary password",
+    "resetPasswordInstructions": "Share this password with the user. They will be asked to set their own on next login.",
+    "temporaryPassword": "Temporary password",
+    "deleteUser": "Delete",
+    "deleteUserTitle": "Delete this user?",
+    "deleteUserConfirm": "The account {{email}} and all of its submissions will be removed permanently.",
+    "cancel": "Cancel",
+    "confirmDelete": "Yes, delete",
+    "actionFailed": "The action failed"
   }
 }

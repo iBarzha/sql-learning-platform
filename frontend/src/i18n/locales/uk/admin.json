@@ -56,6 +56,25 @@
     "noUsers": "Користувачів не знайдено",
     "noUsersYet": "Користувачів ще немає",
     "mustChangePassword": "Потрібна зміна пароля",
-    "createdAt": "Створено"
+    "createdAt": "Створено",
+    "noName": "Без імені",
+    "you": "це ви",
+    "roleStudent": "Студент",
+    "roleInstructor": "Викладач",
+    "roleAdmin": "Адмін",
+    "active": "Активний",
+    "inactive": "Вимкнений",
+    "lastLogin": "Останній вхід",
+    "neverLoggedIn": "не входив",
+    "resetPassword": "Скинути пароль",
+    "resetPasswordTitle": "Новий тимчасовий пароль",
+    "resetPasswordInstructions": "Передайте цей пароль користувачу. При наступному вході його попросять встановити власний.",
+    "temporaryPassword": "Тимчасовий пароль",
+    "deleteUser": "Видалити",
+    "deleteUserTitle": "Видалити користувача?",
+    "deleteUserConfirm": "Обліковий запис {{email}} і всі його відповіді буде видалено без можливості відновлення.",
+    "cancel": "Скасувати",
+    "confirmDelete": "Так, видалити",
+    "actionFailed": "Не вдалося виконати дію"
   }
 }

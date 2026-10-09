@@ -2,6 +2,7 @@ import string
 import secrets
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -17,6 +18,16 @@ from rest_framework_simplejwt.exceptions import TokenError
 from PIL import Image
 
 from .models import Invite
+
+
+def login_email_key(group, request) -> str:
+    """Rate-limit key: the account being tried. JSON bodies never reach request.POST,
+    so django-ratelimit's built-in 'post:email' key would be empty for every request."""
+    try:
+        email = request.data.get('email') if hasattr(request, 'data') else None
+    except Exception:  # noqa: BLE001 - malformed body; fall back to the client address
+        email = None
+    return (str(email or '').strip().lower()) or request.META.get('REMOTE_ADDR', '')
 from .serializers import (
     UserSerializer,
     RegisterSerializer,
@@ -26,10 +37,19 @@ from .serializers import (
     InviteAcceptSerializer,
     AdminCreateUserSerializer,
     AdminUserListSerializer,
+    AdminUserUpdateSerializer,
 )
+from config.permissions import IsAdmin
 from courses.models import Course, Enrollment
 
 User = get_user_model()
+
+
+def generate_temporary_password(length: int = 10) -> str:
+    return ''.join(
+        secrets.choice(string.ascii_letters + string.digits)
+        for _ in range(length)
+    )
 
 
 class RegisterView(generics.CreateAPIView):
@@ -56,7 +76,10 @@ class RegisterView(generics.CreateAPIView):
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', method='POST'))
+    # A whole class logs in from one NAT address at the start of a lesson, so the
+    # per-IP limit must allow a room of students; brute force is bounded per account.
+    @method_decorator(ratelimit(key='ip', rate='60/m', method='POST'))
+    @method_decorator(ratelimit(key=login_email_key, rate='10/m', method='POST'))
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -83,6 +106,10 @@ class LoginView(APIView):
                 {'detail': 'Account is disabled'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
+
+        # Tokens are issued here, not by SimpleJWT's own view, so its
+        # UPDATE_LAST_LOGIN setting never fires; the admin dashboard relies on this.
+        update_last_login(None, user)
 
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -288,10 +315,7 @@ class AdminCreateUserView(APIView):
         serializer = AdminCreateUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        password = ''.join(
-            secrets.choice(string.ascii_letters + string.digits)
-            for _ in range(10)
-        )
+        password = generate_temporary_password()
 
         course_id = serializer.validated_data.get('course_id')
         if course_id:
@@ -378,4 +402,90 @@ class AdminUsersListView(APIView):
             'results': AdminUserListSerializer(
                 users, many=True, context={'request': request}
             ).data,
+        })
+
+
+class AdminUserDetailView(APIView):
+    """Admin-only: change a user's role / active flag, or delete the user."""
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def _get_user(self, pk):
+        try:
+            return User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return None
+
+    def patch(self, request, pk):
+        user = self._get_user(pk)
+        if user is None:
+            return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = AdminUserUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if user.pk == request.user.pk:
+            if 'is_active' in data and not data['is_active']:
+                return Response(
+                    {'detail': 'You cannot deactivate your own account'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if 'role' in data and data['role'] != 'admin':
+                return Response(
+                    {'detail': 'You cannot remove your own admin role'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        if 'role' in data:
+            user.role = data['role']
+        if 'is_active' in data:
+            user.is_active = data['is_active']
+        user.save(update_fields=['role', 'is_active', 'updated_at'])
+
+        return Response(AdminUserListSerializer(user, context={'request': request}).data)
+
+    def delete(self, request, pk):
+        user = self._get_user(pk)
+        if user is None:
+            return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.pk == request.user.pk:
+            return Response(
+                {'detail': 'You cannot delete your own account'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Courses cascade on instructor deletion; refuse rather than wipe them silently.
+        owned_courses = list(Course.objects.filter(instructor=user).values_list('title', flat=True))
+        if owned_courses:
+            return Response(
+                {
+                    'detail': 'This user teaches courses. Reassign or delete them first.',
+                    'courses': owned_courses,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminResetPasswordView(APIView):
+    """Admin-only: issue a new temporary password the user must change on login."""
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, pk):
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        password = generate_temporary_password()
+        user.set_password(password)
+        user.must_change_password = True
+        user.save(update_fields=['password', 'must_change_password', 'updated_at'])
+
+        return Response({
+            'user': AdminUserListSerializer(user, context={'request': request}).data,
+            'temporary_password': password,
         })

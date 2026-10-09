@@ -108,6 +108,16 @@ class AdminCreateUserSerializer(serializers.Serializer):
         return value
 
 
+class AdminUserUpdateSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=['student', 'instructor', 'admin'], required=False)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError('Nothing to update: pass role and/or is_active.')
+        return attrs
+
+
 class AdminUserListSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField()
     avatar_url = serializers.SerializerMethodField()
@@ -117,7 +127,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'email', 'first_name', 'last_name', 'full_name',
             'role', 'must_change_password', 'is_active', 'created_at',
-            'avatar_url',
+            'last_login', 'avatar_url',
         ]
 
     def get_avatar_url(self, obj):
