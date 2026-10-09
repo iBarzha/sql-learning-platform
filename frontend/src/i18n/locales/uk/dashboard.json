@@ -10,6 +10,10 @@
     "completed": "Завершено",
     "completedSubtitle": "з {{total}} уроків",
     "ofLessons": "з {{count}} уроків",
+    "ofLessons_one": "з {{count}} уроку",
+    "ofLessons_few": "з {{count}} уроків",
+    "ofLessons_many": "з {{count}} уроків",
+    "ofLessons_other": "з {{count}} уроків",
     "inProgress": "В процесі",
     "avgScore": "Сер. бал"
   },

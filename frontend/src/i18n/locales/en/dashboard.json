@@ -10,6 +10,8 @@
     "completed": "Completed",
     "completedSubtitle": "of {{total}} lessons",
     "ofLessons": "of {{count}} lessons",
+    "ofLessons_one": "of {{count}} lesson",
+    "ofLessons_other": "of {{count}} lessons",
     "inProgress": "In Progress",
     "avgScore": "Avg Score"
   },

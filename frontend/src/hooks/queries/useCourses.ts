@@ -99,6 +99,17 @@ export function useUnenrollCourse(courseId: string) {
   });
 }
 
+export function useDeleteCourse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (courseId: string) => coursesApi.delete(courseId),
+    onSuccess: (_data, courseId) => {
+      qc.invalidateQueries({ queryKey: ['courses'] });
+      qc.removeQueries({ queryKey: ['course', courseId] });
+    },
+  });
+}
+
 export function useDuplicateCourse() {
   const qc = useQueryClient();
   return useMutation({

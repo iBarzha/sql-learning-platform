@@ -29,11 +29,14 @@
   "sortedSets": "Sorted Sets",
   "noRows": "No rows returned",
   "rowsAffected": "{{count}} row(s) affected",
+  "rowsAffected_one": "{{count}} row affected",
+  "rowsAffected_other": "{{count}} rows affected",
   "showingRows": "Showing {{shown}} of {{total}} rows",
   "clear": "Clear",
   "datasetDescription": "Choose a preset or define your own schema below",
   "hide": "Hide",
   "show": "Show",
   "runQuery": "Run Query",
-  "error": "Error"
+  "error": "Error",
+  "queryPlaceholder": "-- Write your SQL query here"
 }
