@@ -18,15 +18,21 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
-import { ArrowLeft, Save, Plus, X, Paperclip, Trash2, ChevronDown, ChevronUp, ListChecks } from 'lucide-react';
-import { useLesson, useCreateLesson, useUpdateLesson } from '@/hooks/queries/useLessons';
-import { useMyDatasets } from '@/hooks/queries/useDatasets';
+import { ArrowLeft, Save, Plus, X, Paperclip, Trash2, ChevronDown, ChevronUp, ListChecks, ShieldCheck } from 'lucide-react';
+import { useLesson, useCreateLesson, useUpdateLesson, useValidateExercises } from '@/hooks/queries/useLessons';
+import type { LessonValidation } from '@/api/lessons';
+import { useMyDatasets, useCourseDatasets } from '@/hooks/queries/useDatasets';
 import { useModules } from '@/hooks/queries/useModules';
 import { useAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/queries/useAttachments';
 import { lessonSchema, type LessonFormData } from '@/lib/schemas';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
 import FileUpload, { formatFileSize, getFileTypeIcon } from '@/components/ui/FileUpload';
+import { CriteriaEditor } from '@/components/grading/CriteriaEditor';
+import { useCriteriaCatalog } from '@/hooks/queries/useGrading';
+import { useCourse } from '@/hooks/queries/useCourses';
+import { applicableCriteria, derivedCriteria, detectKind } from '@/lib/criteria';
+import type { CriterionInfo } from '@/types';
 
 const LESSON_TYPES = [
   { value: 'theory', label: 'Theory', description: 'Educational content only' },
@@ -45,8 +51,12 @@ const newExerciseDefaults = (order: number) => ({
   order_matters: false,
   max_score: 100,
   hints: [],
+  check_datasets: [],
+  criteria: { enabled: [], threshold: 0 },
   dataset_id: undefined,
 });
+
+type CheckDatasetForm = LessonFormData['exercises'][number]['check_datasets'][number];
 
 interface ExerciseEditorProps {
   index: number;
@@ -54,12 +64,14 @@ interface ExerciseEditorProps {
   setValue: ReturnType<typeof useForm<LessonFormData>>['setValue'];
   register: ReturnType<typeof useForm<LessonFormData>>['register'];
   datasets: Array<{ id: string; name: string }>;
+  dbType: string;
+  catalog: CriterionInfo[];
   onRemove: () => void;
   canRemove: boolean;
   errors?: Record<string, { message?: string } | undefined>;
 }
 
-function ExerciseEditor({ index, control, setValue, register, datasets, onRemove, canRemove, errors }: ExerciseEditorProps) {
+function ExerciseEditor({ index, control, setValue, register, datasets, dbType, catalog, onRemove, canRemove, errors }: ExerciseEditorProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [newHint, setNewHint] = useState('');
 
@@ -67,6 +79,14 @@ function ExerciseEditor({ index, control, setValue, register, datasets, onRemove
   const initialCode = exercise?.initial_code ?? '';
   const expectedQuery = exercise?.expected_query ?? '';
   const hints = exercise?.hints ?? [];
+
+  const criteriaKind = detectKind(expectedQuery, dbType);
+  const hasReference = Boolean(expectedQuery.trim());
+  // Exercises saved before criteria existed carry `{}`; an empty list means server defaults.
+  const criteriaValue = {
+    enabled: exercise?.criteria?.enabled ?? [],
+    threshold: exercise?.criteria?.threshold ?? 0,
+  };
 
   function addHint() {
     if (newHint.trim()) {
@@ -77,6 +97,29 @@ function ExerciseEditor({ index, control, setValue, register, datasets, onRemove
 
   function removeHint(hi: number) {
     setValue(`exercises.${index}.hints`, hints.filter((_: string, i: number) => i !== hi));
+  }
+
+  const checkDatasets: CheckDatasetForm[] = exercise?.check_datasets ?? [];
+
+  function addCheckDataset() {
+    setValue(`exercises.${index}.check_datasets`, [
+      ...checkDatasets,
+      { name: '', seed_sql: '', targets: '' },
+    ]);
+  }
+
+  function updateCheckDataset(di: number, patch: Partial<CheckDatasetForm>) {
+    setValue(
+      `exercises.${index}.check_datasets`,
+      checkDatasets.map((ds, i) => (i === di ? { ...ds, ...patch } : ds))
+    );
+  }
+
+  function removeCheckDataset(di: number) {
+    setValue(
+      `exercises.${index}.check_datasets`,
+      checkDatasets.filter((_, i) => i !== di)
+    );
   }
 
   return (
@@ -93,6 +136,7 @@ function ExerciseEditor({ index, control, setValue, register, datasets, onRemove
                 type="button"
                 variant="ghost"
                 size="icon"
+                aria-label="Remove exercise"
                 className="text-destructive hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -106,6 +150,7 @@ function ExerciseEditor({ index, control, setValue, register, datasets, onRemove
               type="button"
               variant="ghost"
               size="icon"
+              aria-label={collapsed ? 'Expand exercise' : 'Collapse exercise'}
               onClick={(e) => {
                 e.stopPropagation();
                 setCollapsed(!collapsed);
@@ -189,7 +234,7 @@ function ExerciseEditor({ index, control, setValue, register, datasets, onRemove
               {hints.map((hint: string, hi: number) => (
                 <div key={hi} className="flex items-center gap-2 p-2 bg-muted rounded-md">
                   <span className="flex-1 text-sm">{hint}</span>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => removeHint(hi)}>
+                  <Button type="button" variant="ghost" size="icon" aria-label="Remove hint" onClick={() => removeHint(hi)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -212,6 +257,71 @@ function ExerciseEditor({ index, control, setValue, register, datasets, onRemove
               </Button>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Hidden check datasets</Label>
+              <Button type="button" variant="outline" size="sm" onClick={addCheckDataset}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add dataset
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Extra seed data the answer must also match. Cover the edge cases the visible
+              data does not: an empty group, a NULL, duplicate rows, a value exactly on a
+              boundary, an empty result. The schema is taken from the exercise dataset.
+            </p>
+            {checkDatasets.map((ds, di) => (
+              <div key={di} className="space-y-2 p-3 border rounded-md">
+                <div className="flex gap-2">
+                  <Input
+                    value={ds.name}
+                    placeholder="Name, e.g. empty department"
+                    onChange={(e) => updateCheckDataset(di, { name: e.target.value })}
+                  />
+                  <Input
+                    value={ds.targets ?? ''}
+                    placeholder="What it catches (shown to the student on failure)"
+                    onChange={(e) => updateCheckDataset(di, { targets: e.target.value })}
+                  />
+                  <Button type="button" variant="ghost" size="icon" aria-label="Remove dataset" onClick={() => removeCheckDataset(di)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Textarea
+                  value={ds.seed_sql}
+                  rows={4}
+                  placeholder="INSERT INTO ... — seed SQL for this dataset"
+                  onChange={(e) => updateCheckDataset(di, { seed_sql: e.target.value })}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Критерії оцінювання</Label>
+            <p className="text-xs text-muted-foreground">
+              Кожен критерій перевіряється як так/ні. Завдання зараховано, якщо пройдено не менше
+              порога; бал тоді повний, інакше 0.
+            </p>
+            <CriteriaEditor
+              value={criteriaValue}
+              onChange={(v) => setValue(`exercises.${index}.criteria`, v, { shouldDirty: true })}
+              catalog={catalog}
+              kind={criteriaKind}
+              expectedQuery={expectedQuery}
+              hasReference={hasReference}
+              derived={derivedCriteria(
+                {
+                  check_datasets: checkDatasets,
+                  required_keywords: exercise?.required_keywords ?? [],
+                  forbidden_keywords: exercise?.forbidden_keywords ?? [],
+                  expected_query: expectedQuery,
+                },
+                criteriaKind
+              )}
+            />
+          </div>
         </CardContent>
       )}
     </Card>
@@ -230,8 +340,16 @@ export function LessonFormPage() {
     isEditing ? courseId : undefined,
     isEditing ? lessonId : undefined
   );
-  const { data: datasets = [], isLoading: datasetsLoading } = useMyDatasets();
+  const { data: myDatasets = [], isLoading: datasetsLoading } = useMyDatasets();
+  const { data: courseDatasets = [] } = useCourseDatasets(courseId);
+  // Datasets created inside this course live under the course, not in the
+  // instructor's library; the exercise picker should offer both.
+  const datasets = [...courseDatasets, ...myDatasets].filter(
+    (ds, i, all) => all.findIndex((d) => d.id === ds.id) === i
+  );
   const { data: modules = [] } = useModules(courseId);
+  const { data: course } = useCourse(courseId);
+  const { data: catalog = [] } = useCriteriaCatalog();
   const createLesson = useCreateLesson(courseId!);
   const updateLessonMutation = useUpdateLesson(courseId!, lessonId ?? '');
   const { data: attachments = [] } = useAttachments(
@@ -243,6 +361,17 @@ export function LessonFormPage() {
   const loading = (isEditing ? lessonLoading : false) || datasetsLoading;
 
   const [apiError, setApiError] = useState('');
+  const [validation, setValidation] = useState<LessonValidation | null>(null);
+  const validateExercises = useValidateExercises(courseId!, lessonId ?? '');
+
+  async function runValidation() {
+    setApiError('');
+    try {
+      setValidation(await validateExercises.mutateAsync());
+    } catch (err) {
+      setApiError(getApiErrorMessage(err, 'Failed to validate datasets'));
+    }
+  }
 
   const {
     register,
@@ -259,7 +388,7 @@ export function LessonFormPage() {
       description: '',
       lesson_type: 'mixed',
       theory_content: '',
-      time_limit_seconds: 600,
+      time_limit_seconds: null,
       max_attempts: undefined,
       exercises: [newExerciseDefaults(0)],
       module_id: preselectedModuleId ?? '',
@@ -279,7 +408,7 @@ export function LessonFormPage() {
         description: existingLesson.description || '',
         lesson_type: existingLesson.lesson_type,
         theory_content: existingLesson.theory_content || '',
-        time_limit_seconds: existingLesson.time_limit_seconds || 600,
+        time_limit_seconds: existingLesson.time_limit_seconds ?? null,
         max_attempts: existingLesson.max_attempts ?? undefined,
         exercises: (existingLesson.exercises || []).map((ex, idx) => ({
           id: ex.id,
@@ -293,6 +422,8 @@ export function LessonFormPage() {
           order_matters: ex.order_matters || false,
           max_score: ex.max_score,
           hints: ex.hints || [],
+          check_datasets: ex.check_datasets || [],
+          criteria: { enabled: ex.criteria?.enabled ?? [], threshold: ex.criteria?.threshold ?? 0 },
           dataset_id: ex.dataset?.id ?? undefined,
         })),
         module_id: existingLesson.module ?? '',
@@ -303,6 +434,15 @@ export function LessonFormPage() {
 
   async function onSubmit(data: LessonFormData) {
     setApiError('');
+    const incomplete = data.exercises.findIndex((ex) =>
+      (ex.check_datasets ?? []).some((ds) => !ds.name.trim() || !ds.seed_sql.trim())
+    );
+    if (incomplete !== -1) {
+      setApiError(
+        `Exercise ${incomplete + 1}: every hidden check dataset needs a name and seed SQL (or remove the empty one).`
+      );
+      return;
+    }
     try {
       const payload = {
         ...data,
@@ -311,6 +451,19 @@ export function LessonFormPage() {
           ...ex,
           order: idx,
           dataset_id: ex.dataset_id ?? undefined,
+          // A stored choice can outlive the reference it was made for (ORDER BY removed):
+          // send only ids that still apply, the same way grading would treat them.
+          criteria: {
+            enabled: (ex.criteria?.enabled ?? []).filter((id) =>
+              applicableCriteria(
+                catalog,
+                detectKind(ex.expected_query ?? '', course?.database_type ?? 'sqlite'),
+                ex.expected_query ?? '',
+                Boolean(ex.expected_query?.trim())
+              ).some((c) => c.id === id)
+            ),
+            threshold: ex.criteria?.threshold ?? 0,
+          },
         })),
       };
       if (isEditing) {
@@ -402,7 +555,11 @@ export function LessonFormPage() {
                 <Label>{t('lessonForm.module')} *</Label>
                 <Select
                   value={watch('module_id') || ''}
-                  onValueChange={(val) => setValue('module_id', val, { shouldValidate: true })}
+                  onValueChange={(val) => {
+                    // Radix Select emits '' when its controlled value is replaced by
+                    // reset(); that is not a user action and must not wipe the field.
+                    if (val) setValue('module_id', val, { shouldValidate: true });
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={t('lessonForm.selectModule')} />
@@ -456,15 +613,29 @@ export function LessonFormPage() {
                     Add one or more exercises. Students see a shared timer for the whole lesson.
                   </CardDescription>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => append(newExerciseDefaults(fields.length))}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Exercise
-                </Button>
+                <div className="flex items-center gap-2">
+                  {isEditing && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={validateExercises.isPending}
+                      onClick={runValidation}
+                    >
+                      <ShieldCheck className="h-4 w-4 mr-1" />
+                      {validateExercises.isPending ? 'Checking...' : 'Check datasets'}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => append(newExerciseDefaults(fields.length))}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Exercise
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -474,14 +645,16 @@ export function LessonFormPage() {
                   <Input
                     type="number"
                     min="1"
-                    value={Math.round((watch('time_limit_seconds') ?? 600) / 60)}
+                    placeholder="Unlimited"
+                    value={watch('time_limit_seconds') ? Math.round((watch('time_limit_seconds') as number) / 60) : ''}
                     onChange={(e) => {
-                      const minutes = parseInt(e.target.value) || 10;
-                      setValue('time_limit_seconds', minutes * 60);
+                      const minutes = parseInt(e.target.value);
+                      setValue('time_limit_seconds', Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : null);
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Shared timer running across all exercises (e.g., 120 = 2 hours for all).
+                    Shared countdown for all exercises, enforced by the server from the moment the
+                    student opens the practice. Leave empty for practice; set it for graded tests.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -507,12 +680,58 @@ export function LessonFormPage() {
                     setValue={setValue}
                     register={register}
                     datasets={datasets}
+                    dbType={course?.database_type ?? 'sqlite'}
+                    catalog={catalog}
                     onRemove={() => remove(idx)}
                     canRemove={fields.length > 1}
                     errors={errors.exercises?.[idx] as Record<string, { message?: string } | undefined>}
                   />
                 ))}
               </div>
+
+              {validation && (
+                <div className="space-y-3 border rounded-md p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Dataset check (saved version of the lesson)</p>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setValidation(null)}>
+                      Hide
+                    </Button>
+                  </div>
+                  {validation.exercises.map((ex) => (
+                    <div key={ex.exercise_id} className="space-y-1 text-sm">
+                      <p className="font-medium">{ex.title}</p>
+                      {ex.skipped && (
+                        <p className="text-muted-foreground">Skipped: no expected query.</p>
+                      )}
+                      {ex.error && <p className="text-destructive">{ex.error}</p>}
+                      {ex.mutants_total !== undefined && (
+                        <p className={ex.surviving && ex.surviving.length > 0 ? 'text-warning' : 'text-success'}>
+                          {ex.killed} of {ex.checked ?? ex.mutants_total} typical mistakes are caught by{' '}
+                          {ex.datasets?.length ?? 1} dataset(s).
+                          {ex.truncated && ` Only ${ex.checked} of ${ex.mutants_total} mistakes were tried before the time budget ran out.`}
+                        </p>
+                      )}
+                      {ex.reference_empty_on && ex.reference_empty_on.length > 0 && (
+                        <p className="text-muted-foreground">
+                          Reference returns no rows on: {ex.reference_empty_on.join(', ')}
+                        </p>
+                      )}
+                      {ex.surviving && ex.surviving.length > 0 && (
+                        <ul className="list-disc pl-5 space-y-1">
+                          {ex.surviving.map((m, i) => (
+                            <li key={i}>
+                              <span>{m.description}</span>
+                              <code className="block text-xs bg-muted rounded px-2 py-1 mt-1 whitespace-pre-wrap">
+                                {m.sql}
+                              </code>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -543,6 +762,7 @@ export function LessonFormPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label="Delete attachment"
                         onClick={() => deleteAttachment.mutate(att.id)}
                         disabled={deleteAttachment.isPending}
                       >

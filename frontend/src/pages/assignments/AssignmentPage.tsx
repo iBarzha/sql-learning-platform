@@ -22,6 +22,7 @@ import { useAssignment } from '@/hooks/queries/useAssignments';
 import { useMySubmissions, useSubmitAssignment } from '@/hooks/queries/useSubmissions';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
+import { CriteriaChecklist } from '@/components/grading/CriteriaChecklist';
 import { useSqlite } from '@/hooks/useSqlite';
 import type { LocalQueryResult } from '@/lib/sqljs';
 
@@ -176,6 +177,9 @@ export function AssignmentPage() {
             </CardHeader>
             <CardContent className="prose prose-sm dark:prose-invert max-w-none">
               <p className="whitespace-pre-wrap">{assignment.description}</p>
+              <div className="mt-4">
+                <CriteriaChecklist summary={assignment.criteria_summary} />
+              </div>
               {assignment.instructions && (
                 <>
                   <h4>{t('page.details')}</h4>
@@ -407,17 +411,27 @@ export function AssignmentPage() {
 
                 {currentSubmission.feedback && (
                   <div className="mt-4 space-y-2">
-                    {currentSubmission.feedback.message && (
-                      <p className="text-sm">{currentSubmission.feedback.message}</p>
+                    {!currentSubmission.feedback.criteria && currentSubmission.feedback.message && (
+                      <p className="text-sm font-medium">{currentSubmission.feedback.message}</p>
                     )}
-                    {currentSubmission.feedback.keywords_missing &&
+                    <CriteriaChecklist feedback={currentSubmission.feedback} />
+                    {!currentSubmission.feedback.criteria && currentSubmission.feedback.hints && currentSubmission.feedback.hints.length > 0 && (
+                      <ul className="list-disc pl-5 text-sm space-y-1">
+                        {currentSubmission.feedback.hints.map((hint, i) => (
+                          <li key={i}>{hint}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {!currentSubmission.feedback.criteria &&
+                      currentSubmission.feedback.keywords_missing &&
                       currentSubmission.feedback.keywords_missing.length > 0 && (
                         <p className="text-sm text-warning">
                           {t('page.missingKeywords')}{' '}
                           {currentSubmission.feedback.keywords_missing.join(', ')}
                         </p>
                       )}
-                    {currentSubmission.feedback.forbidden_used &&
+                    {!currentSubmission.feedback.criteria &&
+                      currentSubmission.feedback.forbidden_used &&
                       currentSubmission.feedback.forbidden_used.length > 0 && (
                         <p className="text-sm text-destructive">
                           {t('page.forbiddenKeywords')}{' '}

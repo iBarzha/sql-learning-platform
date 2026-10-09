@@ -8,6 +8,7 @@ export interface User {
   must_change_password: boolean;
   is_active: boolean;
   created_at: string;
+  last_login?: string | null;
   avatar_url?: string | null;
 }
 
@@ -72,7 +73,8 @@ export interface Assignment {
   order_matters: boolean;
   partial_match: boolean;
   max_score: number;
-  time_limit_seconds: number;
+  criteria_summary?: CriteriaSummary;
+  time_limit_seconds: number | null;
   max_attempts?: number;
   hints: string[];
   due_date?: string;
@@ -114,13 +116,57 @@ export interface QueryResult {
   row_count: number;
 }
 
+export interface SubmissionCheck {
+  code: string;
+  name: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface CriterionVerdict {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ExerciseCriteria {
+  enabled: string[];
+  threshold: number;
+}
+
+export interface CriteriaSummary {
+  criteria: { id: string; name: string }[];
+  total: number;
+  threshold: number;
+}
+
+export type CriterionKind = 'select' | 'dml' | 'nosql';
+
+export interface CriterionInfo {
+  id: string;
+  name: string;
+  description: string;
+  kinds: CriterionKind[];
+}
+
 export interface SubmissionFeedback {
+  mode?: 'result' | 'execution';
   result_match?: boolean;
+  checks?: SubmissionCheck[];
   keywords_found?: string[];
   keywords_missing?: string[];
   forbidden_used?: string[];
   hints?: string[];
   message?: string;
+  failed_datasets?: { name: string; targets?: string }[];
+  datasets_checked?: number;
+  missing_rows?: string[];
+  extra_rows?: string[];
+  criteria?: CriterionVerdict[];
+  passed_count?: number;
+  total?: number;
+  threshold?: number;
 }
 
 export interface UserResult {

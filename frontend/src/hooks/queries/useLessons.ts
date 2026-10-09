@@ -56,6 +56,18 @@ export function useDeleteLesson(courseId: string) {
   });
 }
 
+export function useStartLesson(courseId: string, lessonId: string) {
+  return useMutation({
+    mutationFn: () => lessonsApi.start(courseId, lessonId),
+  });
+}
+
+export function useValidateExercises(courseId: string, lessonId: string) {
+  return useMutation({
+    mutationFn: () => lessonsApi.validateExercises(courseId, lessonId),
+  });
+}
+
 export function useSubmitLesson(courseId: string, lessonId: string) {
   const qc = useQueryClient();
   return useMutation({

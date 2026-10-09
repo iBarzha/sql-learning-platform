@@ -156,8 +156,11 @@ class Lesson(models.Model):
 
     # Lesson-wide practice settings (exercises live in LessonExercise)
     time_limit_seconds = models.PositiveIntegerField(
-        default=600,
-        help_text='Total time for all practice exercises in this lesson'
+        null=True,
+        blank=True,
+        default=None,
+        help_text='Total time for all practice exercises, counted from the first '
+                  'time the student opens them; null means no limit'
     )
     max_attempts = models.PositiveIntegerField(
         null=True,
@@ -196,6 +199,18 @@ class LessonExercise(models.Model):
     order_matters = models.BooleanField(default=False)
     max_score = models.PositiveIntegerField(default=100)
     hints = models.JSONField(default=list, blank=True)
+    check_datasets = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Hidden datasets the answer must also match: '
+                  '[{"name", "seed_sql", "schema_sql"?, "targets"?}]',
+    )
+    criteria = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Grading criteria chosen by the instructor: '
+                  '{"enabled": [...general criterion ids...], "threshold": N}; empty = defaults',
+    )
     dataset = models.ForeignKey(
         'Dataset',
         on_delete=models.SET_NULL,

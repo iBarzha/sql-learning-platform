@@ -104,17 +104,117 @@ class LessonExerciseSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(required=False)
     dataset = DatasetSerializer(read_only=True)
     dataset_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    criteria = serializers.JSONField(required=False, allow_null=True)
+    criteria_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = LessonExercise
         fields = [
             'id', 'order', 'title', 'description', 'initial_code',
-            'expected_query', 'expected_result',
+            'expected_query', 'expected_result', 'check_datasets',
             'required_keywords', 'forbidden_keywords', 'order_matters',
-            'max_score', 'hints', 'dataset', 'dataset_id',
-            'created_at', 'updated_at',
+            'max_score', 'hints', 'criteria', 'criteria_summary',
+            'dataset', 'dataset_id', 'created_at', 'updated_at',
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def validate_check_datasets(self, value):
+        return validate_check_datasets_value(value)
+
+    def _db_type(self):
+        course = self.context.get('course')
+        if course is None:
+            root_instance = getattr(self.root, 'instance', None)
+            course = getattr(root_instance, 'course', None)
+        return course.database_type if course else 'sqlite'
+
+    def validate(self, attrs):
+        # Exercises always arrive whole (the form sends every field), so the attrs alone
+        # describe the task the criteria must fit.
+        attrs['criteria'] = validate_criteria_value(
+            criteria_task(self._db_type(), attrs), attrs.get('criteria'))
+        return attrs
+
+    def get_criteria_summary(self, obj):
+        return criteria_summary(self._db_type(), obj)
+
+
+# Fields that reveal the answer. Students must never receive them.
+EXERCISE_SOLUTION_FIELDS = ('expected_query', 'expected_result', 'check_datasets', 'criteria')
+
+
+def criteria_task(db_type, data):
+    """A GradingTask built from serializer data, enough for validation and summaries."""
+    from grading.runner import build_task
+    return build_task(
+        db_type or 'sqlite',
+        reference_query=data.get('expected_query') or '',
+        dataset=None,
+        check_datasets=data.get('check_datasets') or [],
+        required_keywords=data.get('required_keywords') or [],
+        forbidden_keywords=data.get('forbidden_keywords') or [],
+        order_matters=bool(data.get('order_matters')),
+        expected_result=data.get('expected_result'),
+        criteria=data.get('criteria'),
+    )
+
+
+def validate_criteria_value(task, value):
+    from grading.criteria import validate_config
+    try:
+        return validate_config(task, value)
+    except ValueError as err:
+        raise serializers.ValidationError({'criteria': str(err)})
+
+
+def criteria_summary(db_type, instance):
+    """What a student sees before submitting: criterion names, total and threshold."""
+    from grading.criteria import describe
+    data = {
+        'expected_query': instance.expected_query,
+        'check_datasets': instance.check_datasets,
+        'required_keywords': instance.required_keywords,
+        'forbidden_keywords': instance.forbidden_keywords,
+        'order_matters': instance.order_matters,
+        'expected_result': instance.expected_result,
+        'criteria': instance.criteria,
+    }
+    return describe(criteria_task(db_type, data))
+
+MAX_CHECK_DATASETS = 10
+MAX_SEED_SQL_LENGTH = 200_000
+
+
+def validate_check_datasets_value(value):
+    """Shape check for hidden datasets: a short list of {name, seed_sql, schema_sql?, targets?}."""
+    if value in (None, ''):
+        return []
+    if not isinstance(value, list):
+        raise serializers.ValidationError('check_datasets must be a list.')
+    if len(value) > MAX_CHECK_DATASETS:
+        raise serializers.ValidationError(
+            f'At most {MAX_CHECK_DATASETS} hidden datasets are allowed.')
+    cleaned = []
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            raise serializers.ValidationError(f'Dataset #{index} must be an object.')
+        seed = item.get('seed_sql')
+        if not isinstance(seed, str) or not seed.strip():
+            raise serializers.ValidationError(f'Dataset #{index} needs a non-empty seed_sql.')
+        if len(seed) > MAX_SEED_SQL_LENGTH:
+            raise serializers.ValidationError(f'Dataset #{index}: seed_sql is too large.')
+        schema = item.get('schema_sql') or ''
+        if not isinstance(schema, str) or len(schema) > MAX_SEED_SQL_LENGTH:
+            raise serializers.ValidationError(f'Dataset #{index}: schema_sql is invalid.')
+        name = str(item.get('name') or f'контрольний {index}')[:100]
+        targets = str(item.get('targets') or '')[:300]
+        cleaned.append({
+            'name': name,
+            'seed_sql': seed,
+            'schema_sql': schema,
+            'targets': targets,
+        })
+    return cleaned
 
 
 class LessonListSerializer(serializers.ModelSerializer):
@@ -178,6 +278,16 @@ class LessonDetailSerializer(serializers.ModelSerializer):
             'user_completed', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'course', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not (user and user.is_authenticated and user.is_instructor):
+            for exercise in data.get('exercises') or []:
+                for name in EXERCISE_SOLUTION_FIELDS:
+                    exercise.pop(name, None)
+        return data
 
     def get_user_completed(self, obj):
         if obj.lesson_type == 'theory':

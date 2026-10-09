@@ -58,6 +58,22 @@ export const exerciseSchema = z.object({
   order_matters: z.boolean().default(false),
   max_score: z.number().positive().default(100),
   hints: z.array(z.string()).default([]),
+  check_datasets: z
+    .array(
+      z.object({
+        name: z.string().default(''),
+        seed_sql: z.string().default(''),
+        schema_sql: z.string().optional(),
+        targets: z.string().optional(),
+      })
+    )
+    .default([]),
+  criteria: z
+    .object({
+      enabled: z.array(z.string()).default([]),
+      threshold: z.number().int().min(0).default(0),
+    })
+    .default({ enabled: [], threshold: 0 }),
   dataset_id: z.string().optional().nullable(),
 });
 
@@ -68,7 +84,7 @@ export const lessonSchema = z.object({
   description: z.string().default(''),
   lesson_type: z.enum(['theory', 'practice', 'mixed']),
   theory_content: z.string().default(''),
-  time_limit_seconds: z.number().positive().default(600),
+  time_limit_seconds: z.number().positive().nullable().default(null),
   max_attempts: z.number().positive().optional().nullable(),
   exercises: z.array(exerciseSchema).default([]),
   module_id: z.string().min(1, 'Module is required'),

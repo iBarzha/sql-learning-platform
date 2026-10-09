@@ -49,6 +49,8 @@ class CourseViewSet(viewsets.ModelViewSet):
 
         if user.is_instructor:
             if self.action == 'list':
+                if user.is_superuser or getattr(user, 'role', None) == 'admin':
+                    return queryset
                 return queryset.filter(instructor=user)
             return queryset
         else:
@@ -105,7 +107,8 @@ class CourseViewSet(viewsets.ModelViewSet):
         """Enroll in a course."""
         course = self.get_object()
 
-        if Enrollment.objects.filter(student=request.user, course=course).exists():
+        existing = Enrollment.objects.filter(student=request.user, course=course).first()
+        if existing and existing.status != Enrollment.Status.DROPPED:
             return Response(
                 {'detail': 'Already enrolled in this course'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -121,7 +124,14 @@ class CourseViewSet(viewsets.ModelViewSet):
                         {'detail': 'Course is full'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            enrollment = Enrollment.objects.create(student=request.user, course=course)
+            if existing:
+                # A dropped student is rejoining; the unique (student, course) row is reused.
+                existing.status = Enrollment.Status.ACTIVE
+                existing.completed_at = None
+                existing.save(update_fields=['status', 'completed_at'])
+                enrollment = existing
+            else:
+                enrollment = Enrollment.objects.create(student=request.user, course=course)
 
         return Response(
             EnrollmentSerializer(enrollment).data,
@@ -149,7 +159,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if Enrollment.objects.filter(student=request.user, course=course).exists():
+        existing = Enrollment.objects.filter(student=request.user, course=course).first()
+        if existing and existing.status != Enrollment.Status.DROPPED:
             return Response(
                 {'detail': 'Already enrolled in this course'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -165,7 +176,14 @@ class CourseViewSet(viewsets.ModelViewSet):
                         {'detail': 'Course is full'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            enrollment = Enrollment.objects.create(student=request.user, course=course)
+            if existing:
+                # A dropped student is rejoining; the unique (student, course) row is reused.
+                existing.status = Enrollment.Status.ACTIVE
+                existing.completed_at = None
+                existing.save(update_fields=['status', 'completed_at'])
+                enrollment = existing
+            else:
+                enrollment = Enrollment.objects.create(student=request.user, course=course)
 
         # Return course data along with enrollment
         course_data = CourseDetailSerializer(
@@ -234,19 +252,27 @@ class CourseViewSet(viewsets.ModelViewSet):
             dataset_map = {}
             module_map = {}
 
-            # Clone datasets
+            # Clone datasets that belong to the course; library datasets (course=None)
+            # are shared and keep being referenced as-is.
             for ds in course.datasets.all():
                 old_id = ds.id
                 new_ds = Dataset.objects.create(
                     name=ds.name,
                     description=ds.description,
                     course=new_course,
+                    created_by=request.user,
                     database_type=ds.database_type,
                     schema_sql=ds.schema_sql,
                     seed_sql=ds.seed_sql,
+                    quick_start_queries=ds.quick_start_queries,
                     is_default=ds.is_default,
                 )
                 dataset_map[old_id] = new_ds
+
+            def cloned_dataset(dataset_id):
+                if dataset_id is None:
+                    return None
+                return dataset_map.get(dataset_id) or Dataset.objects.filter(pk=dataset_id).first()
 
             # Clone modules
             for mod in course.modules.all():
@@ -288,7 +314,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                         order_matters=ex.order_matters,
                         max_score=ex.max_score,
                         hints=ex.hints,
-                        dataset=dataset_map.get(ex.dataset_id),
+                        check_datasets=ex.check_datasets,
+                        dataset=cloned_dataset(ex.dataset_id),
                     )
 
             # Clone assignments
@@ -296,7 +323,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                 Assignment.objects.create(
                     course=new_course,
                     module=module_map.get(asn.module_id),
-                    dataset=dataset_map.get(asn.dataset_id),
+                    dataset=cloned_dataset(asn.dataset_id),
+                    check_datasets=asn.check_datasets,
                     title=asn.title,
                     description=asn.description,
                     instructions=asn.instructions,
@@ -455,7 +483,12 @@ class StandaloneDatasetViewSet(viewsets.ModelViewSet):
 
         result = generate_dataset(topic=topic, size=size, database_type=database_type)
         if not result.success:
-            return Response({'detail': result.error}, status=status.HTTP_502_BAD_GATEWAY)
+            not_configured = 'not configured' in (result.error or '').lower()
+            return Response(
+                {'detail': result.error},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE if not_configured
+                else status.HTTP_502_BAD_GATEWAY,
+            )
 
         return Response({
             'name': result.name,
@@ -569,6 +602,91 @@ class LessonViewSet(viewsets.ModelViewSet):
             serializer.save(course_id=course_id, order=max_order + 1)
         else:
             serializer.save(course_id=course_id)
+
+    @action(detail=True, methods=['post'], url_path='start')
+    def start(self, request, course_pk=None, pk=None):
+        """Open the practice: records the student's start time and returns the deadline."""
+        from submissions.timing import timing_for
+
+        lesson = self.get_object()
+        if lesson.lesson_type == 'theory':
+            return Response({'detail': 'This lesson has no practice component'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if user.is_instructor:
+            # Preview only; nothing is recorded for instructors.
+            return Response({
+                'started_at': None,
+                'time_limit_seconds': lesson.time_limit_seconds,
+                'deadline': None,
+                'remaining_seconds': lesson.time_limit_seconds,
+            })
+
+        if not lesson.is_published:
+            return Response({'detail': 'This content is not available'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not lesson.course.enrollments.filter(student=user, status='active').exists():
+            return Response({'detail': 'Not enrolled in this course'},
+                            status=status.HTTP_403_FORBIDDEN)
+        return Response(timing_for(user, lesson))
+
+    @action(detail=True, methods=['post'], url_path='validate-exercises',
+            permission_classes=[IsAuthenticated, IsInstructor])
+    def validate_exercises(self, request, course_pk=None, pk=None):
+        """Report which wrong answers the exercise datasets cannot distinguish from the reference."""
+        from grading.compose import QueryShapeError
+        from grading.mutants import validate_datasets
+        from grading.runner import build_task, make_runner
+
+        lesson = self.get_object()
+        if lesson.course.instructor != request.user and not request.user.is_superuser:
+            raise PermissionDenied('Not authorized for this lesson')
+
+        db_type = lesson.course.database_type
+        timeout = lesson.time_limit_seconds or 600
+        report = []
+        for exercise in lesson.exercises.select_related('dataset'):
+            entry = {'exercise_id': str(exercise.id), 'title': exercise.title}
+            if not exercise.expected_query:
+                entry['skipped'] = 'no expected_query'
+                report.append(entry)
+                continue
+
+            task = build_task(
+                db_type,
+                reference_query=exercise.expected_query,
+                dataset=exercise.dataset,
+                check_datasets=exercise.check_datasets,
+            )
+            try:
+                result = validate_datasets(
+                    exercise.expected_query,
+                    [task.primary, *task.hidden],
+                    make_runner(db_type, timeout),
+                    db_type,
+                )
+            except QueryShapeError as err:
+                entry['error'] = str(err)
+                report.append(entry)
+                continue
+
+            entry.update({
+                'datasets': [task.primary.name, *(d.name for d in task.hidden)],
+                'mutants_total': result.mutants_total,
+                'checked': result.checked,
+                'truncated': result.truncated,
+                'killed': result.killed,
+                'surviving': [
+                    {'kind': m.kind, 'description': m.description, 'sql': m.sql}
+                    for m in result.surviving
+                ],
+                'reference_empty_on': result.reference_empty_on,
+                'reference_errors': result.reference_errors,
+            })
+            report.append(entry)
+
+        return Response({'lesson_id': str(lesson.id), 'exercises': report})
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsInstructor])
     def reorder(self, request, course_pk=None):

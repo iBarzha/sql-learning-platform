@@ -133,6 +133,7 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'EXCEPTION_HANDLER': 'config.ratelimit.exception_handler',
     # In production only return JSON. The browsable HTML UI is dev-only.
     'DEFAULT_RENDERER_CLASSES': (
         ('rest_framework.renderers.JSONRenderer',)
@@ -146,6 +147,8 @@ REST_FRAMEWORK = {
 
 # Simple JWT
 SIMPLE_JWT = {
+    # Without this the admin dashboard reports every user as "never logged in".
+    'UPDATE_LAST_LOGIN': True,
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=2),
     'ROTATE_REFRESH_TOKENS': True,

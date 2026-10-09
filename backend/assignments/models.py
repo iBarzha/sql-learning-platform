@@ -94,6 +94,18 @@ class Assignment(models.Model):
         blank=True,
         help_text='Hints to show after failed attempts'
     )
+    check_datasets = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Hidden datasets the answer must also match: '
+                  '[{"name", "seed_sql", "schema_sql"?, "targets"?}]',
+    )
+    criteria = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Grading criteria chosen by the instructor: '
+                  '{"enabled": [...general criterion ids...], "threshold": N}; empty = defaults',
+    )
 
     due_date = models.DateTimeField(null=True, blank=True)
     is_published = models.BooleanField(default=False)

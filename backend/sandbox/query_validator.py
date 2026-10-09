@@ -111,8 +111,8 @@ _SQL_RULES = [
     (r'\bcreate\s+server\b', MESSAGES['network']),
     (r'\bcreate\s+foreign\b', MESSAGES['network']),
 
-    # ── UNION-based information disclosure ──────────────────
-    (r'\bunion\s+(?:all\s+)?select\b', MESSAGES['info_leak']),
+    # UNION itself is core curriculum and stays allowed; the system catalogs a
+    # UNION-based leak would target are blocked individually above and below.
 
     # ── Information leaking ─────────────────────────────────
     (r'\bpg_ls_dir\b', MESSAGES['info_leak']),
@@ -129,12 +129,23 @@ _SQL_RULES = [
 _COMPILED_SQL_RULES = [(re.compile(pat, re.IGNORECASE), msg) for pat, msg in _SQL_RULES]
 
 
+# One left-to-right alternation so a quote inside a comment, or a comment marker
+# inside a string, is tokenized the way the database tokenizes it.
+# Double-quoted text is kept: in PostgreSQL it is an identifier, and "pg_shadow"
+# must still be caught.
+_SQL_LITERAL_OR_COMMENT = re.compile(
+    r"""'(?:[^']|'')*'|--[^\n]*|/\*.*?\*/""",
+    re.DOTALL,
+)
+
+
 def _strip_sql_comments(query: str) -> str:
-    """Remove SQL comments (-- line and /* block */) to prevent bypass."""
-    # Remove block comments
-    query = re.sub(r'/\*.*?\*/', ' ', query, flags=re.DOTALL)
-    # Remove line comments
-    query = re.sub(r'--[^\n]*', ' ', query)
+    """Remove string literals and comments so rules only see executable SQL.
+
+    Without this a student searching for a person named Grant, or writing
+    'use case' in a string, is told they attempted privilege escalation.
+    """
+    query = _SQL_LITERAL_OR_COMMENT.sub(' ', query)
     # Collapse whitespace
     query = re.sub(r'\s+', ' ', query).strip()
     return query

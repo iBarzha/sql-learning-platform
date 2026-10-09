@@ -18,11 +18,18 @@ export function getApiErrorMessage(error: unknown, defaultMessage = 'An error oc
   // Direct detail string
   if (typeof data.detail === 'string') return data.detail;
 
-  // Field-level errors: { field: ["error1", "error2"] } or { field: "error" }
-  for (const value of Object.values(data)) {
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
-  }
+  // Field-level errors: { field: ["error1", "error2"] } or { field: "error" }, possibly
+  // nested for list fields: { exercises: [{ criteria: ["error"] }] }.
+  const first = firstString(data, 0);
+  return first ?? defaultMessage;
+}
 
-  return defaultMessage;
+function firstString(value: unknown, depth: number): string | null {
+  if (typeof value === 'string') return value;
+  if (depth > 4 || value === null || typeof value !== 'object') return null;
+  for (const inner of Object.values(value as Record<string, unknown>)) {
+    const found = firstString(inner, depth + 1);
+    if (found) return found;
+  }
+  return null;
 }

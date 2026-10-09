@@ -25,9 +25,11 @@ import {
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { SqlExerciseBlock } from '@/components/editor/SqlExerciseBlock';
+import { CriteriaChecklist } from '@/components/grading/CriteriaChecklist';
 import type { Submission } from '@/types';
 import type { LessonExercise } from '@/api/lessons';
-import { useLesson, useLessonSubmissions, useSubmitLesson } from '@/hooks/queries/useLessons';
+import { useLesson, useLessonSubmissions, useStartLesson, useSubmitLesson } from '@/hooks/queries/useLessons';
+import type { LessonTiming } from '@/api/lessons';
 import { useAttachments } from '@/hooks/queries/useAttachments';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
@@ -65,6 +67,7 @@ interface ExercisePanelProps {
   canSubmit: boolean;
   attemptsLeft?: number;
   maxAttempts?: number;
+  history: Submission[];
 }
 
 function ExercisePanel({
@@ -79,13 +82,16 @@ function ExercisePanel({
   attemptsLeft,
   maxAttempts,
   databaseType,
+  history,
 }: ExercisePanelProps) {
   const { t } = useTranslation('lessons');
   const [showHint, setShowHint] = useState(false);
   const [hintIndex, setHintIndex] = useState(0);
+  const [expandedAttempt, setExpandedAttempt] = useState<string | null>(null);
 
   const hints = exercise.hints || [];
   const isSqlite = databaseType === 'sqlite';
+  const attemptsExhausted = Boolean(maxAttempts) && attemptsLeft === 0;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -98,6 +104,9 @@ function ExercisePanel({
             <p className="whitespace-pre-wrap">
               {exercise.description || t('page.defaultTaskDescription')}
             </p>
+            <div className="mt-4">
+              <CriteriaChecklist summary={exercise.criteria_summary} />
+            </div>
           </CardContent>
         </Card>
 
@@ -117,13 +126,25 @@ function ExercisePanel({
             {showHint && (
               <CardContent>
                 <div className="flex items-center justify-between mb-2">
-                  <Button variant="ghost" size="icon" disabled={hintIndex === 0} onClick={() => setHintIndex((i) => i - 1)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('page.prevHint')}
+                    disabled={hintIndex === 0}
+                    onClick={() => setHintIndex((i) => i - 1)}
+                  >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <span className="text-sm text-muted-foreground">
                     {t('page.hintOf', { current: hintIndex + 1, total: hints.length })}
                   </span>
-                  <Button variant="ghost" size="icon" disabled={hintIndex >= hints.length - 1} onClick={() => setHintIndex((i) => i + 1)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('page.nextHint')}
+                    disabled={hintIndex >= hints.length - 1}
+                    onClick={() => setHintIndex((i) => i + 1)}
+                  >
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -140,7 +161,7 @@ function ExercisePanel({
               <CardDescription>{exercise.dataset.name}</CardDescription>
             </CardHeader>
             <CardContent>
-              <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-48">
+              <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-48 whitespace-pre-wrap break-words">
                 {exercise.dataset.schema_sql}
               </pre>
             </CardContent>
@@ -158,6 +179,11 @@ function ExercisePanel({
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {attemptsExhausted && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{t('page.noAttemptsLeft')}</AlertDescription>
+              </Alert>
+            )}
             <SqlEditor
               value={query}
               onChange={onChangeQuery}
@@ -263,10 +289,104 @@ function ExercisePanel({
                   </Table>
                 </div>
               )}
+              {submission.feedback && (
+                <div className="mt-4 space-y-2">
+                  {!submission.feedback.criteria && submission.feedback.message && (
+                    <p className="text-sm font-medium">{submission.feedback.message}</p>
+                  )}
+                  <CriteriaChecklist feedback={submission.feedback} />
+                  {!submission.feedback.criteria && submission.feedback.checks && submission.feedback.checks.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {submission.feedback.checks.map((check) => (
+                        <Badge key={check.code} variant={check.passed ? 'success' : 'destructive'}>
+                          {check.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {!submission.feedback.criteria && submission.feedback.hints && submission.feedback.hints.length > 0 && (
+                    <ul className="list-disc pl-5 text-sm space-y-1">
+                      {submission.feedback.hints.map((hint, i) => (
+                        <li key={i}>{hint}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
                 <span>{t('page.score', { score: submission.score, max: exercise.max_score })}</span>
                 <span>{t('page.time', { ms: submission.execution_time_ms })}</span>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {history.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{t('page.submissionHistory')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {history.map((attempt) => {
+                const open = expandedAttempt === attempt.id;
+                return (
+                  <div key={attempt.id} className="border rounded-md">
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => setExpandedAttempt(open ? null : attempt.id)}
+                      className="w-full flex flex-wrap items-center justify-between gap-2 p-2 text-left text-sm hover:bg-muted/50 rounded-md"
+                    >
+                      <span className="font-medium">
+                        {t('page.attempt', { number: attempt.attempt_number })}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {t('page.score', { score: attempt.score ?? 0, max: exercise.max_score })}
+                      </span>
+                      {attempt.feedback?.total ? (
+                        <span className="text-muted-foreground">
+                          {t('page.criteriaShort', {
+                            passed: attempt.feedback.passed_count ?? 0,
+                            total: attempt.feedback.total,
+                          })}
+                        </span>
+                      ) : null}
+                      {attempt.is_correct ? (
+                        <Badge variant="success">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          {t('page.correct')}
+                        </Badge>
+                      ) : (
+                        <Badge variant="destructive">
+                          <XCircle className="h-3 w-3 mr-1" />
+                          {t('page.incorrect')}
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {t('page.submittedAt', { time: new Date(attempt.submitted_at).toLocaleString() })}
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="border-t p-2 space-y-2">
+                        <p className="text-xs text-muted-foreground">{t('page.attemptQuery')}</p>
+                        <pre className="text-xs bg-muted p-2 rounded-md whitespace-pre-wrap break-words">
+                          {attempt.query}
+                        </pre>
+                        {attempt.error_message && (
+                          <p className="text-xs text-destructive">{attempt.error_message}</p>
+                        )}
+                        {attempt.feedback?.hints && attempt.feedback.hints.length > 0 && (
+                          <ul className="list-disc pl-5 text-sm space-y-1">
+                            {attempt.feedback.hints.map((hint, i) => (
+                              <li key={i}>{hint}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}
@@ -284,6 +404,7 @@ export function LessonPage() {
   const { data: submissions = [], isLoading: subsLoading } = useLessonSubmissions(courseId, lessonId);
   const { data: attachments = [] } = useAttachments(courseId, lessonId);
   const submitMutation = useSubmitLesson(courseId!, lessonId!);
+  const startMutation = useStartLesson(courseId!, lessonId!);
   const loading = lessonLoading || subsLoading;
 
   const exercises = useMemo<LessonExercise[]>(() => lesson?.exercises ?? [], [lesson?.exercises]);
@@ -294,7 +415,10 @@ export function LessonPage() {
   const [localResultByExercise, setLocalResultByExercise] = useState<Record<string, LocalQueryResult | null>>({});
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'theory' | 'practice'>('theory');
-  const [timerStart, setTimerStart] = useState<number | null>(null);
+  // The clock lives on the server: the deadline is fixed the first time the practice
+  // is opened and survives page refreshes. `clockOffset` corrects the browser's clock.
+  const [timing, setTiming] = useState<LessonTiming | null>(null);
+  const [clockOffset, setClockOffset] = useState(0);
   const [now, setNow] = useState<number>(() => Date.now());
 
   const sqlite = useSqlite();
@@ -327,23 +451,36 @@ export function LessonPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lesson?.id, isSqlite, activeExercise?.id, sqlite.initDatabase]);
 
-  // Shared timer: starts on first practice tab visit
+  // Opening the practice registers the start on the server (idempotent) and fetches the deadline.
   useEffect(() => {
-    if (activeTab === 'practice' && timerStart === null && lesson?.lesson_type !== 'theory') {
-      setTimerStart(Date.now());
-    }
-  }, [activeTab, timerStart, lesson?.lesson_type]);
+    if (!lesson || lesson.lesson_type === 'theory' || activeTab !== 'practice') return;
+    if (timing !== null || startMutation.isPending) return;
+    const requestedAt = Date.now();
+    startMutation
+      .mutateAsync()
+      .then((data) => {
+        if (data.remaining_seconds !== null && data.deadline) {
+          // Server deadline minus server "now" tells us how far the browser clock drifts.
+          const serverNow = new Date(data.deadline).getTime() - data.remaining_seconds * 1000;
+          setClockOffset(serverNow - requestedAt);
+        }
+        setTiming(data);
+      })
+      .catch((err) => setError(getApiErrorMessage(err, t('page.failedSubmit'))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson?.id, lesson?.lesson_type, activeTab, timing]);
+
+  const deadlineMs = timing?.deadline ? new Date(timing.deadline).getTime() : null;
 
   useEffect(() => {
-    if (timerStart === null) return;
+    if (deadlineMs === null) return;
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, [timerStart]);
+  }, [deadlineMs]);
 
-  const totalSeconds = lesson?.time_limit_seconds ?? 600;
-  const elapsed = timerStart ? Math.floor((now - timerStart) / 1000) : 0;
-  const remaining = Math.max(totalSeconds - elapsed, 0);
-  const timeUp = timerStart !== null && remaining === 0;
+  const hasTimer = deadlineMs !== null;
+  const remaining = hasTimer ? Math.max(Math.floor((deadlineMs - (now + clockOffset)) / 1000), 0) : 0;
+  const timeUp = hasTimer && remaining === 0;
 
   const handleSubmit = useCallback(async () => {
     if (!courseId || !lessonId || !activeExercise?.id) return;
@@ -365,6 +502,18 @@ export function LessonPage() {
       const sub = await submitMutation.mutateAsync({ query: q.trim(), exerciseId: exId });
       setSubmissionsByExercise((prev) => ({ ...prev, [exId]: sub }));
     } catch (err) {
+      const code = (err as { response?: { data?: { code?: string } } }).response?.data?.code;
+      if (code === 'time_up') {
+        // The server is the clock: expire the local countdown so the page shows
+        // the same "time is up" state it would after a reload.
+        setTiming((prev) => ({
+          started_at: prev?.started_at ?? null,
+          time_limit_seconds: prev?.time_limit_seconds ?? null,
+          deadline: new Date(0).toISOString(),
+          remaining_seconds: 0,
+        }));
+        return;
+      }
       setError(getApiErrorMessage(err, t('page.failedSubmit')));
     }
   }, [courseId, lessonId, activeExercise?.id, queries, isSqlite, sqlite, submitMutation, t]);
@@ -401,11 +550,21 @@ export function LessonPage() {
   const activeQuery = activeExId ? queries[activeExId] ?? '' : '';
   const activeSub = activeExId ? submissionsByExercise[activeExId] ?? null : null;
   const activeLocal = activeExId ? localResultByExercise[activeExId] ?? null : null;
+  const activeHistory = activeExId
+    ? submissions
+        .filter((s: Submission) => s.exercise === activeExId)
+        .sort((a: Submission, b: Submission) => b.attempt_number - a.attempt_number)
+    : [];
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/courses/${courseId}`)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t('page.backToCourse')}
+          onClick={() => navigate(`/courses/${courseId}`)}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -443,7 +602,7 @@ export function LessonPage() {
 
       {timeUp && (
         <Alert variant="destructive">
-          <AlertDescription>{t('page.timeIsUp', { defaultValue: "Time is up. You can no longer submit answers." })}</AlertDescription>
+          <AlertDescription>{t('page.timeUp')}</AlertDescription>
         </Alert>
       )}
 
@@ -533,10 +692,14 @@ export function LessonPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  <span className="font-mono text-lg">{formatTime(remaining)}</span>
-                  <span className="text-xs text-muted-foreground ml-2">
-                    {t('page.timeForAll', { defaultValue: 'shared across all exercises' })}
-                  </span>
+                  {hasTimer ? (
+                    <>
+                      <span className="font-mono text-lg" aria-live="polite">{formatTime(remaining)}</span>
+                      <span className="text-xs text-muted-foreground ml-2">{t('page.timeForAll')}</span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">{t('page.noTimeLimit')}</span>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -576,6 +739,7 @@ export function LessonPage() {
               canSubmit={canSubmit}
               attemptsLeft={attemptsLeft}
               maxAttempts={maxAttempts}
+              history={activeHistory}
             />
           )}
         </div>

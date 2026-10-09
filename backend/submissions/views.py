@@ -11,6 +11,7 @@ from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 
 from .models import Submission, UserResult
+from .storage import json_safe
 from .serializers import (
     SubmissionSerializer,
     SubmissionCreateSerializer,
@@ -19,8 +20,8 @@ from .serializers import (
 )
 from assignments.models import Assignment
 from courses.models import Course, Enrollment, Lesson, LessonExercise
-from sandbox.services import execute_query
-from grading.models import get_grading_service
+from grading.runner import build_task, make_runner, make_sequence_runner
+from grading.service import grade as grade_submission
 
 
 def _get_course_stats(course_ids):
@@ -105,9 +106,11 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             required_keywords = assignment.required_keywords or []
             forbidden_keywords = assignment.forbidden_keywords or []
             order_matters = assignment.order_matters
-            partial_match = getattr(assignment, 'partial_match', False)
             max_score = assignment.max_score
             time_limit = assignment.time_limit_seconds or 30
+            check_datasets = assignment.check_datasets or []
+            query_type = assignment.query_type
+            criteria = assignment.criteria or {}
 
         elif lesson_id:
             try:
@@ -146,9 +149,11 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             required_keywords = exercise.required_keywords or []
             forbidden_keywords = exercise.forbidden_keywords or []
             order_matters = exercise.order_matters
-            partial_match = False
             max_score = exercise.max_score
             time_limit = lesson.time_limit_seconds or 600
+            check_datasets = exercise.check_datasets or []
+            query_type = 'select'
+            criteria = exercise.criteria or {}
         else:
             return Response(
                 {'detail': 'Assignment or lesson ID required'},
@@ -177,6 +182,14 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 {'detail': 'This content is not available'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if lesson is not None and lesson.time_limit_seconds:
+            from .timing import time_is_up
+            if time_is_up(request.user, lesson):
+                return Response(
+                    {'detail': 'Time is up for this lesson', 'code': 'time_up'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         # Get or create user result (atomic with row locking to prevent race conditions)
         with transaction.atomic():
@@ -214,62 +227,53 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         )
 
         try:
-            # Execute query in sandbox
-            schema_sql = dataset.schema_sql if dataset else ''
-            seed_sql = dataset.seed_sql if dataset else ''
-
-            execution_response = execute_query(
-                database_type=course.database_type,
-                query=student_query,
-                schema_sql=schema_sql,
-                seed_sql=seed_sql,
-                timeout=time_limit,
+            task = build_task(
+                course.database_type,
+                reference_query=expected_query,
+                dataset=dataset,
+                check_datasets=check_datasets,
+                required_keywords=required_keywords,
+                forbidden_keywords=forbidden_keywords,
+                order_matters=order_matters,
+                max_score=max_score,
+                query_type=query_type,
+                expected_result=expected_result,
+                criteria=criteria,
+            )
+            runner = make_runner(
+                course.database_type,
+                time_limit,
                 user_id=request.user.id,
                 submission_id=submission.id,
                 dataset_id=dataset.id if dataset else None,
             )
+            graded = grade_submission(
+                task, student_query, runner,
+                run_sequence=make_sequence_runner(course.database_type, time_limit),
+            )
+            execution = graded.execution
 
-            # Update submission with execution result
-            submission.execution_time_ms = execution_response.execution_time_ms
-
-            if execution_response.success and execution_response.result:
+            submission.execution_time_ms = execution.execution_time_ms
+            if execution.success:
                 submission.status = Submission.Status.COMPLETED
-                submission.result = execution_response.result.to_dict()
+                submission.result = {
+                    'success': True,
+                    'columns': json_safe(execution.columns),
+                    'rows': json_safe(execution.rows),
+                    'row_count': len(execution.rows),
+                    'affected_rows': execution.affected_rows,
+                    'execution_time_ms': execution.execution_time_ms,
+                    'error_message': '',
+                    'truncated': execution.truncated,
+                }
             else:
                 submission.status = Submission.Status.ERROR
-                submission.error_message = execution_response.error_message
-                submission.result = {'success': False, 'error_message': execution_response.error_message}
+                submission.error_message = execution.error
+                submission.result = {'success': False, 'error_message': execution.error}
 
-            # Grade the submission
-            grading_service = get_grading_service()
-
-            # Execute expected query to get expected result if not stored
-            if expected_query and not expected_result:
-                expected_response = execute_query(
-                    database_type=course.database_type,
-                    query=expected_query,
-                    schema_sql=schema_sql,
-                    seed_sql=seed_sql,
-                    timeout=time_limit,
-                )
-                if expected_response.success and expected_response.result:
-                    expected_result = expected_response.result.to_dict()
-
-            grading_result = grading_service.grade(
-                student_result=submission.result or {},
-                expected_result=expected_result,
-                expected_query=expected_query,
-                required_keywords=required_keywords,
-                forbidden_keywords=forbidden_keywords,
-                order_matters=order_matters,
-                partial_match=partial_match,
-                max_score=max_score,
-                student_query=student_query,
-            )
-
-            submission.score = grading_result.score
-            submission.is_correct = grading_result.is_correct
-            submission.feedback = grading_result.feedback
+            submission.score = graded.score
+            submission.is_correct = graded.passed
+            submission.feedback = json_safe(graded.feedback)
             submission.graded_at = timezone.now()
             submission.save()
         except Exception as e:
@@ -288,8 +292,10 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         result_serializer = SubmissionResultSerializer(submission)
         return Response(result_serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=['get'])
-    def my_submissions(self, request):
+    # The frontend has always called .../submissions/my/; the default url_path
+    # (my_submissions/) never matched it, so the history was silently 404.
+    @action(detail=False, methods=['get'], url_path='my')
+    def my_submissions(self, request, **kwargs):
         """Get all submissions for the current user."""
         assignment_id = self.kwargs.get('assignment_pk')
         lesson_id = self.kwargs.get('lesson_pk')
@@ -342,7 +348,7 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset.select_related('student', 'assignment', 'lesson', 'best_submission')
 
     @action(detail=False, methods=['get'])
-    def my_progress(self, request):
+    def my_progress(self, request, **kwargs):
         """Get current user's progress across all enrolled courses."""
         results = UserResult.objects.filter(
             student=request.user
@@ -413,7 +419,7 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(list(courses_data.values()))
 
     @action(detail=False, methods=['get'])
-    def student_progress(self, request):
+    def student_progress(self, request, **kwargs):
         """Get a specific student's progress (instructor only)."""
         if not request.user.is_instructor:
             return Response(

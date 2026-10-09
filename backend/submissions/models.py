@@ -125,6 +125,9 @@ class UserResult(models.Model):
     is_completed = models.BooleanField(default=False)
     first_completed_at = models.DateTimeField(null=True, blank=True)
     last_attempt_at = models.DateTimeField(null=True, blank=True)
+    # Lesson-level row (exercise=NULL): when the student first opened the practice.
+    # The lesson's time limit is counted from here, server-side.
+    started_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'user_results'
