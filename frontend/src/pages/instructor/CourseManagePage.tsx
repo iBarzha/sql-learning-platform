@@ -370,7 +370,7 @@ export function CourseManagePage() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold truncate">{mod.title}</span>
                           <Badge variant="outline">
-                            {moduleLessons.length} {t('courseManage.lessons').toLowerCase()}
+                            {t('myCourses.lessons', { count: moduleLessons.length })}
                           </Badge>
                           {!mod.is_published && (
                             <Badge variant="secondary">{t('courseManage.draft')}</Badge>

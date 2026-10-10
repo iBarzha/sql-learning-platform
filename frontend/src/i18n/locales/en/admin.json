@@ -76,5 +76,83 @@
     "cancel": "Cancel",
     "confirmDelete": "Yes, delete",
     "actionFailed": "The action failed"
+  },
+  "dashboard": {
+    "title": "Admin Dashboard",
+    "subtitle": "Live system, database and application metrics",
+    "updated": "Updated {{when}}",
+    "refresh": "refresh",
+    "loadError": "Failed to load admin dashboard",
+    "never": "never",
+    "ago": {
+      "s": "{{n}}s ago",
+      "m": "{{n}}m ago",
+      "h": "{{n}}h ago",
+      "d": "{{n}}d ago"
+    },
+    "uptime": {
+      "dh": "{{d}}d {{h}}h",
+      "hm": "{{h}}h {{m}}m",
+      "m": "{{m}}m"
+    },
+    "tiles": {
+      "users": "Users",
+      "usersHint": "{{count}} active 24h",
+      "courses": "Courses",
+      "coursesHint": "{{count}} published",
+      "lessons": "Lessons",
+      "lessonsHint": "{{count}} published",
+      "exercises": "Exercises",
+      "datasets": "Datasets",
+      "datasetsHint": "{{system}} system / {{owned}} owned",
+      "submissions": "Submissions",
+      "submissionsHint": "{{count}} last 24h"
+    },
+    "server": {
+      "title": "Server",
+      "description": "Uptime: {{uptime}} · {{cpu}} CPU",
+      "unavailable": "metrics unavailable",
+      "cpu": "CPU",
+      "memory": "Memory",
+      "disk": "Disk",
+      "noPsutil": "psutil not available on this server"
+    },
+    "database": {
+      "title": "Database",
+      "connected": "connected",
+      "offline": "offline",
+      "description": "{{engine}} @ {{host}}:{{port}} · {{name}} · size: {{size}}",
+      "topTables": "Top tables by row count",
+      "noTables": "No tables yet",
+      "rows": "{{count}} rows · {{size}}"
+    },
+    "sandbox": {
+      "title": "Sandbox Pool",
+      "description": "Container availability per database type",
+      "running": "Pool running",
+      "yes": "yes",
+      "no": "no",
+      "noData": "No pool data",
+      "availability": "available · {{busy}} busy"
+    },
+    "roles": {
+      "title": "Users by role",
+      "admins": "Admins",
+      "instructors": "Instructors",
+      "students": "Students",
+      "active24h": "Active in last 24h"
+    },
+    "recentUsers": {
+      "title": "Recent users",
+      "empty": "No users",
+      "seen": "seen {{when}}",
+      "neverLoggedIn": "never logged in"
+    },
+    "recentSubmissions": {
+      "title": "Recent submissions",
+      "empty": "No submissions",
+      "correct": "correct",
+      "wrong": "wrong"
+    }
   }
 }

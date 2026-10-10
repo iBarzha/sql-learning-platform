@@ -144,7 +144,58 @@
     "publishImmediately": "Опублікувати одразу",
     "saveChanges": "Зберегти зміни",
     "createLesson": "Створити урок",
-    "cancel": "Скасувати"
+    "cancel": "Скасувати",
+    "types": {
+      "theory": "Теорія",
+      "theoryDesc": "Лише навчальний матеріал",
+      "practice": "Практика",
+      "practiceDesc": "Лише SQL-вправи",
+      "mixed": "Теорія і практика",
+      "mixedDesc": "Матеріал і вправи разом"
+    },
+    "exerciseDefaultTitle": "Вправа {{n}}",
+    "exerciseTitle": "Назва вправи",
+    "exerciseTitlePlaceholder": "напр., Знайти всіх активних користувачів",
+    "taskPlaceholder": "Опишіть, що має зробити студент...",
+    "initialCodePlaceholder": "-- Почніть писати запит тут",
+    "removeExercise": "Видалити вправу",
+    "expandExercise": "Розгорнути вправу",
+    "collapseExercise": "Згорнути вправу",
+    "removeHint": "Видалити підказку",
+    "hiddenDatasets": "Приховані контрольні набори",
+    "hiddenDatasetsDesc": "Додаткові дані, на яких відповідь теж має збігатися з еталоном. Покрийте випадки, яких немає у видимих даних: порожня група, NULL, дублікати рядків, значення точно на межі, порожній результат. Схема береться з набору даних вправи.",
+    "addDataset": "Додати набір",
+    "datasetNamePlaceholder": "Назва, напр. порожній відділ",
+    "datasetTargetsPlaceholder": "Що перевіряє (показується студенту при помилці)",
+    "datasetSeedPlaceholder": "INSERT INTO ... — дані цього набору",
+    "removeDataset": "Видалити набір",
+    "criteriaTitle": "Критерії оцінювання",
+    "criteriaDesc": "Кожен критерій перевіряється як так/ні. Завдання зараховано, якщо пройдено не менше порога; бал тоді повний, інакше 0.",
+    "titlePlaceholder": "напр., Вступ до SELECT",
+    "descriptionPlaceholder": "Короткий опис для картки уроку",
+    "theoryPlaceholder": "# Назва уроку\n\nНапишіть матеріал уроку у Markdown...",
+    "practiceExercises": "Практичні вправи",
+    "practiceExercisesDesc": "Додайте одну або кілька вправ. Студенти бачать спільний таймер на весь урок.",
+    "checkDatasets": "Перевірити набори",
+    "checking": "Перевіряю...",
+    "addExercise": "Додати вправу",
+    "timeLimitMinutes": "Загальний ліміт часу (хвилини)",
+    "timeLimitDesc": "Спільний відлік для всіх вправ; сервер рахує його з моменту, коли студент відкрив практику. Для тренування залиште порожнім, для контрольних задайте.",
+    "maxAttemptsPerExercise": "Макс. спроб (на вправу)",
+    "validation": {
+      "title": "Перевірка наборів (збережена версія уроку)",
+      "hide": "Сховати",
+      "skipped": "Пропущено: немає еталонного запиту.",
+      "caught": "{{killed}} з {{total}} типових помилок ловлять набори ({{datasets}}).",
+      "truncated": " Перевірено лише {{checked}} з {{total}} помилок: вичерпано ліміт часу.",
+      "referenceEmpty": "Еталон не повертає рядків на: {{names}}"
+    },
+    "deleteAttachment": "Видалити додаток",
+    "errors": {
+      "incompleteDataset": "Вправа {{n}}: кожен прихований набір потребує назви і SQL з даними (або видаліть порожній).",
+      "validateFailed": "Не вдалося перевірити набори",
+      "saveFailed": "Не вдалося зберегти урок"
+    }
   },
   "students": {
     "title": "Студенти",
@@ -181,6 +232,87 @@
     "scorePercent": "Бал",
     "progressLabel": "Прогрес",
     "noProgress": "Даних про прогрес ще немає",
-    "tasks": "{{completed}}/{{total}} завдань"
+    "tasks": "{{completed}}/{{total}} завдань",
+    "studentsN": "{{count}} студентів",
+    "studentsN_one": "{{count}} студент",
+    "studentsN_few": "{{count}} студенти",
+    "studentsN_many": "{{count}} студентів",
+    "studentsN_other": "{{count}} студентів",
+    "onCoursesN": "на {{count}} курсах",
+    "onCoursesN_one": "на {{count}} курсі",
+    "onCoursesN_few": "на {{count}} курсах",
+    "onCoursesN_many": "на {{count}} курсах",
+    "onCoursesN_other": "на {{count}} курсах"
+  },
+  "datasets": {
+    "title": "Мої датасети",
+    "subtitle": "Схеми та початкові дані, які можна використовувати в курсах повторно",
+    "uploadSql": "Завантажити SQL",
+    "generateAi": "Згенерувати з ШІ",
+    "newDataset": "Новий датасет",
+    "sections": {
+      "own": "Ваші датасети",
+      "system": "Системні датасети",
+      "others": "Датасети інших викладачів"
+    },
+    "ownEmpty": "Ви ще не створили жодного датасету.",
+    "noDatasets": "Немає датасетів",
+    "count": "{{count}} датасетів",
+    "count_one": "{{count}} датасет",
+    "count_few": "{{count}} датасети",
+    "count_many": "{{count}} датасетів",
+    "count_other": "{{count}} датасетів",
+    "by": "від {{name}}",
+    "preview": "Переглянути",
+    "edit": "Редагувати",
+    "form": {
+      "editTitle": "Редагувати датасет",
+      "createTitle": "Новий датасет",
+      "description": "Задайте схему та початкові дані. Цей датасет можна буде обрати у вправах уроку.",
+      "name": "Назва",
+      "namePlaceholder": "напр., Бібліотека",
+      "dbType": "Тип бази даних",
+      "descriptionLabel": "Опис",
+      "descriptionPlaceholder": "Що міститься в цьому датасеті?",
+      "schema": "Схема SQL (CREATE TABLE / ALTER / DROP)",
+      "schemaPlaceholder": "CREATE TABLE users (...);",
+      "seed": "Початкові дані (INSERT)",
+      "seedPlaceholder": "INSERT INTO users VALUES ...;",
+      "cancel": "Скасувати",
+      "save": "Зберегти зміни",
+      "create": "Створити датасет"
+    },
+    "previewDialog": {
+      "description": "Перегляд датасету",
+      "rows": "{{count}} рядків · {{ms}} мс"
+    },
+    "generator": {
+      "title": "Згенерувати датасет з ШІ",
+      "description": "Опишіть, що потрібно, і Gemini згенерує схему та дані. Результат можна відредагувати перед збереженням.",
+      "topic": "Тема",
+      "topicPlaceholder": "напр., Невелика книгарня з клієнтами, книгами, авторами й замовленнями. Додай повернення та ознаку бестселера.",
+      "topicHint": "Опишіть сутності, зв'язки та конкретні дані, які хочете бачити.",
+      "size": "Розмір",
+      "small": "Малий (~10 рядків)",
+      "medium": "Середній (~50 рядків)",
+      "large": "Великий (~200 рядків)",
+      "dbType": "Тип бази даних",
+      "cancel": "Скасувати",
+      "generate": "Згенерувати",
+      "generating": "Генерую..."
+    },
+    "delete": {
+      "title": "Видалити датасет",
+      "description": "Датасет буде видалено назавжди. Уроки, що на нього посилаються, втратять зв'язок.",
+      "cancel": "Скасувати",
+      "confirm": "Видалити"
+    },
+    "errors": {
+      "load": "Не вдалося завантажити датасети",
+      "save": "Не вдалося зберегти датасет",
+      "parse": "Не вдалося розібрати SQL-файл",
+      "preview": "Перегляд не вдався",
+      "generate": "Генерація не вдалася"
+    }
   }
 }

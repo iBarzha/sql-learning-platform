@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
@@ -20,26 +21,28 @@ import {
 import { fetchAdminDashboard } from '@/api/adminDashboard';
 import { getApiErrorMessage } from '@/lib/utils';
 
-function formatUptime(seconds: number): string {
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+function formatUptime(t: Translate, seconds: number): string {
   if (!seconds) return '—';
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (d > 0) return t('dashboard.uptime.dh', { d, h });
+  if (h > 0) return t('dashboard.uptime.hm', { h, m });
+  return t('dashboard.uptime.m', { m });
 }
 
-function formatRelative(iso: string | null): string {
-  if (!iso) return 'never';
+function formatRelative(t: Translate, iso: string | null): string {
+  if (!iso) return t('dashboard.never');
   const diffMs = Date.now() - new Date(iso).getTime();
   const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `${sec}s ago`;
+  if (sec < 60) return t('dashboard.ago.s', { n: sec });
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return t('dashboard.ago.m', { n: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
+  if (hr < 24) return t('dashboard.ago.h', { n: hr });
+  return t('dashboard.ago.d', { n: Math.floor(hr / 24) });
 }
 
 interface MetricBarProps {
@@ -89,6 +92,7 @@ function StatTile({ label, value, hint, icon: Icon }: StatTileProps) {
 }
 
 export function SettingsPage() {
+  const { t } = useTranslation('admin');
   const { data, isLoading, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ['admin', 'dashboard'],
     queryFn: fetchAdminDashboard,
@@ -106,36 +110,36 @@ export function SettingsPage() {
   if (error || !data) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>{getApiErrorMessage(error, 'Failed to load admin dashboard')}</AlertDescription>
+        <AlertDescription>{getApiErrorMessage(error, t('dashboard.loadError'))}</AlertDescription>
       </Alert>
     );
   }
 
   const { server, database, sandbox, stats, activity } = data;
-  const lastUpdate = dataUpdatedAt ? formatRelative(new Date(dataUpdatedAt).toISOString()) : '—';
+  const lastUpdate = dataUpdatedAt ? formatRelative(t, new Date(dataUpdatedAt).toISOString()) : '—';
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Live system, database and application metrics</p>
+          <h1 className="text-3xl font-bold">{t('dashboard.title')}</h1>
+          <p className="text-muted-foreground">{t('dashboard.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <RefreshCcw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          <span>Updated {lastUpdate}</span>
-          <button onClick={() => refetch()} className="ml-2 underline hover:text-foreground">refresh</button>
+          <span>{t('dashboard.updated', { when: lastUpdate })}</span>
+          <button onClick={() => refetch()} className="ml-2 underline hover:text-foreground">{t('dashboard.refresh')}</button>
         </div>
       </div>
 
       {/* Top stats */}
       <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
-        <StatTile label="Users" value={stats.users.total} hint={`${stats.users.active_24h} active 24h`} icon={Users} />
-        <StatTile label="Courses" value={stats.courses.total} hint={`${stats.courses.published} published`} icon={BookOpen} />
-        <StatTile label="Lessons" value={stats.lessons.total} hint={`${stats.lessons.published} published`} icon={BookOpen} />
-        <StatTile label="Exercises" value={stats.exercises.total} icon={ListChecks} />
-        <StatTile label="Datasets" value={stats.datasets.total} hint={`${stats.datasets.system} system / ${stats.datasets.instructor_owned} owned`} icon={FileCode} />
-        <StatTile label="Submissions" value={stats.submissions.total} hint={`${stats.submissions.last_24h} last 24h`} icon={Activity} />
+        <StatTile label={t('dashboard.tiles.users')} value={stats.users.total} hint={t('dashboard.tiles.usersHint', { count: stats.users.active_24h })} icon={Users} />
+        <StatTile label={t('dashboard.tiles.courses')} value={stats.courses.total} hint={t('dashboard.tiles.coursesHint', { count: stats.courses.published })} icon={BookOpen} />
+        <StatTile label={t('dashboard.tiles.lessons')} value={stats.lessons.total} hint={t('dashboard.tiles.lessonsHint', { count: stats.lessons.published })} icon={BookOpen} />
+        <StatTile label={t('dashboard.tiles.exercises')} value={stats.exercises.total} icon={ListChecks} />
+        <StatTile label={t('dashboard.tiles.datasets')} value={stats.datasets.total} hint={t('dashboard.tiles.datasetsHint', { system: stats.datasets.system, owned: stats.datasets.instructor_owned })} icon={FileCode} />
+        <StatTile label={t('dashboard.tiles.submissions')} value={stats.submissions.total} hint={t('dashboard.tiles.submissionsHint', { count: stats.submissions.last_24h })} icon={Activity} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -144,31 +148,31 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Server className="h-5 w-5" />
-              Server
+              {t('dashboard.server.title')}
             </CardTitle>
             <CardDescription>
-              {server ? `Uptime: ${formatUptime(server.uptime_seconds)} · ${server.cpu_count} CPU` : 'metrics unavailable'}
+              {server ? t('dashboard.server.description', { uptime: formatUptime(t, server.uptime_seconds), cpu: server.cpu_count }) : t('dashboard.server.unavailable')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {server ? (
               <>
                 <MetricBar
-                  label="CPU"
+                  label={t('dashboard.server.cpu')}
                   used={`${server.cpu_percent.toFixed(1)}%`}
                   total="100%"
                   percent={server.cpu_percent}
                   icon={Cpu}
                 />
                 <MetricBar
-                  label="Memory"
+                  label={t('dashboard.server.memory')}
                   used={`${(server.memory_used_mb / 1024).toFixed(2)} GB`}
                   total={`${(server.memory_total_mb / 1024).toFixed(2)} GB`}
                   percent={server.memory_percent}
                   icon={Server}
                 />
                 <MetricBar
-                  label="Disk"
+                  label={t('dashboard.server.disk')}
                   used={`${server.disk_used_gb} GB`}
                   total={`${server.disk_total_gb} GB`}
                   percent={server.disk_percent}
@@ -176,7 +180,7 @@ export function SettingsPage() {
                 />
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">psutil not available on this server</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.server.noPsutil')}</p>
             )}
           </CardContent>
         </Card>
@@ -186,26 +190,26 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" />
-              Database
+              {t('dashboard.database.title')}
               {database.connected ? (
-                <Badge variant="success">connected</Badge>
+                <Badge variant="success">{t('dashboard.database.connected')}</Badge>
               ) : (
-                <Badge variant="destructive">offline</Badge>
+                <Badge variant="destructive">{t('dashboard.database.offline')}</Badge>
               )}
             </CardTitle>
             <CardDescription>
-              {database.engine} @ {database.host}:{database.port} · {database.name} · size: {database.size_pretty ?? '—'}
+              {t('dashboard.database.description', { engine: database.engine, host: database.host, port: database.port, name: database.name, size: database.size_pretty ?? '—' })}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-sm text-muted-foreground mb-2">Top tables by row count</div>
+            <div className="text-sm text-muted-foreground mb-2">{t('dashboard.database.topTables')}</div>
             <div className="space-y-1">
-              {database.tables.length === 0 && <p className="text-sm text-muted-foreground">No tables yet</p>}
-              {database.tables.map((t) => (
-                <div key={t.name} className="flex items-center justify-between text-sm py-1 border-b border-border/40 last:border-0">
-                  <span className="font-mono">{t.name}</span>
+              {database.tables.length === 0 && <p className="text-sm text-muted-foreground">{t('dashboard.database.noTables')}</p>}
+              {database.tables.map((tbl) => (
+                <div key={tbl.name} className="flex items-center justify-between text-sm py-1 border-b border-border/40 last:border-0">
+                  <span className="font-mono">{tbl.name}</span>
                   <span className="text-muted-foreground">
-                    {t.rows.toLocaleString()} rows · {t.size}
+                    {t('dashboard.database.rows', { count: tbl.rows.toLocaleString(), size: tbl.size })}
                   </span>
                 </div>
               ))}
@@ -218,9 +222,9 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Box className="h-5 w-5" />
-              Sandbox Pool
+              {t('dashboard.sandbox.title')}
             </CardTitle>
-            <CardDescription>Container availability per database type</CardDescription>
+            <CardDescription>{t('dashboard.sandbox.description')}</CardDescription>
           </CardHeader>
           <CardContent>
             {sandbox.error ? (
@@ -228,11 +232,11 @@ export function SettingsPage() {
             ) : (
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Pool running</span>
+                  <span className="text-muted-foreground">{t('dashboard.sandbox.running')}</span>
                   {sandbox.running ? (
-                    <Badge variant="success">yes</Badge>
+                    <Badge variant="success">{t('dashboard.sandbox.yes')}</Badge>
                   ) : (
-                    <Badge variant="destructive">no</Badge>
+                    <Badge variant="destructive">{t('dashboard.sandbox.no')}</Badge>
                   )}
                 </div>
                 {(() => {
@@ -261,7 +265,7 @@ export function SettingsPage() {
                     });
                   }
                   if (buckets.length === 0) {
-                    return <p className="text-xs text-muted-foreground">No pool data</p>;
+                    return <p className="text-xs text-muted-foreground">{t('dashboard.sandbox.noData')}</p>;
                   }
                   return (
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -269,7 +273,7 @@ export function SettingsPage() {
                         <div key={b.name} className="rounded-md border border-border/60 px-3 py-2 flex items-center justify-between">
                           <span className="font-mono text-xs uppercase">{b.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            <span className="text-foreground">{b.available}</span> available · {b.busy} busy
+                            <span className="text-foreground">{b.available}</span> {t('dashboard.sandbox.availability', { busy: b.busy })}
                           </span>
                         </div>
                       ))}
@@ -286,24 +290,24 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Users by role
+              {t('dashboard.roles.title')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center justify-between border-b border-border/40 pb-2">
-              <span>Admins</span>
+              <span>{t('dashboard.roles.admins')}</span>
               <Badge variant="outline">{stats.users.admins}</Badge>
             </div>
             <div className="flex items-center justify-between border-b border-border/40 pb-2">
-              <span>Instructors</span>
+              <span>{t('dashboard.roles.instructors')}</span>
               <Badge variant="outline">{stats.users.instructors}</Badge>
             </div>
             <div className="flex items-center justify-between border-b border-border/40 pb-2">
-              <span>Students</span>
+              <span>{t('dashboard.roles.students')}</span>
               <Badge variant="outline">{stats.users.students}</Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active in last 24h</span>
+              <span className="text-muted-foreground">{t('dashboard.roles.active24h')}</span>
               <Badge>{stats.users.active_24h}</Badge>
             </div>
           </CardContent>
@@ -314,11 +318,11 @@ export function SettingsPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card variant="glass">
           <CardHeader>
-            <CardTitle>Recent users</CardTitle>
+            <CardTitle>{t('dashboard.recentUsers.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             {activity.recent_users.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No users</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.recentUsers.empty')}</p>
             ) : (
               <div className="space-y-1">
                 {activity.recent_users.map((u) => (
@@ -330,7 +334,7 @@ export function SettingsPage() {
                     <div className="text-right">
                       <Badge variant="outline" className="text-xs">{u.role}</Badge>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        {u.last_login ? `seen ${formatRelative(u.last_login)}` : 'never logged in'}
+                        {u.last_login ? t('dashboard.recentUsers.seen', { when: formatRelative(t, u.last_login) }) : t('dashboard.recentUsers.neverLoggedIn')}
                       </div>
                     </div>
                   </div>
@@ -342,11 +346,11 @@ export function SettingsPage() {
 
         <Card variant="glass">
           <CardHeader>
-            <CardTitle>Recent submissions</CardTitle>
+            <CardTitle>{t('dashboard.recentSubmissions.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             {activity.recent_submissions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No submissions</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.recentSubmissions.empty')}</p>
             ) : (
               <div className="space-y-1">
                 {activity.recent_submissions.map((s) => (
@@ -359,11 +363,11 @@ export function SettingsPage() {
                     </div>
                     <div className="text-right ml-3 shrink-0">
                       {s.is_correct ? (
-                        <Badge variant="success" className="text-xs">correct</Badge>
+                        <Badge variant="success" className="text-xs">{t('dashboard.recentSubmissions.correct')}</Badge>
                       ) : (
-                        <Badge variant="destructive" className="text-xs">wrong</Badge>
+                        <Badge variant="destructive" className="text-xs">{t('dashboard.recentSubmissions.wrong')}</Badge>
                       )}
-                      <div className="text-xs text-muted-foreground mt-0.5">{formatRelative(s.submitted_at)}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{formatRelative(t, s.submitted_at)}</div>
                     </div>
                   </div>
                 ))}

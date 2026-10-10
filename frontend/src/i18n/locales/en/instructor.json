@@ -138,7 +138,58 @@
     "publishImmediately": "Publish Immediately",
     "saveChanges": "Save Changes",
     "createLesson": "Create Lesson",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "types": {
+      "theory": "Theory",
+      "theoryDesc": "Educational content only",
+      "practice": "Practice",
+      "practiceDesc": "SQL exercises only",
+      "mixed": "Theory & Practice",
+      "mixedDesc": "Both content and exercises"
+    },
+    "exerciseDefaultTitle": "Exercise {{n}}",
+    "exerciseTitle": "Exercise Title",
+    "exerciseTitlePlaceholder": "e.g., Find all active users",
+    "taskPlaceholder": "Describe what the student needs to do...",
+    "initialCodePlaceholder": "-- Start writing your query here",
+    "removeExercise": "Remove exercise",
+    "expandExercise": "Expand exercise",
+    "collapseExercise": "Collapse exercise",
+    "removeHint": "Remove hint",
+    "hiddenDatasets": "Hidden check datasets",
+    "hiddenDatasetsDesc": "Extra seed data the answer must also match. Cover the edge cases the visible data does not: an empty group, a NULL, duplicate rows, a value exactly on a boundary, an empty result. The schema is taken from the exercise dataset.",
+    "addDataset": "Add dataset",
+    "datasetNamePlaceholder": "Name, e.g. empty department",
+    "datasetTargetsPlaceholder": "What it catches (shown to the student on failure)",
+    "datasetSeedPlaceholder": "INSERT INTO ... — seed SQL for this dataset",
+    "removeDataset": "Remove dataset",
+    "criteriaTitle": "Grading criteria",
+    "criteriaDesc": "Each criterion is checked as pass/fail. The exercise is accepted when at least the threshold passes; the score is then full, otherwise 0.",
+    "titlePlaceholder": "e.g., Introduction to SELECT",
+    "descriptionPlaceholder": "Brief description shown on the card",
+    "theoryPlaceholder": "# Lesson Title\n\nWrite your lesson content here using Markdown...",
+    "practiceExercises": "Practice Exercises",
+    "practiceExercisesDesc": "Add one or more exercises. Students see a shared timer for the whole lesson.",
+    "checkDatasets": "Check datasets",
+    "checking": "Checking...",
+    "addExercise": "Add Exercise",
+    "timeLimitMinutes": "Total Time Limit (minutes)",
+    "timeLimitDesc": "Shared countdown for all exercises, enforced by the server from the moment the student opens the practice. Leave empty for practice; set it for graded tests.",
+    "maxAttemptsPerExercise": "Max Attempts (per exercise)",
+    "validation": {
+      "title": "Dataset check (saved version of the lesson)",
+      "hide": "Hide",
+      "skipped": "Skipped: no expected query.",
+      "caught": "{{killed}} of {{total}} typical mistakes are caught by {{datasets}} dataset(s).",
+      "truncated": " Only {{checked}} of {{total}} mistakes were tried before the time budget ran out.",
+      "referenceEmpty": "Reference returns no rows on: {{names}}"
+    },
+    "deleteAttachment": "Delete attachment",
+    "errors": {
+      "incompleteDataset": "Exercise {{n}}: every hidden check dataset needs a name and seed SQL (or remove the empty one).",
+      "validateFailed": "Failed to validate datasets",
+      "saveFailed": "Failed to save lesson"
+    }
   },
   "students": {
     "title": "Students",
@@ -171,6 +222,81 @@
     "scorePercent": "Score",
     "progressLabel": "Progress",
     "noProgress": "No progress data yet",
-    "tasks": "{{completed}}/{{total}} tasks"
+    "tasks": "{{completed}}/{{total}} tasks",
+    "studentsN": "{{count}} students",
+    "studentsN_one": "{{count}} student",
+    "studentsN_other": "{{count}} students",
+    "onCoursesN": "across {{count}} courses",
+    "onCoursesN_one": "across {{count}} course",
+    "onCoursesN_other": "across {{count}} courses"
+  },
+  "datasets": {
+    "title": "My Datasets",
+    "subtitle": "Reusable schemas and seed data for your courses",
+    "uploadSql": "Upload SQL",
+    "generateAi": "Generate with AI",
+    "newDataset": "New Dataset",
+    "sections": {
+      "own": "Your datasets",
+      "system": "System datasets",
+      "others": "Other instructors' datasets"
+    },
+    "ownEmpty": "You haven't created any datasets yet.",
+    "noDatasets": "No datasets",
+    "count": "{{count}} datasets",
+    "count_one": "{{count}} dataset",
+    "count_other": "{{count}} datasets",
+    "by": "by {{name}}",
+    "preview": "Preview",
+    "edit": "Edit",
+    "form": {
+      "editTitle": "Edit Dataset",
+      "createTitle": "New Dataset",
+      "description": "Define schema and seed SQL. This dataset becomes selectable in lesson exercises.",
+      "name": "Name",
+      "namePlaceholder": "e.g., Library System",
+      "dbType": "Database Type",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What's in this dataset?",
+      "schema": "Schema SQL (CREATE TABLE / ALTER / DROP)",
+      "schemaPlaceholder": "CREATE TABLE users (...);",
+      "seed": "Seed SQL (INSERT statements)",
+      "seedPlaceholder": "INSERT INTO users VALUES ...;",
+      "cancel": "Cancel",
+      "save": "Save Changes",
+      "create": "Create Dataset"
+    },
+    "previewDialog": {
+      "description": "Dataset preview",
+      "rows": "{{count}} rows · {{ms}}ms"
+    },
+    "generator": {
+      "title": "Generate Dataset with AI",
+      "description": "Describe what you want and Gemini will generate matching schema + seed data. You can edit the result before saving.",
+      "topic": "Topic",
+      "topicPlaceholder": "e.g., A small bookstore with customers, books, authors and orders. Include returns and bestseller flags.",
+      "topicHint": "Describe entities, relationships, and any specific data you want to see.",
+      "size": "Size",
+      "small": "Small (~10 rows)",
+      "medium": "Medium (~50 rows)",
+      "large": "Large (~200 rows)",
+      "dbType": "Database Type",
+      "cancel": "Cancel",
+      "generate": "Generate",
+      "generating": "Generating..."
+    },
+    "delete": {
+      "title": "Delete Dataset",
+      "description": "This permanently deletes the dataset. Lessons that reference it will lose the link.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "errors": {
+      "load": "Failed to load datasets",
+      "save": "Failed to save dataset",
+      "parse": "Failed to parse SQL file",
+      "preview": "Preview failed",
+      "generate": "Generation failed"
+    }
   }
 }
