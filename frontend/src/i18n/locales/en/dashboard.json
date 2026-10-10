@@ -29,5 +29,32 @@
       "description": "Start learning SQL by enrolling in a course.",
       "browse": "Browse Courses"
     }
+  },
+  "instructor": {
+    "title": "Your courses",
+    "subtitle": "Manage courses, lessons and students",
+    "all": "All courses",
+    "new": "New course",
+    "manage": "Manage",
+    "published": "Published",
+    "draft": "Draft",
+    "students": "{{count}} students",
+    "lessons": "{{count}} lessons",
+    "stats": {
+      "courses": "My courses",
+      "coursesSubtitle": "{{count}} published",
+      "students": "Students",
+      "lessons": "Lessons",
+      "assignments": "Assignments"
+    },
+    "empty": {
+      "title": "No courses yet",
+      "description": "Create your first course and add lessons with exercises.",
+      "create": "Create course"
+    },
+    "students_one": "{{count}} student",
+    "students_other": "{{count}} students",
+    "lessons_one": "{{count}} lesson",
+    "lessons_other": "{{count}} lessons"
   }
 }

@@ -31,5 +31,36 @@
       "description": "Почніть вивчення SQL, записавшись на курс.",
       "browse": "Переглянути курси"
     }
+  },
+  "instructor": {
+    "title": "Ваші курси",
+    "subtitle": "Керуйте курсами, уроками та студентами",
+    "all": "Усі курси",
+    "new": "Новий курс",
+    "manage": "Керувати",
+    "published": "Опубліковано",
+    "draft": "Чернетка",
+    "students": "{{count}} студентів",
+    "lessons": "{{count}} уроків",
+    "stats": {
+      "courses": "Мої курси",
+      "coursesSubtitle": "опубліковано {{count}}",
+      "students": "Студентів",
+      "lessons": "Уроків",
+      "assignments": "Завдань"
+    },
+    "empty": {
+      "title": "Ще немає курсів",
+      "description": "Створіть перший курс і додайте до нього уроки з задачами.",
+      "create": "Створити курс"
+    },
+    "students_one": "{{count}} студент",
+    "students_few": "{{count}} студенти",
+    "students_many": "{{count}} студентів",
+    "students_other": "{{count}} студентів",
+    "lessons_one": "{{count}} урок",
+    "lessons_few": "{{count}} уроки",
+    "lessons_many": "{{count}} уроків",
+    "lessons_other": "{{count}} уроків"
   }
 }
