@@ -102,7 +102,7 @@ NO_ORDERS = {
 }
 BOUNDARIES = {
     'name': 'Граничні значення',
-    'targets': 'замовлення рівно на 1000.00, комісія рівно .12, рейтинг рівно 200, імя з малої літери',
+    'targets': 'замовлення рівно на 1000.00, комісія рівно .12, рейтинг рівно 200, ім’я з малої літери',
     'seed_sql': seed_sql(salespeople=[(1008, 'Lowe', 'Berlin', .12)],
                          customers=[(2011, 'cobb', 'Berlin', 200, 1008)],
                          orders=[(3012, 1000.00, '2000-10-04', 2011, 1008)]),
@@ -149,7 +149,7 @@ THEORY_INTRO = """# Розділи 1–2. Реляційні бази даних
 
 | Таблиця | Що зберігає | Ключ |
 |---|---|---|
-| `Salespeople` | продавці: номер `snum`, імя `sname`, місто `city`, комісія `comm` | `snum` |
+| `Salespeople` | продавці: номер `snum`, ім’я `sname`, місто `city`, комісія `comm` | `snum` |
 | `Customers` | клієнти: `cnum`, `cname`, `city`, рейтинг `rating`, продавець `snum` | `cnum` |
 | `Orders` | замовлення: `onum`, сума `amt`, дата `odate`, клієнт `cnum`, продавець `snum` | `onum` |
 
@@ -336,7 +336,7 @@ ORDER BY 2 DESC;
 
 THEORY_JOINS = """# Розділ 10. Запити до кількох таблиць
 
-Таблиці зєднують, перелічивши їх у `FROM` і вказавши умову відповідності рядків:
+Таблиці з’єднують, перелічивши їх у `FROM` і вказавши умову відповідності рядків:
 
 ```sql
 SELECT onum, cname
@@ -353,7 +353,7 @@ FROM Orders JOIN Customers ON Customers.cnum = Orders.cnum;
 
 Стовпець, що є в обох таблицях, уточнюють назвою таблиці або псевдонімом (`Orders.cnum`).
 
-## Зєднання таблиці з собою
+## З’єднання таблиці з собою
 
 Псевдоніми дозволяють взяти одну таблицю двічі:
 
@@ -420,7 +420,7 @@ WHERE amt > ALL (SELECT amt FROM Orders a, Customers b
 - `NULL` у результаті підзапиту робить порівняння невизначеним.
 """
 
-THEORY_SETS = """# Розділ 13. Обєднання запитів
+THEORY_SETS = """# Розділ 13. Об’єднання запитів
 
 `UNION` зливає результати двох запитів в один, прибираючи повтори; `UNION ALL` їх зберігає.
 Запити мають повертати однакову кількість стовпців сумісних типів.
@@ -441,7 +441,7 @@ INTERSECT
 SELECT snum FROM Customers WHERE city = 'London';
 ```
 
-Константний стовпець у кожній частині обєднання підписує, звідки прийшов рядок.
+Константний стовпець у кожній частині об’єднання підписує, звідки прийшов рядок.
 """
 
 THEORY_VIEWS = """# Розділи 14–15. Подання
@@ -461,7 +461,7 @@ SELECT * FROM Londonstaff;
 ## Зміна даних через подання
 
 `INSERT`, `UPDATE`, `DELETE` через подання переходять на базову таблицю, але не для будь-якого подання.
-Подання не можна оновлювати, якщо в ньому є `DISTINCT`, агрегати, `GROUP BY`, зєднання
+Подання не можна оновлювати, якщо в ньому є `DISTINCT`, агрегати, `GROUP BY`, з’єднання
 кількох таблиць або воно побудоване на такому поданні.
 
 `WITH CHECK OPTION` забороняє через подання вносити рядки, які в нього не потрапили б:
@@ -500,14 +500,14 @@ REVOKE INSERT ON Salespeople FROM Claire CASCADE;
 Проблеми одночасної роботи, які описує книга:
 
 - неповторюване читання: між двома `SELECT AVG(rating)` інша транзакція змінила рядки;
-- фантомна вставка: між двома читаннями зявився новий рядок;
+- фантомна вставка: між двома читаннями з’явився новий рядок;
 - блокування: ексклюзивне (X) не дає читати рядок, спільне (S) лише змінювати;
   блокування окремого рядка обмежує інших найменше.
 
 ## Системний каталог
 
 СУБД зберігає опис своїх таблиць, стовпців і прав у власних таблицях, це метадані.
-До них можна робити лише `SELECT`, і видно тільки ті обєкти, на які є хоч одне право.
+До них можна робити лише `SELECT`, і видно тільки ті об’єкти, на які є хоч одне право.
 У SQL92 це `INFORMATION_SCHEMA`.
 """
 
@@ -545,7 +545,7 @@ def lessons():
             description='Розділ 6: зміна даних',
             theory_content=THEORY_DML), [
             ex('Новий продавець',
-               'Додайте до таблиці Salespeople продавця: місто San Jose, імя Blanco, '
+               'Додайте до таблиці Salespeople продавця: місто San Jose, ім’я Blanco, '
                'комісія NULL, номер 1100.',
                "INSERT INTO Salespeople (city, sname, comm, snum) VALUES ('San Jose', 'Blanco', NULL, 1100)",
                hints=['Порядок значень у VALUES має відповідати списку стовпців після назви таблиці.']),
@@ -623,7 +623,7 @@ def lessons():
                'Для кожного клієнта виведіть його номер і суму його найменшого замовлення.',
                'SELECT cnum, MIN(amt) FROM Orders GROUP BY cnum', hidden=[DUPLICATES]),
             ex('Перший клієнт на G',
-               'Виведіть імя першого за алфавітом клієнта, чиє імя починається з G.',
+               'Виведіть ім’я першого за алфавітом клієнта, чиє ім’я починається з G.',
                "SELECT MIN(cname) FROM Customers WHERE cname LIKE 'G%'"),
             ex('Найвищий рейтинг у місті',
                'Для кожного міста виведіть його назву і найвищий рейтинг клієнта в ньому.',
@@ -647,14 +647,14 @@ def lessons():
                "SELECT 'For the city ', city, ', the highest rating is ', MAX(rating) "
                'FROM Customers GROUP BY city', hidden=[NULLS]),
             ex('Клієнти за спаданням рейтингу',
-               'Виведіть клієнтів за спаданням рейтингу. Спочатку стовпець рейтингу, потім імя і номер клієнта.',
+               'Виведіть клієнтів за спаданням рейтингу. Спочатку стовпець рейтингу, потім ім’я і номер клієнта.',
                'SELECT rating, cname, cnum FROM Customers ORDER BY rating DESC',
                hints=['Порядок стовпців: rating, cname, cnum.']),
             ex('Суми замовлень за днями',
                'Для кожної дати виведіть дату і загальну суму замовлень, від найбільшої суми до найменшої.',
                'SELECT odate, SUM(amt) FROM Orders GROUP BY odate ORDER BY 2 DESC', hidden=[DUPLICATES]),
             ex('Лондон як Brussels',
-               'Виведіть номер, імя і місто кожного клієнта, але для клієнтів з Лондона замість міста '
+               'Виведіть номер, ім’я і місто кожного клієнта, але для клієнтів з Лондона замість міста '
                "виведіть 'Brussels'.",
                "SELECT cnum, cname, CASE city WHEN 'London' THEN 'Brussels' ELSE city END FROM Customers",
                required=['CASE']),
@@ -665,15 +665,15 @@ def lessons():
         ]),
         ('Частина II. Запити', dict(
             title='Запити до кількох таблиць', lesson_type='mixed',
-            description='Розділ 10: зєднання таблиць, псевдоніми, зєднання таблиці з собою',
+            description='Розділ 10: з’єднання таблиць, псевдоніми, з’єднання таблиці з собою',
             theory_content=THEORY_JOINS), [
             ex('Замовлення та імена клієнтів',
-               'Для кожного замовлення виведіть його номер і імя клієнта, який його зробив.',
+               'Для кожного замовлення виведіть його номер і ім’я клієнта, який його зробив.',
                'SELECT onum, cname FROM Orders, Customers WHERE Customers.cnum = Orders.cnum',
                hidden=[NO_ORDERS]),
             ex('Клієнти продавців з комісією понад 12%',
                'Виведіть клієнтів, яких обслуговують продавці з комісією понад .12: '
-               'імя клієнта, імя продавця і його комісію.',
+               'і’ клієнта, ім’я продавця і його комісію.',
                'SELECT cname, sname, comm FROM Salespeople, Customers '
                'WHERE Salespeople.snum = Customers.snum AND comm > .12',
                hidden=[BOUNDARIES, NO_ORDERS]),
@@ -700,7 +700,7 @@ def lessons():
             description='Розділ 11: вкладені запити, IN, агрегати в підзапитах, корельовані підзапити',
             theory_content=THEORY_SUBQUERIES), [
             ex('Замовлення клієнта Cisneros',
-               'За допомогою підзапиту виведіть усі замовлення клієнта на імя Cisneros. '
+               'За допомогою підзапиту виведіть усі замовлення клієнта на ім’я Cisneros. '
                'Вважайте, що його номер вам невідомий.',
                "SELECT * FROM Orders WHERE cnum IN (SELECT cnum FROM Customers WHERE cname = 'Cisneros')",
                required=['SUBQUERY'], forbidden=['2008']),
@@ -737,8 +737,8 @@ def lessons():
                'SELECT * FROM Salespeople a WHERE EXISTS '
                '(SELECT * FROM Customers b WHERE a.snum = b.snum AND rating = 300)',
                hidden=[DUPLICATES], required=['EXISTS']),
-            ex('Те саме зєднанням',
-               'Розвяжіть попередню задачу без EXISTS, зєднанням таблиць: номер, імя, місто і комісія '
+            ex('Те саме з’єднанням',
+               'Роз’жіть попередню задачу без EXISTS, з’єднанням таблиць: номер, ім’я, місто і комісія '
                'продавця, кожен один раз.',
                'SELECT DISTINCT a.snum, sname, a.city, comm FROM Salespeople a, Customers b '
                'WHERE a.snum = b.snum AND b.rating = 300',
@@ -777,23 +777,23 @@ def lessons():
         ]),
         ('Частина II. Запити', dict(
             title='UNION, INTERSECT, EXCEPT', lesson_type='mixed',
-            description='Розділ 13: обєднання результатів кількох запитів',
+            description='Розділ 13: об’єднання результатів кількох запитів',
             theory_content=THEORY_SETS), [
             ex('High Rating / Low Rating',
-               "Обєднанням двох запитів виведіть імя, місто і рейтинг кожного клієнта та підпис: "
+               "Об’єднанням двох запитів виведіть ім’я, місто і рейтинг кожного клієнта та підпис: "
                "'High Rating' для рейтингу 200 і більше, 'Low Rating' для решти. NULL вважається низьким.",
                "SELECT cname, city, rating, 'High Rating' FROM Customers WHERE rating >= 200 "
                "UNION SELECT cname, city, rating, 'Low Rating' FROM Customers WHERE rating < 200 OR rating IS NULL",
                hidden=[NULLS, BOUNDARIES], required=['UNION']),
             ex('Більше одного замовлення',
-               'Виведіть номер і імя кожного продавця та кожного клієнта, які мають більше одного '
-               'замовлення. Відсортуйте за імям.',
+               'Виведіть номер і ім’я кожного продавця та кожного клієнта, які мають більше одного '
+               'замовлення. Відсортуйте за ім’ям.',
                'SELECT cnum, cname FROM Customers a WHERE 1 < (SELECT COUNT(*) FROM Orders b WHERE a.cnum = b.cnum) '
                'UNION SELECT snum, sname FROM Salespeople a WHERE 1 < (SELECT COUNT(*) FROM Orders b WHERE a.snum = b.snum) '
                'ORDER BY 2',
                hidden=[NO_ORDERS], required=['UNION']),
             ex('Три запити в одному',
-               'Обєднайте три запити: номери продавців із San Jose; номери клієнтів із San Jose; '
+               'О’днайте три запити: номери продавців із San Jose; номери клієнтів із San Jose; '
                'номери замовлень за 3 жовтня 2000. Повтори між другим і третім запитами збережіть, '
                'повтори з першим приберіть.',
                "SELECT snum FROM Salespeople WHERE city = 'San Jose' UNION "
@@ -807,7 +807,7 @@ def lessons():
                hidden=[NO_ORDERS]),
             ex('Замовлення не зі свого міста',
                'Виведіть пари (snum, cnum) для продавців, які мають замовлення понад 1000.00 не від клієнта '
-               'зі свого міста. Продавець з кількома такими клієнтами зявиться кілька разів.',
+               'зі свого міста. Продавець з кількома такими клієнтами з’явиться кілька разів.',
                'SELECT snum, cnum FROM Orders WHERE amt > 1000.00 EXCEPT '
                'SELECT a.snum, cnum FROM Salespeople a, Customers b WHERE a.snum = b.snum AND a.city = b.city',
                hidden=[BOUNDARIES]),
@@ -826,7 +826,7 @@ def lessons():
                'CREATE VIEW Salescount(city, salesperson_count) AS SELECT city, COUNT(snum) '
                'FROM Salespeople GROUP BY city'),
             ex('Подання DailyOrders',
-               'Створіть подання DailyOrders: імя продавця, середня і загальна сума його замовлень.',
+               'Створіть подання DailyOrders: ім’я продавця, середня і загальна сума його замовлень.',
                'CREATE VIEW DailyOrders(sname, average, total) AS SELECT sname, AVG(amt), SUM(amt) '
                'FROM Salespeople s, Orders o WHERE s.snum = o.snum GROUP BY s.snum, sname'),
             ex('Подання Multicust',
@@ -853,7 +853,7 @@ def lessons():
                'SELECT city, MAX(rating) FROM Customers GROUP BY city',
                hidden=[NULLS, DUPLICATES], max_score=20),
             ex('Клієнти продавців з комісією понад .12',
-               'Виведіть імя клієнта, імя його продавця і комісію продавця для продавців з комісією понад .12.',
+               'Виведіть ім’я клієнта, ім’я його продавця і комісію продавця для продавців з комісією понад .12.',
                'SELECT cname, sname, comm FROM Salespeople, Customers '
                'WHERE Salespeople.snum = Customers.snum AND comm > .12',
                hidden=[BOUNDARIES, NO_ORDERS], max_score=20),
