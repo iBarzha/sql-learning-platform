@@ -24,6 +24,7 @@ from .compose import (
     build_symmetric_difference,
     classify_statement,
     constructs,
+    created_object_name,
     created_table,
     dialect_for,
     has_order_by,
@@ -387,7 +388,8 @@ class Context:
         if self.kind != KIND_DML or not self.task.reference_query:
             return []
         tables = tables_in_schema(self.task.primary.schema_sql, self.dialect)
-        created = created_table(parse_statement(self.task.reference_query, self.dialect))
+        created = (created_table(parse_statement(self.task.reference_query, self.dialect))
+                   or created_object_name(self.task.reference_query))
         if created and created.lower() not in {t.lower() for t in tables}:
             tables.append(created)
         return tables

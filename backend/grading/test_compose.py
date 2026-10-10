@@ -303,3 +303,23 @@ class ConstructTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ConstructsInComparisonsTests(unittest.TestCase):
+    def test_subquery_inside_a_comparison_counts(self):
+        from grading.compose import constructs, parse_query
+        node = parse_query('SELECT cnum FROM Customers o '
+                           'WHERE rating = (SELECT MAX(rating) FROM Customers i WHERE i.city = o.city)',
+                           'postgres')
+        self.assertIn('SUBQUERY', constructs(node))
+
+    def test_subquery_after_any_and_all_counts(self):
+        from grading.compose import constructs, parse_query
+        node = parse_query('SELECT * FROM Orders WHERE amt > ALL (SELECT amt FROM Orders)', 'postgres')
+        self.assertIn('SUBQUERY', constructs(node))
+        self.assertIn('ALL', constructs(node))
+
+    def test_derived_table_is_not_a_predicate_subquery(self):
+        from grading.compose import constructs, parse_query
+        node = parse_query('SELECT * FROM (SELECT snum FROM Orders) t', 'postgres')
+        self.assertNotIn('SUBQUERY', constructs(node))

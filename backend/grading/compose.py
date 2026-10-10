@@ -156,13 +156,32 @@ def tables_in_schema(schema_sql: str, dialect: Optional[str]) -> list[str]:
 
 
 def created_table(node: Optional[exp.Expression]) -> Optional[str]:
-    """The table a CREATE TABLE statement defines, if the node is one."""
-    if isinstance(node, exp.Create) and (node.args.get('kind') or '').upper() == 'TABLE':
+    """The table or view a CREATE statement defines, if the node is one.
+
+    A view is graded like a table: its rows after the statement are what counts.
+    """
+    if isinstance(node, exp.Create) and (node.args.get('kind') or '').upper() in ('TABLE', 'VIEW'):
         target = node.this
         table = target.this if isinstance(target, exp.Schema) else target
         if isinstance(table, exp.Table):
             return table.name or None
     return None
+
+
+_CREATE_OBJECT_RE = re.compile(
+    r'\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?(?:TABLE|VIEW)\s+'
+    r'(?:IF\s+NOT\s+EXISTS\s+)?([`"\[]?[\w.]+[`"\]]?)',
+    re.IGNORECASE,
+)
+
+
+def created_object_name(sql: str) -> Optional[str]:
+    """Table or view a CREATE statement defines, from the text alone.
+
+    Used when sqlglot cannot parse the statement (e.g. `WITH CHECK OPTION`).
+    """
+    match = _CREATE_OBJECT_RE.search(sql or '')
+    return match.group(1).strip('`"[]') if match else None
 
 
 def parse_statement(sql: str, dialect: Optional[str]) -> Optional[exp.Expression]:
@@ -238,6 +257,18 @@ def uses_only_unrelated_tables(node: exp.Expression, expected: Iterable[str]) ->
     return not (referenced_tables(node) & expected_lower)
 
 
+_SET_WRAPPERS = (exp.Subquery, exp.Paren, exp.Union, exp.Except, exp.Intersect)
+
+
+def _is_predicate_subquery(select: exp.Select, root: exp.Expression) -> bool:
+    if select is root:
+        return False
+    parent = select.parent
+    while parent is not None and isinstance(parent, _SET_WRAPPERS):
+        parent = parent.parent
+    return parent is not None and not isinstance(parent, (exp.From, exp.Join, exp.CTE, exp.With))
+
+
 def constructs(node: exp.Expression) -> set[str]:
     """Structural features present in the query, for required/forbidden checks.
 
@@ -278,11 +309,16 @@ def constructs(node: exp.Expression) -> set[str]:
         if select.args.get('distinct'):
             found.add('DISTINCT')
 
-    if any(isinstance(sub.parent, (exp.Where, exp.Select, exp.In, exp.Exists))
-           for sub in node.find_all(exp.Subquery)):
+    # A nested SELECT anywhere but as a FROM/JOIN source (a derived table) or a CTE body
+    # is the kind of subquery textbooks mean: in a comparison, IN, EXISTS, ANY/ALL.
+    if any(_is_predicate_subquery(select, node) for select in node.find_all(exp.Select)):
         found.add('SUBQUERY')
     if node.find(exp.Exists):
         found.add('EXISTS')
+    if node.find(exp.All):
+        found.add('ALL')
+    if node.find(exp.Any):
+        found.add('ANY')
 
     for func in node.find_all(exp.AggFunc):
         found.add(type(func).__name__.upper())

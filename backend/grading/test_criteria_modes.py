@@ -90,3 +90,32 @@ class ReferenceModesTests(unittest.TestCase):
         self.assertFalse(r.passed)   # constant answers never pass, even without a reference
         r2 = evaluate(company(''), 'SELECT name FROM employees', sqlite_runner())
         self.assertTrue(r2.passed)
+
+
+class CreateViewTests(unittest.TestCase):
+    """CREATE VIEW tasks are graded by the view's contents, like CREATE TABLE."""
+
+    def test_view_with_the_same_rows_passes(self):
+        t = company('CREATE VIEW rich AS SELECT name FROM employees WHERE salary > 5000')
+        r = evaluate(t, 'CREATE VIEW rich AS SELECT name FROM employees WHERE salary >= 5500',
+                     sqlite_runner(), sqlite_sequence_runner())
+        self.assertEqual(verdicts(r), {'execution': True, 'state': True})
+
+    def test_view_with_different_rows_fails(self):
+        t = company('CREATE VIEW rich AS SELECT name FROM employees WHERE salary > 5000')
+        r = evaluate(t, 'CREATE VIEW rich AS SELECT name FROM employees',
+                     sqlite_runner(), sqlite_sequence_runner())
+        self.assertFalse(verdicts(r)['state'])
+        self.assertIn('rich', detail(r, 'state'))
+
+
+class CreateViewWithCheckOptionTests(unittest.TestCase):
+    """sqlglot cannot parse WITH CHECK OPTION; the view name must still be found."""
+
+    def test_view_name_is_taken_from_the_text_when_parsing_fails(self):
+        from grading.criteria import Context
+        t = company('CREATE VIEW rich AS SELECT name FROM employees WHERE salary > 5000 '
+                    'WITH CHECK OPTION')
+        ctx = Context(t, 'CREATE VIEW rich AS SELECT name FROM employees', sqlite_runner(),
+                      sqlite_sequence_runner())
+        self.assertIn('rich', ctx.dml_tables)
