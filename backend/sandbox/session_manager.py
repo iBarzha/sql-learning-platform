@@ -6,6 +6,7 @@ Sessions auto-expire after 15 minutes of inactivity.
 
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -22,8 +23,22 @@ logger = logging.getLogger(__name__)
 SESSION_TTL = 15 * 60  # 15 minutes
 CLEANUP_INTERVAL = 60  # check every 60 seconds
 MAX_SESSIONS = 100  # hard cap on concurrent sessions
+def owned_by(session, user_id) -> bool:
+    """True when the session has no owner or belongs to user_id.
+
+    The owner is kept as whatever the view passed (a UUID) in this worker, but comes
+    back as a string after cross-worker recovery from the session store, so compare
+    the two as text.
+    """
+    if session.user_id is None:
+        return True
+    return user_id is not None and str(session.user_id) == str(user_id)
+
+
 SESSION_REDIS_HOST = 'sql-session-redis'
 SESSION_REDIS_PORT = 6379
+# Set where the store runs with --requirepass (docker-compose.server.yml); empty = no auth.
+SESSION_REDIS_PASSWORD = os.getenv('SESSION_REDIS_PASSWORD') or None
 
 
 @dataclass
@@ -100,6 +115,7 @@ class SessionManager:
             self._session_redis = redis_lib.Redis(
                 host=SESSION_REDIS_HOST,
                 port=SESSION_REDIS_PORT,
+                password=SESSION_REDIS_PASSWORD,
                 db=0,
                 decode_responses=True,
                 socket_timeout=5,
@@ -130,11 +146,10 @@ class SessionManager:
             session = self._sessions.get(session_id)
             if session and session.database_type == database_type:
                 # Verify ownership — prevent session hijacking
-                if session.user_id is not None:
-                    if user_id is None or session.user_id != user_id:
-                        raise DatabaseConnectionError(
-                            'Session belongs to another user.'
-                        )
+                if not owned_by(session, user_id):
+                    raise DatabaseConnectionError(
+                        'Session belongs to another user.'
+                    )
                 session.last_used_at = time.time()
                 self._touch_redis_ttl(session_id)
                 return session
@@ -202,12 +217,11 @@ class SessionManager:
                     error_message='SESSION_EXPIRED',
                 )
             # Verify ownership
-            if session.user_id is not None:
-                if user_id is None or session.user_id != user_id:
-                    return QueryResult(
-                        success=False,
-                        error_message='Session belongs to another user.',
-                    )
+            if not owned_by(session, user_id):
+                return QueryResult(
+                    success=False,
+                    error_message='Session belongs to another user.',
+                )
             session.last_used_at = time.time()
 
         # Serialize queries on the SAME session (per-session lock),
