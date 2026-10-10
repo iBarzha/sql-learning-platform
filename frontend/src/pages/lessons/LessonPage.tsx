@@ -23,6 +23,7 @@ import {
   Download,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { SqlExerciseBlock } from '@/components/editor/SqlExerciseBlock';
 import { CriteriaChecklist } from '@/components/grading/CriteriaChecklist';
@@ -626,6 +627,7 @@ export function LessonPage() {
           <CardContent className="prose prose-sm dark:prose-invert max-w-none pt-6">
             {lesson.theory_content ? (
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
                 components={{
                   code({ className, children, ...props }) {
