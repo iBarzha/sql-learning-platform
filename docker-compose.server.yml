@@ -1,0 +1,288 @@
+# Stack for a shared server behind a host nginx (see docs/server-deploy.md).
+#
+#   ./server-up.sh            first start: secrets, build, migrate, seed
+#   ./server-up.sh --update   rebuild and restart after new code was copied in
+#
+# Compared with docker-compose.yml:
+#   - one port, on loopback only (APP_PORT); the host nginx terminates TLS and proxies to it;
+#   - the sandboxes sit on an internal network with no route to the internet, so even a
+#     compromised sandbox container cannot download or call out; the session store has its
+#     own internal network and a password, so a sandbox cannot reach it either;
+#   - every container drops all Linux capabilities except the few its entrypoint needs,
+#     runs with no-new-privileges and has a pid, cpu and memory cap (memory caps sum to 3.4 GB);
+#   - the Redis sandbox has its admin commands renamed away, MongoDB runs without
+#     server-side JavaScript, MariaDB without LOCAL INFILE.
+#
+# Nothing here mounts the Docker socket, host paths other than this directory, or publishes
+# a port beyond APP_PORT on 127.0.0.1.
+
+name: sqlp
+
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Entrypoints of the official database images start as root, fix ownership of their data
+# directory and then switch to the service user; that needs exactly these capabilities.
+x-entrypoint-caps: &entrypoint-caps
+  - CHOWN
+  - DAC_OVERRIDE
+  - FOWNER
+  - SETGID
+  - SETUID
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: sql_learning
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?run ./server-up.sh - it creates .env.server}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: *entrypoint-caps
+    pids_limit: 200
+    cpus: 1
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+    networks:
+      - app
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:?run ./server-up.sh - it creates .env.server}
+      DB_NAME: sql_learning
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "5432"
+      # localhost is for the container health check; nothing outside the stack reaches gunicorn.
+      ALLOWED_HOSTS: ${APP_HOST:?set APP_HOST in .env.server},localhost
+      CORS_ALLOWED_ORIGINS: ${APP_SCHEME:-https}://${APP_HOST}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?run ./server-up.sh - it creates .env.server}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ENABLE_HTTPS: ${ENABLE_HTTPS:-True}
+      USE_X_REAL_IP: "true"
+      SANDBOX_POOL_START: "true"
+      SESSION_REDIS_PASSWORD: ${SESSION_REDIS_PASSWORD:?run ./server-up.sh - it creates .env.server}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+    volumes:
+      - static:/app/staticfiles
+      - media:/app/media
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    pids_limit: 256
+    cpus: 2
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/ready/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      sandbox-postgres:
+        condition: service_healthy
+      sandbox-mariadb:
+        condition: service_healthy
+      sandbox-mongodb:
+        condition: service_healthy
+      sandbox-redis:
+        condition: service_healthy
+      session-redis:
+        condition: service_healthy
+    logging: *logging
+    networks:
+      - app
+      - sandbox
+      - sessions
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Empty on purpose: the bundle calls the API on the address it was opened at.
+        VITE_API_URL: ""
+    ports:
+      - "127.0.0.1:${APP_PORT:-8090}:80"
+    volumes:
+      - ./nginx/nginx.server.conf:/etc/nginx/nginx.conf:ro
+      - static:/app/staticfiles:ro
+      - media:/app/media:ro
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    pids_limit: 64
+    cpus: 0.5
+    mem_limit: 128m
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *logging
+    networks:
+      - app
+
+  # The backend looks the sandboxes up by the container names of the main compose file;
+  # the aliases give these containers the same names inside the sandbox network only.
+  sandbox-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: sandbox
+      POSTGRES_USER: sandbox
+      POSTGRES_PASSWORD: sandbox
+    volumes:
+      - ./docker/sandbox-postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: *entrypoint-caps
+    pids_limit: 200
+    cpus: 1
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sandbox -d sandbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+    networks:
+      sandbox:
+        aliases:
+          - sql-sandbox-postgres
+
+  sandbox-mariadb:
+    image: mariadb:10.11
+    command: ["--local-infile=0"]
+    environment:
+      MARIADB_DATABASE: sandbox
+      MARIADB_USER: sandbox
+      MARIADB_PASSWORD: sandbox
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - ./docker/sandbox-mariadb-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: *entrypoint-caps
+    pids_limit: 300
+    cpus: 1
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+    networks:
+      sandbox:
+        aliases:
+          - sql-sandbox-mariadb
+
+  sandbox-mongodb:
+    image: mongo:7.0
+    # No server-side JavaScript: $where, $function and $accumulator are refused by the server.
+    command: ["mongod", "--noscripting", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_DATABASE: sandbox
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: *entrypoint-caps
+    pids_limit: 300
+    cpus: 1
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+    networks:
+      sandbox:
+        aliases:
+          - sql-sandbox-mongodb
+
+  sandbox-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "/etc/redis/sandbox.conf"]
+    volumes:
+      - ./docker/sandbox-redis.conf:/etc/redis/sandbox.conf:ro
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: *entrypoint-caps
+    pids_limit: 64
+    cpus: 0.5
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+    networks:
+      sandbox:
+        aliases:
+          - sql-sandbox-redis
+
+  # Session metadata of the backend. Own network: the sandboxes must not be able to reach it.
+  session-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${SESSION_REDIS_PASSWORD}"]
+    volumes:
+      - session_redis:/data
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: *entrypoint-caps
+    pids_limit: 64
+    cpus: 0.5
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${SESSION_REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+    networks:
+      sessions:
+        aliases:
+          - sql-session-redis
+
+networks:
+  app:
+  sandbox:
+    internal: true
+  sessions:
+    internal: true
+
+volumes:
+  postgres_data:
+  static:
+  media:
+  session_redis:

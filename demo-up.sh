@@ -14,7 +14,7 @@ ENV_FILE=.env.demo
 COMPOSE="docker compose --env-file $ENV_FILE -f docker-compose.demo.yml"
 
 random_string() (
-    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$1" || true
+    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$1" || true
 )
 
 if [ ! -f "$ENV_FILE" ]; then

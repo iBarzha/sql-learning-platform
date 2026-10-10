@@ -57,6 +57,11 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Behind the stack's own ingress (docker-compose.server.yml) the client address arrives in
+# X-Real-IP; without this every per-IP rate limit would count the ingress container.
+if os.getenv('USE_X_REAL_IP', 'False').lower() == 'true':
+    MIDDLEWARE.insert(0, 'config.middleware.RealIPMiddleware')
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
@@ -202,3 +207,5 @@ if not DEBUG:
         SECURE_HSTS_PRELOAD = True
         SECURE_SSL_REDIRECT = True
         SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+        # Container health checks call these over plain HTTP from inside the stack.
+        SECURE_REDIRECT_EXEMPT = [r'^api/(health|ready)/$']
