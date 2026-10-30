@@ -1,7 +1,8 @@
 """Views for submission handling with sandbox execution and grading."""
 
-from django.db import models, transaction
-from django.db.models import Count, Q
+import uuid
+
+from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,6 +12,7 @@ from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 
 from .models import Submission, UserResult
+from .progress import course_progress
 from .storage import json_safe
 from .serializers import (
     SubmissionSerializer,
@@ -22,24 +24,6 @@ from assignments.models import Assignment
 from courses.models import Course, Enrollment, Lesson, LessonExercise
 from grading.runner import build_task, make_runner, make_sequence_runner
 from grading.service import grade as grade_submission
-
-
-def _get_course_stats(course_ids):
-    """Pre-fetch assignment/lesson counts per course to avoid N+1 queries."""
-    courses = Course.objects.filter(id__in=course_ids).annotate(
-        total_assignments=Count('assignments', filter=Q(assignments__is_published=True)),
-        total_practice_lessons=Count(
-            'lessons',
-            filter=Q(lessons__is_published=True, lessons__lesson_type__in=['practice', 'mixed'])
-        ),
-    )
-    return {
-        c.id: {
-            'total_assignments': c.total_assignments,
-            'total_practice_lessons': c.total_practice_lessons,
-        }
-        for c in courses
-    }
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
@@ -111,6 +95,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             check_datasets = assignment.check_datasets or []
             query_type = assignment.query_type
             criteria = assignment.criteria or {}
+            ignore_column_order = assignment.ignore_column_order
 
         elif lesson_id:
             try:
@@ -154,6 +139,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             check_datasets = exercise.check_datasets or []
             query_type = 'select'
             criteria = exercise.criteria or {}
+            ignore_column_order = exercise.ignore_column_order
         else:
             return Response(
                 {'detail': 'Assignment or lesson ID required'},
@@ -239,6 +225,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 query_type=query_type,
                 expected_result=expected_result,
                 criteria=criteria,
+                ignore_column_order=ignore_column_order,
             )
             runner = make_runner(
                 course.database_type,
@@ -250,6 +237,8 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             graded = grade_submission(
                 task, student_query, runner,
                 run_sequence=make_sequence_runner(course.database_type, time_limit),
+                # A timed lesson is a test: the reference rows would hand out the answer.
+                reveal_rows=not (lesson is not None and bool(lesson.time_limit_seconds)),
             )
             execution = graded.execution
 
@@ -349,74 +338,18 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def my_progress(self, request, **kwargs):
-        """Get current user's progress across all enrolled courses."""
-        results = UserResult.objects.filter(
-            student=request.user
-        ).select_related('assignment__course', 'lesson__course')[:5000]
-
-        # Collect course IDs first, then pre-fetch stats in one query
-        course_ids = set()
-        result_list = list(results)
-        for result in result_list:
-            if result.assignment and result.assignment.course:
-                course_ids.add(result.assignment.course.id)
-            elif result.lesson and result.lesson.course:
-                course_ids.add(result.lesson.course.id)
-
-        course_stats = _get_course_stats(course_ids)
-
-        courses_data = {}
-        for result in result_list:
-            course = None
-            if result.assignment:
-                course = result.assignment.course
-            elif result.lesson:
-                course = result.lesson.course
-
-            if not course:
-                continue
-
-            if course.id not in courses_data:
-                stats = course_stats.get(course.id, {})
-                total = stats.get('total_assignments', 0) + stats.get('total_practice_lessons', 0)
-
-                courses_data[course.id] = {
-                    'course_id': str(course.id),
-                    'course_title': course.title,
-                    'total_assignments': total,
-                    'completed_assignments': 0,
-                    'total_score': 0,
-                    'max_possible_score': 0,
-                }
-
-            if result.assignment:
-                max_score = result.assignment.max_score
-            elif result.exercise:
-                max_score = result.exercise.max_score
-            else:
-                max_score = 0
-
-            courses_data[course.id]['max_possible_score'] += max_score
-            if result.is_completed:
-                courses_data[course.id]['completed_assignments'] += 1
-            courses_data[course.id]['total_score'] += float(result.best_score)
-
-        for data in courses_data.values():
-            if data['total_assignments'] > 0:
-                data['completion_rate'] = round(
-                    data['completed_assignments'] / data['total_assignments'] * 100, 2
-                )
-            else:
-                data['completion_rate'] = 0
-
-            if data['max_possible_score'] > 0:
-                data['percentage_score'] = round(
-                    data['total_score'] / data['max_possible_score'] * 100, 2
-                )
-            else:
-                data['percentage_score'] = 0
-
-        return Response(list(courses_data.values()))
+        """Current user's progress in every course they are actively enrolled in."""
+        courses = Course.objects.filter(
+            enrollments__student=request.user, enrollments__status='active',
+        ).distinct()
+        course_id = request.query_params.get('course')
+        if course_id:
+            try:
+                courses = courses.filter(id=uuid.UUID(str(course_id)))
+            except ValueError:
+                return Response({'detail': 'Invalid course id.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        return Response(course_progress(request.user, courses))
 
     @action(detail=False, methods=['get'])
     def student_progress(self, request, **kwargs):
@@ -444,74 +377,9 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Only show progress for courses this instructor owns
-        results = UserResult.objects.filter(
-            student=student
-        ).select_related('assignment__course', 'lesson__course').filter(
-            models.Q(assignment__course__instructor=request.user) |
-            models.Q(lesson__course__instructor=request.user)
-        )[:5000]
-
-        # Pre-fetch course stats to avoid N+1
-        course_ids = set()
-        result_list = list(results)
-        for result in result_list:
-            if result.assignment and result.assignment.course:
-                course_ids.add(result.assignment.course.id)
-            elif result.lesson and result.lesson.course:
-                course_ids.add(result.lesson.course.id)
-
-        course_stats = _get_course_stats(course_ids)
-
-        courses_data = {}
-        for result in result_list:
-            course = None
-            if result.assignment:
-                course = result.assignment.course
-            elif result.lesson:
-                course = result.lesson.course
-
-            if not course:
-                continue
-
-            if course.id not in courses_data:
-                stats = course_stats.get(course.id, {})
-                total = stats.get('total_assignments', 0) + stats.get('total_practice_lessons', 0)
-
-                courses_data[course.id] = {
-                    'course_id': str(course.id),
-                    'course_title': course.title,
-                    'total_assignments': total,
-                    'completed_assignments': 0,
-                    'total_score': 0,
-                    'max_possible_score': 0,
-                }
-
-            if result.assignment:
-                max_score = result.assignment.max_score
-            elif result.exercise:
-                max_score = result.exercise.max_score
-            else:
-                max_score = 0
-
-            courses_data[course.id]['max_possible_score'] += max_score
-            if result.is_completed:
-                courses_data[course.id]['completed_assignments'] += 1
-            courses_data[course.id]['total_score'] += float(result.best_score)
-
-        for data in courses_data.values():
-            if data['total_assignments'] > 0:
-                data['completion_rate'] = round(
-                    data['completed_assignments'] / data['total_assignments'] * 100, 2
-                )
-            else:
-                data['completion_rate'] = 0
-
-            if data['max_possible_score'] > 0:
-                data['percentage_score'] = round(
-                    data['total_score'] / data['max_possible_score'] * 100, 2
-                )
-            else:
-                data['percentage_score'] = 0
-
-        return Response(list(courses_data.values()))
+        # Only the courses this instructor owns.
+        courses = Course.objects.filter(
+            instructor=request.user,
+            enrollments__student=student, enrollments__status='active',
+        ).distinct()
+        return Response(course_progress(student, courses))

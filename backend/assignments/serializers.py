@@ -6,10 +6,12 @@ from courses.serializers import (
     criteria_summary,
     criteria_task,
     validate_criteria_value,
+    validate_reference_present,
 )
 
 CRITERIA_SOURCE_FIELDS = ('expected_query', 'check_datasets', 'required_keywords',
-                          'forbidden_keywords', 'order_matters', 'expected_result')
+                          'forbidden_keywords', 'order_matters', 'expected_result',
+                          'ignore_column_order')
 
 
 class AssignmentListSerializer(serializers.ModelSerializer):
@@ -67,7 +69,7 @@ class AssignmentDetailSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'instructions', 'course',
             'course_title', 'database_type', 'dataset', 'query_type', 'difficulty',
             'required_keywords', 'forbidden_keywords', 'order_matters',
-            'partial_match', 'max_score', 'time_limit_seconds',
+            'ignore_column_order', 'partial_match', 'max_score', 'time_limit_seconds',
             'max_attempts', 'hints', 'due_date', 'is_published', 'order',
             'submission_count', 'average_score', 'user_attempts',
             'user_best_score', 'user_completed', 'criteria_summary',
@@ -103,6 +105,9 @@ class AssignmentDetailSerializer(serializers.ModelSerializer):
 
 class AssignmentCreateSerializer(serializers.ModelSerializer):
     criteria = serializers.JSONField(required=False, allow_null=True)
+    # Blank passes the field check so that validate() can accept a legacy expected_result
+    # or reject the empty reference with the instructor-facing message.
+    expected_query = serializers.CharField(allow_blank=True, style={'base_template': 'textarea.html'})
 
     class Meta:
         model = Assignment
@@ -111,7 +116,7 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
             'query_type', 'difficulty', 'expected_query', 'expected_result',
             'check_datasets', 'criteria',
             'required_keywords', 'forbidden_keywords', 'order_matters',
-            'partial_match', 'max_score', 'time_limit_seconds',
+            'ignore_column_order', 'partial_match', 'max_score', 'time_limit_seconds',
             'max_attempts', 'hints', 'due_date', 'is_published', 'order'
         ]
 
@@ -134,6 +139,8 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
             merged = {name: getattr(self.instance, name) for name in CRITERIA_SOURCE_FIELDS}
             merged['criteria'] = self.instance.criteria
         merged.update(attrs)
+        if 'expected_query' in attrs:
+            validate_reference_present(merged)
         if 'criteria' in attrs or self.instance is None:
             attrs['criteria'] = validate_criteria_value(
                 criteria_task(self._db_type(), merged), attrs.get('criteria'))

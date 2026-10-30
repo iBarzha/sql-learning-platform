@@ -73,6 +73,10 @@ class Assignment(models.Model):
         default=False,
         help_text='Whether row order matters in result comparison'
     )
+    ignore_column_order = models.BooleanField(
+        default=False,
+        help_text='Accept the right columns in any order (matched by values)'
+    )
     partial_match = models.BooleanField(
         default=False,
         help_text='Allow partial column matches'

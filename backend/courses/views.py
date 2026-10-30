@@ -315,6 +315,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                         max_score=ex.max_score,
                         hints=ex.hints,
                         check_datasets=ex.check_datasets,
+                        criteria=ex.criteria,
+                        ignore_column_order=ex.ignore_column_order,
                         dataset=cloned_dataset(ex.dataset_id),
                     )
 
@@ -335,6 +337,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                     required_keywords=asn.required_keywords,
                     forbidden_keywords=asn.forbidden_keywords,
                     order_matters=asn.order_matters,
+                    ignore_column_order=asn.ignore_column_order,
+                    criteria=asn.criteria,
                     partial_match=asn.partial_match,
                     max_score=asn.max_score,
                     time_limit_seconds=asn.time_limit_seconds,
@@ -688,6 +692,7 @@ class LessonViewSet(viewsets.ModelViewSet):
                 ],
                 'reference_empty_on': result.reference_empty_on,
                 'reference_errors': result.reference_errors,
+                'warnings': result.warnings,
             })
             report.append(entry)
 

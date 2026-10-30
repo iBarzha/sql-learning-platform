@@ -197,6 +197,10 @@ class LessonExercise(models.Model):
     required_keywords = models.JSONField(default=list, blank=True)
     forbidden_keywords = models.JSONField(default=list, blank=True)
     order_matters = models.BooleanField(default=False)
+    ignore_column_order = models.BooleanField(
+        default=False,
+        help_text='Accept the right columns in any order (matched by values)',
+    )
     max_score = models.PositiveIntegerField(default=100)
     hints = models.JSONField(default=list, blank=True)
     check_datasets = models.JSONField(

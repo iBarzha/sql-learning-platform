@@ -89,10 +89,12 @@ class GradingFlowTestCase(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
         return str(Module.objects.get(course_id=self.course_id, title='Модуль 1').id)
 
-    def create_lesson(self, title='Урок 1', max_attempts=None, exercises=None):
+    def create_lesson(self, title='Урок 1', max_attempts=None, exercises=None,
+                      time_limit_seconds=600):
         payload = {
             'title': title, 'lesson_type': 'practice', 'module_id': self.module_id,
-            'is_published': True, 'time_limit_seconds': 600, 'max_attempts': max_attempts,
+            'is_published': True, 'time_limit_seconds': time_limit_seconds,
+            'max_attempts': max_attempts,
             'exercises': exercises if exercises is not None else [
                 {
                     'title': 'Кількість працівників у кожному відділі',
@@ -297,6 +299,54 @@ class GradingFlowTestCase(APITestCase):
             self.assertIsNotNone(submission.score)
             self.assertIsNotNone(submission.graded_at)
 
+    # ── column order and timed feedback ─────────────────────────────────
+
+    def column_swap_result(self, ignore_column_order):
+        self.as_instructor()
+        title = f'Стовпці {ignore_column_order}'
+        lesson = self.create_lesson(title, exercises=[{
+            'title': 'Прізвище і зарплата', 'dataset_id': self.dataset_id,
+            'expected_query': 'SELECT name, salary FROM employees',
+            'ignore_column_order': ignore_column_order,
+        }])
+        self.as_student()
+        resp = self.submit('SELECT salary, name FROM employees',
+                           exercise=lesson.exercises.get(), lesson=lesson)
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        return resp.data
+
+    def test_swapped_columns_fail_by_default(self):
+        self.assertFalse(self.column_swap_result(False)['is_correct'])
+
+    def test_swapped_columns_pass_when_column_order_is_ignored(self):
+        data = self.column_swap_result(True)
+        self.assertTrue(data['is_correct'], data['feedback'])
+        self.assertEqual(Decimal(data['score']), Decimal('100.00'))
+
+    def wrong_answer_feedback(self, time_limit_seconds):
+        self.as_instructor()
+        lesson = self.create_lesson(f'Ліміт {time_limit_seconds}', exercises=[{
+            'title': 'Зарплата від 5000', 'dataset_id': self.dataset_id,
+            'expected_query': 'SELECT name FROM employees WHERE salary >= 5000',
+        }], time_limit_seconds=time_limit_seconds)
+        self.as_student()
+        resp = self.submit('SELECT name FROM employees WHERE salary > 5500',
+                           exercise=lesson.exercises.get(), lesson=lesson)
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertFalse(resp.data['is_correct'])
+        return resp.data['feedback']
+
+    def test_timed_lesson_hides_the_reference_rows(self):
+        feedback = self.wrong_answer_feedback(600)
+        self.assertEqual(feedback['missing_rows'], [])
+        self.assertEqual(feedback['extra_rows'], [])
+        for criterion in feedback['criteria']:
+            self.assertNotIn('Бондаренко', criterion['detail'] or '')
+
+    def test_untimed_lesson_still_shows_the_missing_rows(self):
+        feedback = self.wrong_answer_feedback(None)
+        self.assertTrue(any('Бондаренко' in row for row in feedback['missing_rows']), feedback)
+
     # ── instructor validation of datasets ───────────────────────────────
 
     def test_validate_exercises_reports_surviving_mutants(self):
@@ -313,6 +363,30 @@ class GradingFlowTestCase(APITestCase):
         second = by_title['Прізвища за спаданням зарплати']
         self.assertEqual(second['datasets'], ['основний'])
         self.assertGreater(second['mutants_total'], 0)
+
+    def test_validate_exercises_reports_warnings(self):
+        from grading.compose import MSG_LIMIT_WITHOUT_ORDER
+        from grading.mutants import MSG_NO_HIDDEN_DATASETS
+
+        self.as_instructor()
+        lesson = self.create_lesson('Попередження', exercises=[{
+            'title': 'Два прізвища', 'dataset_id': self.dataset_id,
+            'expected_query': 'SELECT name FROM employees LIMIT 2',
+        }])
+        resp = self.client.post(
+            f'/api/courses/{self.course_id}/lessons/{lesson.id}/validate-exercises/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        warnings = resp.data['exercises'][0]['warnings']
+        self.assertIn(MSG_LIMIT_WITHOUT_ORDER, warnings)
+        self.assertIn(MSG_NO_HIDDEN_DATASETS, warnings)
+
+        resp = self.client.post(
+            f'/api/courses/{self.course_id}/lessons/{self.lesson.id}/validate-exercises/')
+        by_title = {e['title']: e for e in resp.data['exercises']}
+        # The first exercise has a hidden dataset and a deterministic reference.
+        self.assertEqual(by_title['Кількість працівників у кожному відділі']['warnings'], [])
+        self.assertIn(MSG_NO_HIDDEN_DATASETS,
+                      by_title['Прізвища за спаданням зарплати']['warnings'])
 
     def test_validate_exercises_is_instructor_only(self):
         resp = self.client.post(

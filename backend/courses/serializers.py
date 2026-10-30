@@ -113,7 +113,7 @@ class LessonExerciseSerializer(serializers.ModelSerializer):
             'id', 'order', 'title', 'description', 'initial_code',
             'expected_query', 'expected_result', 'check_datasets',
             'required_keywords', 'forbidden_keywords', 'order_matters',
-            'max_score', 'hints', 'criteria', 'criteria_summary',
+            'ignore_column_order', 'max_score', 'hints', 'criteria', 'criteria_summary',
             'dataset', 'dataset_id', 'created_at', 'updated_at',
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -129,6 +129,7 @@ class LessonExerciseSerializer(serializers.ModelSerializer):
         return course.database_type if course else 'sqlite'
 
     def validate(self, attrs):
+        validate_reference_present(attrs)
         # Exercises always arrive whole (the form sends every field), so the attrs alone
         # describe the task the criteria must fit.
         attrs['criteria'] = validate_criteria_value(
@@ -152,6 +153,24 @@ def can_see_solutions(user, course) -> bool:
     return course is not None and course.instructor_id == user.id
 
 
+MSG_REFERENCE_REQUIRED = 'Потрібен еталонний запит: без нього відповідь не перевіряється.'
+
+
+def validate_reference_present(data):
+    """A task without a reference cannot be graded; a legacy expected_result still can.
+
+    Only payloads that carry `expected_query` are checked, so partial updates that do not
+    touch the reference pass through.
+    """
+    if 'expected_query' not in data:
+        return
+    if (data.get('expected_query') or '').strip():
+        return
+    if isinstance(data.get('expected_result'), dict):
+        return
+    raise serializers.ValidationError({'expected_query': MSG_REFERENCE_REQUIRED})
+
+
 def criteria_task(db_type, data):
     """A GradingTask built from serializer data, enough for validation and summaries."""
     from grading.runner import build_task
@@ -165,6 +184,7 @@ def criteria_task(db_type, data):
         order_matters=bool(data.get('order_matters')),
         expected_result=data.get('expected_result'),
         criteria=data.get('criteria'),
+        ignore_column_order=bool(data.get('ignore_column_order')),
     )
 
 
@@ -185,6 +205,7 @@ def criteria_summary(db_type, instance):
         'required_keywords': instance.required_keywords,
         'forbidden_keywords': instance.forbidden_keywords,
         'order_matters': instance.order_matters,
+        'ignore_column_order': instance.ignore_column_order,
         'expected_result': instance.expected_result,
         'criteria': instance.criteria,
     }
