@@ -118,6 +118,17 @@ class ParserDifferentialTests(unittest.TestCase):
     def test_dollar_quoted_text_is_still_fine(self):
         self.assertAllowed("SELECT $$it's a grant$$ AS note FROM t", 'postgresql')
 
+    def test_dollar_inside_an_identifier_does_not_open_a_quote(self):
+        # PostgreSQL reads a$b$c and x$b$y as identifiers, so the COPY between them runs.
+        sql = "SELECT a$b$c FROM t; COPY x FROM PROGRAM 'id'; SELECT x$b$y FROM t"
+        self.assertBlocked(sql, 'postgresql')
+        self.assertBlocked(sql)
+
+    def test_genuine_dollar_quotes_still_hide_their_contents(self):
+        self.assertAllowed("SELECT $$COPY x FROM PROGRAM 'id'$$ AS note FROM t", 'postgresql')
+        self.assertAllowed("SELECT $tag$ grant; COPY x FROM PROGRAM $tag$ AS note, "
+                           "(a$b) FROM t", 'postgresql')
+
     def test_quoted_identifier_still_catches_the_catalog(self):
         self.assertBlocked('SELECT * FROM "pg_shadow"', 'postgresql')
         self.assertBlocked('SELECT * FROM `mysql`.`user`', 'mariadb')

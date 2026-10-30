@@ -136,9 +136,12 @@ _COMPILED_SQL_RULES = [(re.compile(pat, re.IGNORECASE), msg) for pat, msg in _SQ
 #
 # PostgreSQL / SQLite: standard strings double a quote to escape it and keep
 # backslashes literal; E'...' strings use backslash escapes; $tag$...$tag$ is a string;
-# "..." is an identifier whose text must stay visible ("pg_shadow").
+# "..." is an identifier whose text must stay visible ("pg_shadow"). As in PostgreSQL's
+# lexer, a dollar quote cannot open right after an identifier character: a$b$c is one
+# identifier, not the start of a $b$ string.
 _STANDARD_TOKENS = re.compile(
-    r"""(?P<dollar>\$\$.*?\$\$|\$(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\$.*?\$(?P=tag)\$)"""
+    r"""(?P<dollar>(?<![A-Za-z0-9_$\x80-\U0010FFFF])"""
+    r"""(?:\$\$.*?\$\$|\$(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\$.*?\$(?P=tag)\$))"""
     r"""|(?P<estr>\b[eE]'(?:[^'\\]|\\.|'')*')"""
     r"""|(?P<str>'(?:[^']|'')*')"""
     r"""|(?P<ident>"(?:[^"]|"")*")"""

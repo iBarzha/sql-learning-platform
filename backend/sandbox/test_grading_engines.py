@@ -391,6 +391,28 @@ class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
         self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
         self.assertEqual(results[3].rows, [[1, 1]])
 
+    def test_script_splits_around_a_parenthesised_statement_list(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        results = self.on_one_connection([
+            'CREATE TABLE audit (id INTEGER); CREATE TABLE audit2 (id INTEGER); '
+            'CREATE RULE log_dept AS ON INSERT TO departments DO ALSO '
+            '(INSERT INTO audit VALUES (NEW.id); INSERT INTO audit2 VALUES (NEW.id)); '
+            "INSERT INTO departments VALUES (9, 'x'); " + SERIES_2500,
+            'SELECT (SELECT COUNT(*) FROM audit), (SELECT COUNT(*) FROM audit2)',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(len(results[0].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[0].truncated)
+        self.assertEqual(results[1].rows, [[1, 1]])
+
+    def test_identifier_with_dollar_signs_splits_the_script(self):
+        results = self.on_one_connection([
+            'CREATE TABLE a$b$c (x$b$y INTEGER); INSERT INTO a$b$c VALUES (7); '
+            'SELECT x$b$y FROM a$b$c',
+        ])
+        self.assertTrue(results[0].success, results[0].error_message)
+        self.assertEqual(results[0].rows, [[7]])
+
     def test_script_returns_the_last_result(self):
         r = self.run_one('CREATE TEMP TABLE tt AS SELECT id FROM employees; '
                          "INSERT INTO tt VALUES (99); SELECT COUNT(*) AS n FROM tt")
@@ -431,6 +453,54 @@ class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
         self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
         self.assertEqual(results[1].rows, [[5]])
         self.assertEqual(results[3].rows, [[0]])
+
+    def test_script_with_its_own_transaction_is_capped_and_committed(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        results = self.on_one_connection([
+            'BEGIN; UPDATE employees SET salary = 0; ' + SERIES_2500 + '; COMMIT; ' + SERIES_2500,
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(len(results[0].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[0].truncated)
+        self.assertEqual(results[1].rows, [[5]])
+
+    def test_select_after_begin_in_a_script_is_capped(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        results = self.on_one_connection([
+            'BEGIN; ' + SERIES_2500,
+            'COMMIT',
+            'SELECT 1',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[0].columns, ['x'])
+        self.assertEqual(len(results[0].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[0].truncated)
+
+    def test_huge_select_after_begin_in_a_script_is_not_computed_in_full(self):
+        import time
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        start = time.monotonic()
+        results = self.on_one_connection(['BEGIN; ' + self.huge_cross_join + '; COMMIT; '
+                                          + self.huge_cross_join])
+        self.assertTrue(results[0].success, results[0].error_message)
+        self.assertEqual(len(results[0].rows), MAX_RESULT_ROWS)
+        self.assertLess(time.monotonic() - start, 9)
+
+    def test_failing_script_with_its_own_transaction_stops_at_the_error(self):
+        results = self.on_one_connection([
+            'BEGIN; UPDATE employees SET salary = 0; SELECT 1/0; ROLLBACK',
+            'ROLLBACK',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+            'SELECT 1',
+        ])
+        self.assertFalse(results[0].success)
+        self.assertIn('division by zero', results[0].error_message)
+        # The transaction is left failed, as the user's statements left it; the user's
+        # next ROLLBACK ends it, the update is undone and the connection works.
+        self.assertTrue(all(r.success for r in results[1:]), [r.error_message for r in results])
+        self.assertEqual(results[2].rows, [[0]])
+        self.assertEqual(results[3].rows, [[1]])
 
     def test_select_into_falls_back_to_a_plain_statement(self):
         results = self.run_sequence(['SELECT * INTO emp_copy FROM employees',

@@ -34,19 +34,23 @@ _DECLARE_REJECTED = (
 )
 
 
-# A script containing any of these keeps the plain multi-statement execute: running
-# it piece by piece inside our own transaction would change what they do.
+# A script containing any of these runs piece by piece without a transaction of our
+# own: wrapping it in BEGIN ... COMMIT would change what they do.
 _TRANSACTION_CONTROL = frozenset({
     'BEGIN', 'START', 'COMMIT', 'END', 'ROLLBACK', 'ABORT', 'SAVEPOINT', 'RELEASE', 'PREPARE',
 })
 # Left over outside every recognised token, these mean the tokenizer may have
-# misread the text (nested /* */, "$" inside a bare identifier, an unclosed quote).
-# Two contrived inputs still get past this check: a nested comment whose outer
-# close sits inside a later literal, and the same $x$ appearing in two bare
-# identifiers (read as one dollar quote). Both fail safe: the text is taken as
-# fewer statements than it holds, so it ends in a server-side syntax error or a
-# result capped like any other; nothing is split inside a literal.
-_UNSAFE_LEFTOVERS = ("'", '"', '$', '/*', '*/')
+# misread the text (an unclosed quote, a "$" that could open a dollar quote the
+# tokenizer did not recognise, a nested /* */). A "$" right after an identifier
+# character is part of that identifier (a$b$c), as in PostgreSQL's lexer, and is safe.
+# Nested block comments are the one known misreading: the tokenizer ends the comment
+# at the first */, so the validator sees more text than PostgreSQL does (the safe
+# direction), and the splitter finds the outer */ left over and refuses to split.
+# Only a contrived nested comment whose outer close sits inside a later literal gets
+# past this check; it still fails safe, since the text is taken as fewer statements
+# than it holds and ends in a server-side syntax error or a capped result.
+_UNSAFE_LEFTOVERS = ("'", '"', '/*', '*/')
+_UNSAFE_DOLLAR = re.compile(r'(?<![A-Za-z0-9_$\x80-\U0010FFFF])\$')
 _SAVEPOINT = 'sandbox_cursor'
 
 
@@ -71,9 +75,9 @@ def _split_statements(query: str) -> list[str] | None:
     """Slice the original text at top-level semicolons, using the validator's
     tokenizer so literals, comments and dollar quotes stay intact.
 
-    Pieces that are empty or only comments are dropped. Returns None when the
-    tokenization cannot be trusted, or when a semicolon sits inside parentheses
-    (CREATE RULE ... DO (a; b) is one statement) or they do not balance; the
+    A semicolon inside parentheses does not end a statement (CREATE RULE ... DO
+    (a; b) is one). Pieces that are empty or only comments are dropped. Returns None
+    when the tokenization cannot be trusted or the parentheses do not balance; the
     caller then keeps the plain execute.
     """
     pieces = []
@@ -83,7 +87,8 @@ def _split_statements(query: str) -> list[str] | None:
     matches = list(_STANDARD_TOKENS.finditer(query))
     for gap_end, next_start in [(m.start(), m.end()) for m in matches] + [(len(query), len(query))]:
         gap = query[gap_start:gap_end]
-        if any(mark in gap for mark in _UNSAFE_LEFTOVERS):
+        if (any(mark in gap for mark in _UNSAFE_LEFTOVERS)
+                or _UNSAFE_DOLLAR.search(query, gap_start, gap_end)):
             return None
         for offset, char in enumerate(gap):
             if char == '(':
@@ -92,9 +97,7 @@ def _split_statements(query: str) -> list[str] | None:
                 depth -= 1
                 if depth < 0:
                     return None
-            elif char == ';':
-                if depth:
-                    return None
+            elif char == ';' and not depth:
                 pieces.append(query[start:gap_start + offset])
                 start = gap_start + offset + 1
         gap_start = next_start
@@ -166,18 +169,10 @@ class PostgreSQLExecutor(BaseExecutor):
                 if idle or status == extensions.TRANSACTION_STATUS_INTRANS:
                     pieces = _split_statements(query)
                     if pieces is not None and len(pieces) > 1:
-                        if not any(_first_keyword(p) in _TRANSACTION_CONTROL for p in pieces):
-                            return self._execute_script(cur, pieces, own_transaction=idle)
-                    elif _is_row_query(query):
-                        if idle:
-                            try:
-                                return self._execute_streaming(query)
-                            except _DECLARE_REJECTED:
-                                pass  # run it as a plain statement below
-                        else:
-                            result = self._stream_in_transaction(cur, query)
-                            if result is not None:
-                                return result
+                        if any(_first_keyword(p) in _TRANSACTION_CONTROL for p in pieces):
+                            return self._execute_each(cur, pieces)
+                        return self._execute_script(cur, pieces, own_transaction=idle)
+                    return self._execute_statement(cur, query)
 
                 return self._execute_plain(cur, query)
 
@@ -192,6 +187,41 @@ class PostgreSQLExecutor(BaseExecutor):
                 success=False,
                 error_message=error_msg,
             )
+
+    def _execute_statement(self, cur, query: str) -> QueryResult:
+        """Run one statement the way its transaction state allows.
+
+        Outside a transaction a row query streams in a short transaction of its own;
+        inside a user transaction it streams through a SQL cursor that leaves the
+        transaction open; in a failed transaction, or for anything but a row query,
+        the plain cursor runs it.
+        """
+        if _is_row_query(query):
+            status = self._connection.info.transaction_status
+            if status == extensions.TRANSACTION_STATUS_IDLE:
+                try:
+                    return self._execute_streaming(query)
+                except _DECLARE_REJECTED:
+                    pass  # run it as a plain statement below
+            elif status == extensions.TRANSACTION_STATUS_INTRANS:
+                result = self._stream_in_transaction(cur, query)
+                if result is not None:
+                    return result
+        return self._execute_plain(cur, query)
+
+    def _execute_each(self, cur, pieces: list[str]) -> QueryResult:
+        """Run a script with the user's own transaction control, one statement at a time.
+
+        Each piece is dispatched as if sent alone, so a row query after BEGIN is still
+        capped on the server. Nothing here begins, commits or rolls back: an error
+        stops the sequence and leaves the transaction as the user's statements left it.
+        The result is the last statement's.
+        """
+        start = time.perf_counter()
+        for piece in pieces:
+            result = self._execute_statement(cur, piece)
+        result.execution_time_ms = int((time.perf_counter() - start) * 1000)
+        return result
 
     def _execute_plain(self, cur, query: str) -> QueryResult:
         """Execute on a client-side cursor; the whole result is transferred."""

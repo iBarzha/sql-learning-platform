@@ -80,10 +80,19 @@ class _FakePgPlainCursor:
         self.description = None
         self.rowcount = -1
         self._rows = []
-        word = query.split(None, 1)[0].upper()
+        words = query.upper().split()
+        word = words[0]
         if self.conn.fail_on is not None and self.conn.fail_on in query:
+            if self.conn.info.transaction_status == psycopg2.extensions.TRANSACTION_STATUS_INTRANS:
+                self.conn.info.transaction_status = psycopg2.extensions.TRANSACTION_STATUS_INERROR
             raise psycopg2.errors.UndefinedTable('relation "missing" does not exist')
-        if word in _PG_CONTROL:
+        # The server's transaction state follows the control statements, as on a real
+        # connection (ROLLBACK TO SAVEPOINT leaves the transaction open).
+        if word in ('BEGIN', 'START'):
+            self.conn.info.transaction_status = psycopg2.extensions.TRANSACTION_STATUS_INTRANS
+        elif word in ('COMMIT', 'END') or (word == 'ROLLBACK' and words[1:2] != ['TO']):
+            self.conn.info.transaction_status = psycopg2.extensions.TRANSACTION_STATUS_IDLE
+        if word in _PG_CONTROL + ('START', 'END'):
             return
         if word == 'DECLARE':
             if self.conn.declare_error is not None:
@@ -396,13 +405,86 @@ class PostgresStreamingTests(SimpleTestCase):
         self.assertEqual(result.rows, [[1]])
 
     def test_scripts_kept_whole(self):
-        for query in ('BEGIN; SELECT 1', 'SELECT 1; COMMIT', 'INSERT INTO t VALUES (1); END',
-                      'SELECT 1 /* a /* b */ ; */; SELECT 2', 'SELECT a$b FROM t; SELECT 2',
+        for query in ('SELECT 1 /* a /* b */ ; */; SELECT 2', "SELECT 'open; SELECT 2",
+                      'SELECT $q$ open; SELECT 2', 'SELECT (1; SELECT 2',
                       'CREATE RULE r AS ON INSERT TO t DO ALSO '
                       '(INSERT INTO a VALUES (1); INSERT INTO b VALUES (2))'):
             with self.subTest(query=query):
                 _, conn, _ = self.run_query(query, plain_rowcount=1)
                 self.assertEqual(self.statements(conn), [query])
+
+    def test_script_with_transaction_control_runs_piece_by_piece(self):
+        _, conn, result = self.run_query(
+            'BEGIN; SELECT x FROM big; COMMIT; SELECT x FROM t',
+            named_result=(['x'], _numbers(2500)))
+        # BEGIN opens the user's transaction, so its SELECT streams through a SQL cursor;
+        # after COMMIT the last SELECT streams in a short transaction of its own.
+        self.assertEqual(self.statements(conn), [
+            'BEGIN',
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM big',
+            'FETCH FORWARD %d FROM "c"' % (MAX_RESULT_ROWS + 1),
+            'CLOSE "c"',
+            'RELEASE SAVEPOINT sandbox_cursor',
+            'COMMIT',
+        ])
+        self.assertEqual(len(conn.named), 1)
+        self.assertEqual(conn.info.transaction_status, psycopg2.extensions.TRANSACTION_STATUS_IDLE)
+        self.assertTrue(conn.autocommit)
+        self.assertEqual(len(result.rows), MAX_RESULT_ROWS)
+        self.assertTrue(result.truncated)
+
+    def test_script_with_transaction_control_returns_the_last_result(self):
+        cases = (
+            ('BEGIN; SELECT x FROM big', MAX_RESULT_ROWS,
+             psycopg2.extensions.TRANSACTION_STATUS_INTRANS),
+            ('SELECT x FROM big; COMMIT', 0, psycopg2.extensions.TRANSACTION_STATUS_IDLE),
+            ('INSERT INTO t VALUES (1); END', 0, psycopg2.extensions.TRANSACTION_STATUS_IDLE),
+        )
+        for query, rows, status in cases:
+            with self.subTest(query=query):
+                _, conn, result = self.run_query(query, named_result=(['x'], _numbers(2500)),
+                                                 plain_rowcount=1)
+                self.assertTrue(result.success)
+                self.assertEqual(len(result.rows), rows)
+                self.assertEqual(conn.info.transaction_status, status)
+                # No statement of the executor's own ended or began a transaction.
+                self.assertEqual(
+                    [s for s in self.statements(conn) if s in ('BEGIN', 'COMMIT', 'ROLLBACK')],
+                    [s for s in query.replace(';', ' ').split() if s in ('BEGIN', 'COMMIT')])
+
+    def test_script_with_transaction_control_stops_at_an_error(self):
+        _, conn, result = self.run_query(
+            'BEGIN; UPDATE t SET x = 0; SELECT * FROM missing; ROLLBACK',
+            plain_rowcount=5, fail_on='missing')
+        # The SELECT is attempted inside the user's transaction and fails there.
+        self.assertEqual(self.statements(conn), [
+            'BEGIN',
+            'UPDATE t SET x = 0',
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT * FROM missing',
+        ])
+        # Nothing of the executor's own ends the user's transaction: it stays failed.
+        self.assertEqual(conn.info.transaction_status,
+                         psycopg2.extensions.TRANSACTION_STATUS_INERROR)
+        self.assertNotIn(('rollback',), conn.log)
+        self.assertFalse(result.success)
+        self.assertIn('does not exist', result.error_message)
+
+    def test_script_with_transaction_control_inside_a_user_transaction(self):
+        _, conn, result = self.run_query(
+            'SELECT x FROM t; ROLLBACK', named_result=(['x'], [(1,)]),
+            transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
+        self.assertEqual(self.statements(conn), [
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM t',
+            'FETCH FORWARD %d FROM "c"' % (MAX_RESULT_ROWS + 1),
+            'CLOSE "c"',
+            'RELEASE SAVEPOINT sandbox_cursor',
+            'ROLLBACK',
+        ])
+        self.assertEqual(conn.info.transaction_status, psycopg2.extensions.TRANSACTION_STATUS_IDLE)
+        self.assertTrue(result.success)
 
     def test_cursor_names_are_unique_per_call(self):
         executor = PostgreSQLExecutor('fake-host', 5432)
@@ -634,6 +716,18 @@ class SplitStatementsTests(SimpleTestCase):
             'SELECT 1 -- c;\n; SELECT 2': ['SELECT 1 -- c;', 'SELECT 2'],
             'SELECT /* ; */ 1; SELECT 2': ['SELECT /* ; */ 1', 'SELECT 2'],
             "SELECT (1), ')'; SELECT f(2)": ["SELECT (1), ')'", 'SELECT f(2)'],
+            # "$" after an identifier character belongs to the identifier.
+            'SELECT a$b FROM t; SELECT 2': ['SELECT a$b FROM t', 'SELECT 2'],
+            'SELECT a$b$c FROM t; SELECT 2; SELECT x$b$y FROM t':
+                ['SELECT a$b$c FROM t', 'SELECT 2', 'SELECT x$b$y FROM t'],
+            'SELECT x$$y; SELECT $$a;b$$': ['SELECT x$$y', 'SELECT $$a;b$$'],
+            # A semicolon inside parentheses does not end the statement.
+            'CREATE TABLE a (x int); CREATE RULE r AS ON INSERT TO t DO ALSO '
+            '(INSERT INTO a VALUES (1); INSERT INTO b VALUES (2)); SELECT 1': [
+                'CREATE TABLE a (x int)',
+                'CREATE RULE r AS ON INSERT TO t DO ALSO '
+                '(INSERT INTO a VALUES (1); INSERT INTO b VALUES (2))',
+                'SELECT 1'],
         }
         for query, expected in cases.items():
             with self.subTest(query=query):
@@ -645,10 +739,9 @@ class SplitStatementsTests(SimpleTestCase):
 
     def test_untrusted_tokenization_is_refused(self):
         for query in ('SELECT 1 /* a /* b */ ; */; SELECT 2',   # nested comment
-                      'SELECT a$b FROM t; SELECT 2',             # $ in a bare identifier
                       "SELECT 'open; SELECT 2",                  # unclosed literal
-                      'CREATE RULE r AS ON INSERT TO t DO ALSO '
-                      '(INSERT INTO a VALUES (1); INSERT INTO b VALUES (2))',  # ; in parens
+                      'SELECT $q$ open; SELECT 2',               # unclosed dollar quote
+                      'SELECT $1; SELECT 2',                     # a "$" the tokenizer cannot place
                       'SELECT (1; SELECT 2',                     # unbalanced
                       'SELECT 1); SELECT (2'):
             with self.subTest(query=query):
