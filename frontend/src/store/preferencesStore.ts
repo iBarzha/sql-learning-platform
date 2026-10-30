@@ -26,6 +26,14 @@ function getSystemTheme(): ResolvedTheme {
   return 'light';
 }
 
+// A first visit follows the browser language; the switcher in the header persists
+// the choice, so this only matters until the user picks one explicitly.
+function detectLocale(): Locale {
+  if (typeof navigator === 'undefined') return 'en';
+  const languages = navigator.languages?.length ? navigator.languages : [navigator.language];
+  return languages.some((lang) => (lang || '').toLowerCase().startsWith('uk')) ? 'uk' : 'en';
+}
+
 function resolveTheme(theme: Theme): ResolvedTheme {
   if (theme === 'system') {
     return getSystemTheme();
@@ -47,7 +55,7 @@ export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
       theme: 'system',
-      locale: 'en',
+      locale: detectLocale(),
       resolvedTheme: resolveTheme('system'),
 
       setTheme: (theme: Theme) => {
