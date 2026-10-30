@@ -4,6 +4,7 @@ import logging
 import re
 
 import pymysql
+from pymysql.constants import SERVER_STATUS
 from pymysql.cursors import DictCursor, SSCursor
 
 from .base import BaseExecutor, QueryResult, MAX_RESULT_ROWS
@@ -91,7 +92,10 @@ class MySQLExecutor(BaseExecutor):
                     except pymysql.Error:
                         pass  # If neither works, proceed without timeout
 
-                if _is_row_query(query):
+                # Not inside a user transaction: dropping the connection after a
+                # truncated result would silently roll it back.
+                in_trans = self._connection.server_status & SERVER_STATUS.SERVER_STATUS_IN_TRANS
+                if not in_trans and _is_row_query(query):
                     return self._execute_streaming(query)
 
                 result, elapsed_ms = self._measure_time(cur.execute, query)
@@ -156,8 +160,8 @@ class MySQLExecutor(BaseExecutor):
         except BaseException:
             try:
                 cur.close()
-            except pymysql.Error:
-                pass
+            except Exception:
+                pass  # a broken socket must not mask the original error
             raise
 
         if not cur.description:
@@ -177,6 +181,7 @@ class MySQLExecutor(BaseExecutor):
             self._reconnect()
             # Detach the abandoned result so garbage collection does not try to
             # drain it from the closed socket (SSCursor and MySQLResult both would).
+            # These are PyMySQL 1.1 private attributes.
             result = getattr(cur, '_result', None)
             if result is not None:
                 result.unbuffered_active = False

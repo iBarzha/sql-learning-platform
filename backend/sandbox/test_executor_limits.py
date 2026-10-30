@@ -116,9 +116,11 @@ class _FakePgNamedCursor:
 
 class _FakePgConnection:
     def __init__(self, named_result=None, plain_result=None, plain_rowcount=0,
-                 declare_error=None, fetch_error=None):
+                 declare_error=None, fetch_error=None,
+                 transaction_status=psycopg2.extensions.TRANSACTION_STATUS_IDLE):
         self.autocommit = True
         self.closed = 0
+        self.info = mock.Mock(transaction_status=transaction_status)
         self.named_result = named_result
         self.plain_result = plain_result
         self.plain_rowcount = plain_rowcount
@@ -234,6 +236,16 @@ class PostgresStreamingTests(SimpleTestCase):
         self.assertTrue(conn.autocommit)
         self.assertEqual(self.plain_queries(conn), [])
 
+    def test_open_user_transaction_keeps_the_plain_cursor(self):
+        _, conn, result = self.run_query(
+            'SELECT x FROM t', named_result=(['x'], [(1,)]), plain_result=(['x'], [(1,)]),
+            transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
+        self.assertEqual(conn.named, [])
+        self.assertEqual(self.plain_queries(conn), ['SELECT x FROM t'])
+        self.assertNotIn(('commit',), conn.log)
+        self.assertNotIn(('rollback',), conn.log)
+        self.assertEqual(result.rows, [[1]])
+
     def test_cursor_names_are_unique_per_call(self):
         executor = PostgreSQLExecutor('fake-host', 5432)
         executor._connection = conn = _FakePgConnection(named_result=(['x'], [(1,)]))
@@ -285,6 +297,8 @@ class _FakeSSCursor:
 
     def execute(self, query, params=None):
         self.conn.log.append(('unbuffered', query))
+        if self.conn.execute_error is not None:
+            raise self.conn.execute_error
         result = self.conn.result
         if result is None:
             self.rowcount = self.conn.rowcount
@@ -300,9 +314,11 @@ class _FakeSSCursor:
 
 
 class _FakeMyConnection:
-    def __init__(self, result=None, rowcount=0):
+    def __init__(self, result=None, rowcount=0, server_status=0, execute_error=None):
         self.result = result
         self.rowcount = rowcount
+        self.server_status = server_status
+        self.execute_error = execute_error
         self.log = []
         self.unbuffered = []
         self.closed = False
@@ -375,6 +391,33 @@ class MariadbStreamingTests(SimpleTestCase):
                 self.assertEqual(conn.unbuffered, [])
                 self.assertIn(('buffered', query), conn.log)
                 self.assertEqual(result.affected_rows, 2)
+
+    def test_open_user_transaction_keeps_the_buffered_cursor(self):
+        in_trans = pymysql.constants.SERVER_STATUS.SERVER_STATUS_IN_TRANS
+        conn, result = self.run_query('SELECT x FROM t', result=(['x'], _numbers(1500)),
+                                      server_status=in_trans)
+        self.assertEqual(conn.unbuffered, [])
+        self.assertIn(('buffered', 'SELECT x FROM t'), conn.log)
+        self.assertFalse(conn.closed)
+        self.connect.assert_not_called()
+        self.assertTrue(result.truncated)
+
+    def test_row_query_without_a_result_set_reports_affected_rows(self):
+        conn, result = self.run_query('SELECT 1 INTO @v', rowcount=1)
+        self.assertEqual(len(conn.unbuffered), 1)
+        self.assertTrue(conn.unbuffered[0].closed)
+        self.assertEqual(conn.unbuffered[0].fetch_sizes, [])
+        self.assertTrue(result.success)
+        self.assertEqual(result.affected_rows, 1)
+        self.assertEqual(result.columns, [])
+
+    def test_failed_execute_closes_the_cursor_and_maps_the_error(self):
+        conn, result = self.run_query(
+            'SELECT x FROM missing',
+            execute_error=pymysql.err.OperationalError(1146, "Table 'missing' doesn't exist"))
+        self.assertTrue(conn.unbuffered[0].closed)
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_message, "Table 'missing' doesn't exist")
 
     def test_failed_reconnect_still_returns_the_rows(self):
         self.connect.side_effect = pymysql.err.OperationalError(2003, "Can't connect")

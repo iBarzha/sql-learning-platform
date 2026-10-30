@@ -286,6 +286,31 @@ class StreamingMixin:
         self.assertTrue(results[1].truncated)
         self.assertEqual(results[3].rows, [[1]])
 
+    def test_user_transaction_rollback_survives_a_select(self):
+        results = self.run_sequence([
+            'BEGIN',
+            'UPDATE employees SET salary = 0',
+            'SELECT name, salary FROM employees',
+            'ROLLBACK',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+        ])
+        self.assertEqual(len(results), 5, [r.error_message for r in results])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[4].rows, [[0]])
+
+    def test_user_transaction_survives_a_truncated_select(self):
+        results = self.run_sequence([
+            'BEGIN',
+            'UPDATE employees SET salary = 0',
+            SERIES_2500,
+            'COMMIT',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+        ])
+        self.assertEqual(len(results), 5, [r.error_message for r in results])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertTrue(results[2].truncated)
+        self.assertEqual(results[4].rows, [[5]])
+
     def test_syntax_error_still_fails(self):
         r = self.run_one('SELECT FROM WHERE')
         self.assertFalse(r.success)

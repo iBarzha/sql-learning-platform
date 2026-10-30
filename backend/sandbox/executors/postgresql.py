@@ -100,7 +100,11 @@ class PostgreSQLExecutor(BaseExecutor):
                 except Exception:
                     pass  # ROLE-level timeout takes precedence
 
-                if _is_row_query(query):
+                # Only outside a transaction: a session user may have run BEGIN, and
+                # the streaming path's own commit/rollback would end their transaction.
+                idle = (self._connection.info.transaction_status
+                        == extensions.TRANSACTION_STATUS_IDLE)
+                if idle and _is_row_query(query):
                     try:
                         return self._execute_streaming(query)
                     except _DECLARE_REJECTED:
@@ -177,8 +181,11 @@ class PostgreSQLExecutor(BaseExecutor):
                 pass
             raise
         finally:
-            if not conn.closed:
-                conn.autocommit = True
+            try:
+                if not conn.closed:
+                    conn.autocommit = True
+            except Exception:
+                pass  # a broken connection must not mask the original error
 
         rows = [list(row) for row in fetched]
         truncated = len(rows) > MAX_RESULT_ROWS
