@@ -15,7 +15,7 @@ from typing import Optional, Sequence
 from sqlglot import exp
 
 from . import compare as cmp
-from .compose import dialect_for, parse_query
+from .compose import dialect_for, nondeterminism_warnings, parse_query
 from .criteria import prepare_rows as _prepare_rows
 from .types import CheckDataset, Execution, PURPOSE_REFERENCE, RunFn
 
@@ -35,6 +35,8 @@ class ValidationReport:
     reference_errors: dict[str, str] = field(default_factory=dict)
     checked: int = 0
     truncated: bool = False
+    # Problems with the reference or the exercise setup that the mutants cannot show.
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def killed(self) -> int:
@@ -43,6 +45,9 @@ class ValidationReport:
 
 MAX_MUTANTS = 25
 DEFAULT_BUDGET_SECONDS = 30.0
+
+MSG_NO_HIDDEN_DATASETS = ('У вправи немає прихованих наборів: відповідь, що формально читає '
+                          'таблицю, але містить готові значення, пройде перевірку.')
 
 
 _COMPARISON_SWAPS = {
@@ -151,7 +156,69 @@ def generate_mutants(reference_sql: str, db_type: str) -> list[Mutant]:
         list(tree.find_all(exp.Limit))[index].pop()
         emit('limit', 'прибрано LIMIT', tree)
 
+    for tree, target in _copies(root, exp.Is, lambda n: isinstance(n.expression, exp.Null)):
+        wrapper = target.parent if isinstance(target.parent, exp.Not) else None
+        if wrapper is not None or target.args.get('negate'):
+            target.set('negate', None)
+            if wrapper is not None:
+                wrapper.replace(target.pop())
+            emit('null_test', 'IS NOT NULL замінено на IS NULL', tree)
+        else:
+            target.set('negate', True)
+            emit('null_test', 'IS NULL замінено на IS NOT NULL', tree)
+
+    for tree, target in _copies(root, exp.Between):
+        strict = exp.and_(
+            exp.GT(this=target.this.copy(), expression=target.args['low'].copy()),
+            exp.LT(this=target.this.copy(), expression=target.args['high'].copy()),
+        )
+        if not isinstance(target.parent, (exp.Where, exp.Having, exp.And, exp.Paren)):
+            strict = exp.paren(strict, copy=False)   # e.g. under NOT, keep it one condition
+        target.replace(strict)
+        emit('between', 'межі BETWEEN зроблено строгими', tree)
+
+    for tree, target in _copies(root, (exp.Like, exp.ILike), _has_wildcard_pattern):
+        bare = target.expression.this.replace('%', '').replace('_', '')
+        if bare:
+            target.set('expression', exp.Literal.string(bare))
+            emit('like', 'прибрано символи підстановки з шаблону LIKE', tree)
+
+    for group_index, group in enumerate(root.find_all(exp.Group)):
+        if len(group.expressions) < 2:
+            continue
+        for k in range(len(group.expressions)):
+            tree = root.copy()
+            target = list(tree.find_all(exp.Group))[group_index]
+            target.expressions[k].pop()
+            emit('group_by', f'прибрано вираз №{k + 1} з GROUP BY', tree)
+
+    for tree, target in _copies(root, exp.Join, lambda n: n.args.get('on') is not None):
+        target.set('on', None)
+        emit('join_condition', "прибрано умову з'єднання", tree)
+
+    for tree, target in _copies(root, exp.Not, lambda n: not isinstance(n.this, (exp.Is, exp.In))):
+        target.replace(target.this.pop())
+        emit('not', 'прибрано NOT', tree)
+
+    for tree, target in _copies(root, exp.In, lambda n: not isinstance(n.parent, exp.Not)):
+        target.replace(exp.Not(this=target.copy()))
+        emit('in_not_in', 'IN замінено на NOT IN', tree)
+
     return out
+
+
+def _copies(root: exp.Expression, node_types, keep=lambda node: True):
+    """Yield (copy of the tree, the n-th matching node in that copy) for every match."""
+    count = sum(1 for node in root.find_all(node_types) if keep(node))
+    for index in range(count):
+        tree = root.copy()
+        yield tree, [node for node in tree.find_all(node_types) if keep(node)][index]
+
+
+def _has_wildcard_pattern(node: exp.Expression) -> bool:
+    pattern = node.expression
+    return (isinstance(pattern, exp.Literal) and pattern.is_string
+            and ('%' in pattern.this or '_' in pattern.this))
 
 
 def _distinct_is_noop(select: exp.Select) -> bool:
@@ -186,6 +253,9 @@ def validate_datasets(
     """
     mutants = mutants if mutants is not None else generate_mutants(reference_sql, db_type)
     report = ValidationReport(mutants_total=len(mutants))
+    report.warnings = nondeterminism_warnings(reference_sql, db_type)
+    if len(datasets) < 2:
+        report.warnings.append(MSG_NO_HIDDEN_DATASETS)
     started = time.monotonic()
 
     reference_by_dataset: dict[str, Execution] = {}

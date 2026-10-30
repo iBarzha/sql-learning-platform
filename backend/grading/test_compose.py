@@ -363,3 +363,49 @@ class OrderKeyPositionsTests(unittest.TestCase):
             self.keys('SELECT cname, city FROM Customers UNION SELECT sname, city FROM Salespeople '
                       'ORDER BY city'),
             [1])
+
+
+class NondeterminismWarningsTests(unittest.TestCase):
+    LIMIT = 'LIMIT без ORDER BY: набір рядків може відрізнятися між запусками.'
+
+    def warnings(self, sql):
+        from grading.compose import nondeterminism_warnings
+        return nondeterminism_warnings(sql, 'postgresql')
+
+    def test_limit_without_order_by(self):
+        self.assertEqual(self.warnings('SELECT name FROM employees LIMIT 3'), [self.LIMIT])
+
+    def test_offset_without_order_by(self):
+        self.assertEqual(self.warnings('SELECT name FROM employees OFFSET 3'), [self.LIMIT])
+
+    def test_fetch_without_order_by(self):
+        self.assertEqual(self.warnings('SELECT name FROM employees FETCH FIRST 3 ROWS ONLY'),
+                         [self.LIMIT])
+
+    def test_limit_with_order_by_is_clean(self):
+        self.assertEqual(self.warnings('SELECT name FROM employees ORDER BY name LIMIT 3'), [])
+
+    def test_outer_order_by_of_a_set_operation_counts_for_its_operands(self):
+        self.assertEqual(self.warnings(
+            '(SELECT name FROM a LIMIT 1) UNION (SELECT name FROM b LIMIT 1) ORDER BY 1'), [])
+
+    def test_limit_is_reported_once(self):
+        self.assertEqual(self.warnings(
+            'SELECT name FROM a WHERE id IN (SELECT id FROM b LIMIT 2) LIMIT 1'), [self.LIMIT])
+
+    def test_nondeterministic_function_once_per_name(self):
+        self.assertEqual(self.warnings('SELECT RANDOM(), RANDOM(), newid() FROM employees'), [
+            'Функція rand() дає різний результат при кожному запуску; '
+            'еталон може не збігтися сам із собою.',
+            'Функція newid() дає різний результат при кожному запуску; '
+            'еталон може не збігтися сам із собою.',
+        ])
+
+    def test_current_timestamp_node_class_is_recognised(self):
+        self.assertEqual(len(self.warnings('SELECT name, CURRENT_TIMESTAMP FROM employees')), 1)
+
+    def test_deterministic_query_is_clean(self):
+        self.assertEqual(self.warnings('SELECT name, UPPER(name) FROM employees'), [])
+
+    def test_unparseable_sql_gives_no_warnings(self):
+        self.assertEqual(self.warnings('SELEC nope ((('), [])

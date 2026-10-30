@@ -383,3 +383,49 @@ def order_key_positions(node: Optional[exp.Expression]) -> Optional[list[int]]:
             return None
         positions.append(position)
     return positions
+
+
+MSG_LIMIT_WITHOUT_ORDER = 'LIMIT без ORDER BY: набір рядків може відрізнятися між запусками.'
+
+NONDETERMINISTIC_FUNCTIONS = frozenset({
+    'now', 'current_timestamp', 'current_date', 'current_time', 'localtimestamp', 'localtime',
+    'random', 'rand', 'gen_random_uuid', 'uuid', 'newid', 'sysdate', 'getdate',
+})
+
+
+def _is_ordered(node: exp.Expression) -> bool:
+    """The node has its own ORDER BY, or is an operand of a set operation that has one."""
+    while node is not None:
+        if node.args.get('order') is not None:
+            return True
+        parent = node.parent
+        if not isinstance(parent, (*_SET_OPERATIONS, exp.Subquery, exp.Paren)):
+            return False
+        node = parent
+    return False
+
+
+def nondeterminism_warnings(sql: str, db_type: str) -> list[str]:
+    """Reasons the reference may return different rows on two runs over the same data.
+
+    For the instructor only: a reference that does not agree with itself makes
+    correct answers fail at random.
+    """
+    try:
+        node = parse_query(sql, dialect_for(db_type))
+    except QueryShapeError:
+        return []
+    warnings: list[str] = []
+    for query in node.find_all(exp.Select, *_SET_OPERATIONS):
+        limited = any(query.args.get(arg) is not None for arg in ('limit', 'offset'))
+        if limited and not _is_ordered(query):
+            warnings.append(MSG_LIMIT_WITHOUT_ORDER)
+            break
+    names: list[str] = []
+    for func in node.find_all(exp.Func):
+        name = (func.name if isinstance(func, exp.Anonymous) else func.sql_name()).lower()
+        if name in NONDETERMINISTIC_FUNCTIONS and name not in names:
+            names.append(name)
+    warnings += [f'Функція {name}() дає різний результат при кожному запуску; '
+                 'еталон може не збігтися сам із собою.' for name in names]
+    return warnings
