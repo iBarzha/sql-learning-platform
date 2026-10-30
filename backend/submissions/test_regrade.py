@@ -11,6 +11,7 @@ from rest_framework.test import APITestCase
 
 from assignments.models import Assignment
 from courses.models import Course, Dataset, Enrollment, Lesson, LessonExercise, Module
+from submissions import regrade as regrade_module
 from submissions.models import Submission, UserResult
 from submissions.regrade import (
     grading_setup_for_exercise,
@@ -205,6 +206,20 @@ class RegradeTestCase(APITestCase):
         self.assertTrue(first.is_correct)
         self.assertTrue(self.result().is_completed)
 
+    def test_regraded_runs_are_attributed_to_the_answer(self):
+        answer = self.submit(ALL_ROWS)
+        calls = []
+        real = regrade_module.make_runner
+
+        def recording(db_type, timeout, **attribution):
+            calls.append(attribution)
+            return real(db_type, timeout, **attribution)
+
+        with mock.patch('submissions.regrade.make_runner', recording):
+            self.assertEqual(self.regrade().status_code, status.HTTP_200_OK)
+        self.assertIn({'user_id': self.student.id, 'submission_id': answer.id,
+                       'dataset_id': self.dataset.id}, calls)
+
     def test_answers_being_graded_are_left_alone(self):
         running = self.submit(ALL_ROWS)
         Submission.objects.filter(pk=running.pk).update(status=Submission.Status.RUNNING)
@@ -270,6 +285,79 @@ class AssignmentRegradeTestCase(APITestCase):
         self.assertEqual(result.best_submission_id, wrong.id)
         self.assertEqual(result.first_completed_at, wrong.submitted_at)
 
+    def test_regraded_runs_are_attributed_to_the_answer(self):
+        answer = self.submit(ALL_ROWS)
+        calls = []
+        real = regrade_module.make_runner
+
+        def recording(db_type, timeout, **attribution):
+            calls.append(attribution)
+            return real(db_type, timeout, **attribution)
+
+        with mock.patch('submissions.regrade.make_runner', recording):
+            self.assertEqual(self.regrade().status_code, status.HTTP_200_OK)
+        self.assertIn({'user_id': self.student.id, 'submission_id': answer.id,
+                       'dataset_id': self.assignment.dataset_id}, calls)
+
     def test_student_and_foreign_instructor_are_forbidden(self):
         self.assertEqual(self.regrade(user=self.student).status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(self.regrade(user=self.foreign).status_code, status.HTTP_403_FORBIDDEN)
+
+
+class ResultUpdateRaceTestCase(APITestCase):
+    """A new answer is compared with the stored result, not with the one loaded earlier."""
+
+    setUp = RegradeTestCase.setUp
+
+    def answer(self, score, correct=False):
+        return Submission.objects.create(
+            student=self.student, lesson=self.lesson, exercise=self.exercise, query=ALL_ROWS,
+            status=Submission.Status.COMPLETED,
+            score=None if score is None else Decimal(score), is_correct=correct)
+
+    def loaded_result(self, best, best_submission=None, completed=False):
+        result = UserResult.objects.create(
+            student=self.student, lesson=self.lesson, exercise=self.exercise,
+            best_score=Decimal(best), best_submission=best_submission, is_completed=completed)
+        return UserResult.objects.get(pk=result.pk)
+
+    def test_a_higher_score_wins_after_a_concurrent_regrade_lowered_the_best(self):
+        old = self.answer('80')
+        result = self.loaded_result('80', old)
+        # A regrade lowers the stored best after this result was loaded.
+        UserResult.objects.filter(pk=result.pk).update(best_score=Decimal('0'), best_submission=None)
+        new = self.answer('50')
+        result.update_from_submission(new)
+        self.assertEqual(result.best_score, Decimal('50'))
+        self.assertEqual(result.best_submission_id, new.id)
+        self.assertEqual(result.total_attempts, 1)
+
+    def test_completion_is_recorded_after_a_concurrent_regrade_withdrew_it(self):
+        result = self.loaded_result('0', completed=True)
+        UserResult.objects.filter(pk=result.pk).update(is_completed=False)
+        new = self.answer('100', correct=True)
+        result.update_from_submission(new)
+        self.assertTrue(result.is_completed)
+        self.assertEqual(result.first_completed_at, new.submitted_at)
+
+    def test_a_lower_stored_value_in_memory_does_not_override_the_database(self):
+        best = self.answer('90')
+        result = self.loaded_result('0')
+        UserResult.objects.filter(pk=result.pk).update(best_score=Decimal('90'), best_submission=best)
+        result.update_from_submission(self.answer('50'))
+        self.assertEqual(result.best_score, Decimal('90'))
+        self.assertEqual(result.best_submission_id, best.id)
+
+    def test_a_tie_never_replaces_the_best(self):
+        best = self.answer('50')
+        result = self.loaded_result('50', best)
+        result.update_from_submission(self.answer('50'))
+        self.assertEqual(result.best_submission_id, best.id)
+
+    def test_a_zero_or_missing_score_never_becomes_the_best(self):
+        result = self.loaded_result('0')
+        result.update_from_submission(self.answer('0'))
+        result.update_from_submission(self.answer(None))
+        self.assertIsNone(result.best_submission_id)
+        self.assertEqual(result.best_score, Decimal('0'))
+        self.assertEqual(result.total_attempts, 2)

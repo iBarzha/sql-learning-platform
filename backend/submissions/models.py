@@ -188,21 +188,29 @@ class UserResult(models.Model):
         return None
 
     def update_from_submission(self, submission):
-        """Update result based on a new submission (atomic)."""
+        """Update result based on a new submission (atomic).
+
+        The new best and the first completion are decided by the database, not by the
+        values loaded before grading began: a regrade may have lowered them meanwhile.
+        A tie never replaces the best answer, and a zero or missing score never becomes it.
+        """
+        from django.db import transaction
         from django.db.models import F
 
-        update_fields = {
-            'total_attempts': F('total_attempts') + 1,
-            'last_attempt_at': submission.submitted_at,
-        }
-
-        if submission.score and (submission.score > self.best_score):
-            update_fields['best_score'] = submission.score
-            update_fields['best_submission'] = submission
-
-        if submission.is_correct and not self.is_completed:
-            update_fields['is_completed'] = True
-            update_fields['first_completed_at'] = submission.submitted_at
-
-        UserResult.objects.filter(pk=self.pk).update(**update_fields)
+        rows = UserResult.objects.filter(pk=self.pk)
+        with transaction.atomic():
+            rows.update(
+                total_attempts=F('total_attempts') + 1,
+                last_attempt_at=submission.submitted_at,
+            )
+            if submission.score:
+                rows.filter(best_score__lt=submission.score).update(
+                    best_score=submission.score,
+                    best_submission=submission,
+                )
+            if submission.is_correct:
+                rows.filter(is_completed=False).update(
+                    is_completed=True,
+                    first_completed_at=submission.submitted_at,
+                )
         self.refresh_from_db()

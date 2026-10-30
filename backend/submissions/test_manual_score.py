@@ -157,6 +157,47 @@ class ManualScoreTests(APITestCase):
         self.assertEqual({r['id'] for r in self.rows(resp)},
                          {str(self.result.id), str(self.other_result.id)})
 
+    def test_course_and_student_results_follow_the_course_order(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        self.lesson.order = 1
+        self.lesson.save(update_fields=['order'])
+        self.exercise.order = 1
+        self.exercise.save(update_fields=['order'])
+        later = Lesson.objects.create(course=self.course, module=self.lesson.module, title='Пізніше',
+                                      lesson_type='practice', is_published=True, order=2)
+        later_exercise = LessonExercise.objects.create(lesson=later, title='В3',
+                                                       expected_query='SELECT 1', order=1)
+        second = LessonExercise.objects.create(lesson=self.lesson, title='В2',
+                                               expected_query='SELECT 1', order=2)
+        assignment = Assignment.objects.create(course=self.course, title='Завдання', description='d',
+                                               expected_query='SELECT 1', is_published=True)
+        now = timezone.now()
+        made = {}
+        # Created and attempted in an order unlike the course's own.
+        for key, kwargs, minutes in (
+            ('assignment', {'assignment': assignment}, 1),
+            ('later', {'lesson': later, 'exercise': later_exercise}, 2),
+            ('second', {'lesson': self.lesson, 'exercise': second}, 3),
+        ):
+            made[key] = UserResult.objects.create(
+                student=self.student, last_attempt_at=now - timedelta(minutes=minutes), **kwargs)
+        UserResult.objects.filter(pk=self.result.pk).update(last_attempt_at=now - timedelta(minutes=4))
+
+        self.client.force_authenticate(self.instructor)
+        resp = self.client.get('/api/results/', {'course': str(self.course.id),
+                                                 'student': str(self.student.id)})
+        self.assertEqual([r['id'] for r in self.rows(resp)], [
+            str(self.result.id), str(made['second'].id), str(made['later'].id),
+            str(made['assignment'].id)])
+
+        # Without both filters the most recent attempt still comes first.
+        resp = self.client.get('/api/results/', {'student': str(self.student.id)})
+        self.assertEqual([r['id'] for r in self.rows(resp)], [
+            str(made['assignment'].id), str(made['later'].id), str(made['second'].id),
+            str(self.result.id)])
+
     def test_student_sees_only_their_own_results(self):
         self.client.force_authenticate(self.student)
         resp = self.client.get('/api/results/', {'student': str(self.other_student.id)})

@@ -3,6 +3,7 @@
 import uuid
 
 from django.db import transaction
+from django.db.models import F
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -292,6 +293,16 @@ class UserResultViewSet(viewsets.ModelViewSet):
             ) | queryset.filter(
                 lesson__course_id=course_id
             )
+        if course_id and student_id:
+            # One student's results in one course (the instructor's dialog) read in the
+            # course's own order: lessons and their exercises, then the assignments.
+            queryset = queryset.order_by(*(
+                F(field).asc(nulls_last=True) for field in (
+                    'lesson__order', 'lesson__created_at',
+                    'exercise__order', 'exercise__created_at',
+                    'assignment__order', 'assignment__created_at',
+                )
+            ))
 
         return queryset.select_related(
             'student', 'assignment', 'lesson', 'exercise', 'best_submission',

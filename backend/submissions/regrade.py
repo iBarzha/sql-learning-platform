@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 LESSON_TIME_LIMIT = 600
 ASSIGNMENT_TIME_LIMIT = 30
 MAX_COUNT = 300
-BUDGET_SECONDS = 60
+BUDGET_SECONDS = 25
 
 
 class GradingSetup(NamedTuple):
@@ -42,9 +42,9 @@ def _setup(db_type, time_limit, task_kwargs, attribution) -> GradingSetup:
     )
 
 
-def grading_setup_for_exercise(exercise, lesson, *, user_id=None, submission_id=None,
-                               dataset_id=None) -> GradingSetup:
-    return _setup(
+def _exercise_spec(exercise, lesson):
+    """Engine, time limit and task arguments of a lesson exercise."""
+    return (
         lesson.course.database_type,
         lesson.time_limit_seconds or LESSON_TIME_LIMIT,
         dict(
@@ -60,13 +60,12 @@ def grading_setup_for_exercise(exercise, lesson, *, user_id=None, submission_id=
             criteria=exercise.criteria or {},
             ignore_column_order=exercise.ignore_column_order,
         ),
-        dict(user_id=user_id, submission_id=submission_id, dataset_id=dataset_id),
     )
 
 
-def grading_setup_for_assignment(assignment, *, user_id=None, submission_id=None,
-                                 dataset_id=None) -> GradingSetup:
-    return _setup(
+def _assignment_spec(assignment):
+    """Engine, time limit and task arguments of an assignment."""
+    return (
         assignment.course.database_type,
         assignment.time_limit_seconds or ASSIGNMENT_TIME_LIMIT,
         dict(
@@ -82,8 +81,42 @@ def grading_setup_for_assignment(assignment, *, user_id=None, submission_id=None
             criteria=assignment.criteria or {},
             ignore_column_order=assignment.ignore_column_order,
         ),
+    )
+
+
+def grading_setup_for_exercise(exercise, lesson, *, user_id=None, submission_id=None,
+                               dataset_id=None) -> GradingSetup:
+    return _setup(
+        *_exercise_spec(exercise, lesson),
         dict(user_id=user_id, submission_id=submission_id, dataset_id=dataset_id),
     )
+
+
+def grading_setup_for_assignment(assignment, *, user_id=None, submission_id=None,
+                                 dataset_id=None) -> GradingSetup:
+    return _setup(
+        *_assignment_spec(assignment),
+        dict(user_id=user_id, submission_id=submission_id, dataset_id=dataset_id),
+    )
+
+
+def _attributed_setups(spec, dataset_id) -> Callable[[Submission], GradingSetup]:
+    """Setups sharing one task whose student run is attributed to each regraded answer.
+
+    The execution log then names the student and the answer, as it does for a new one.
+    """
+    db_type, time_limit, task_kwargs = spec
+    base = _setup(db_type, time_limit, task_kwargs, {})
+
+    def setup_for(submission) -> GradingSetup:
+        return base._replace(runner=make_runner(
+            db_type, time_limit,
+            user_id=submission.student_id,
+            submission_id=submission.id,
+            dataset_id=dataset_id,
+        ))
+
+    return setup_for
 
 
 def reveals_rows(lesson) -> bool:
@@ -214,9 +247,10 @@ def regrade_lesson(lesson, exercises, *, max_count: int = MAX_COUNT,
 
     def setup_for(submission):
         if submission.exercise_id not in setups:
-            setups[submission.exercise_id] = grading_setup_for_exercise(
-                exercises[submission.exercise_id], lesson)
-        return setups[submission.exercise_id]
+            exercise = exercises[submission.exercise_id]
+            setups[submission.exercise_id] = _attributed_setups(
+                _exercise_spec(exercise, lesson), exercise.dataset_id)
+        return setups[submission.exercise_id](submission)
 
     return regrade_submissions(
         Submission.objects.filter(exercise_id__in=list(exercises)), setup_for,
@@ -227,6 +261,7 @@ def regrade_lesson(lesson, exercises, *, max_count: int = MAX_COUNT,
 def regrade_assignment(assignment, *, max_count: int = MAX_COUNT,
                        budget_seconds: float = BUDGET_SECONDS) -> dict:
     return regrade_submissions(
-        assignment.submissions.all(), grading_setup_for_assignment(assignment),
+        assignment.submissions.all(),
+        _attributed_setups(_assignment_spec(assignment), assignment.dataset_id),
         reveal_rows=True, max_count=max_count, budget_seconds=budget_seconds,
     )

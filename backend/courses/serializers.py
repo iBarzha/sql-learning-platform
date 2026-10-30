@@ -134,7 +134,13 @@ class LessonExerciseSerializer(serializers.ModelSerializer):
         lesson = getattr(self.root, 'instance', None)
         if not exercise_id or not isinstance(lesson, Lesson):
             return False
-        return lesson.exercises.filter(id=exercise_id).exists()
+        # One query for the whole payload: the ids are kept on the root serializer,
+        # which lives for this one request.
+        cached = getattr(self.root, '_stored_exercise_ids', None)
+        if cached is None or cached[0] != lesson.pk:
+            cached = (lesson.pk, set(lesson.exercises.values_list('id', flat=True)))
+            self.root._stored_exercise_ids = cached
+        return exercise_id in cached[1]
 
     def validate(self, attrs):
         if 'expected_query' in attrs or not self._updates_stored_exercise(attrs):
