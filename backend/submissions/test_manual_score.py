@@ -123,6 +123,25 @@ class ManualScoreTests(APITestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertEqual(resp.data[0]['total_score'], 60.0)
 
+    def test_lesson_total_uses_the_manual_score(self):
+        self.patch({'manual_score': 70})
+        self.client.force_authenticate(self.student)
+        resp = self.client.get(f'/api/courses/{self.course.id}/lessons/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        lesson = next(item for item in self.rows(resp) if item['id'] == str(self.lesson.id))
+        self.assertEqual(Decimal(str(lesson['user_best_score'])), Decimal('70'))
+
+    def test_assignment_score_uses_the_manual_score(self):
+        assignment = Assignment.objects.create(course=self.course, title='A', description='d',
+                                               expected_query='SELECT 1', is_published=True)
+        result = UserResult.objects.create(student=self.student, assignment=assignment,
+                                           best_score=Decimal('0'))
+        self.patch({'manual_score': 30}, result=result)
+        self.client.force_authenticate(self.student)
+        resp = self.client.get(f'/api/courses/{self.course.id}/assignments/{assignment.id}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['user_best_score'], 30.0)
+
     @staticmethod
     def rows(resp):
         return resp.data['results'] if isinstance(resp.data, dict) else resp.data

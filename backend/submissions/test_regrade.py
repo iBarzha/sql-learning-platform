@@ -4,6 +4,7 @@ Runs on the in-memory SQLite sandbox, so the real grading path is exercised.
 """
 
 from decimal import Decimal
+from unittest import mock
 
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -11,7 +12,11 @@ from rest_framework.test import APITestCase
 from assignments.models import Assignment
 from courses.models import Course, Dataset, Enrollment, Lesson, LessonExercise, Module
 from submissions.models import Submission, UserResult
-from submissions.regrade import grading_setup_for_exercise, regrade_submissions
+from submissions.regrade import (
+    grading_setup_for_exercise,
+    regrade_lesson,
+    regrade_submissions,
+)
 from users.models import User
 
 SCHEMA = 'CREATE TABLE t (a INTEGER);'
@@ -77,7 +82,7 @@ class RegradeTestCase(APITestCase):
         self.set_reference(self.exercise, ABOVE_ONE)
         resp = self.regrade()
         self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data, {'submissions': 2, 'changed': 2, 'truncated': False})
+        self.assertEqual(resp.data, {'submissions': 2, 'changed': 2, 'truncated': False, 'errors': 0})
 
         right.refresh_from_db()
         wrong.refresh_from_db()
@@ -116,7 +121,7 @@ class RegradeTestCase(APITestCase):
         self.submit(ALL_ROWS)
         self.submit(ABOVE_ONE)
         resp = self.regrade()
-        self.assertEqual(resp.data, {'submissions': 2, 'changed': 0, 'truncated': False})
+        self.assertEqual(resp.data, {'submissions': 2, 'changed': 0, 'truncated': False, 'errors': 0})
 
     def test_exercise_id_limits_the_regrade_to_one_exercise(self):
         self.submit(ALL_ROWS)
@@ -125,7 +130,7 @@ class RegradeTestCase(APITestCase):
         self.set_reference(self.exercise, NOTHING)
 
         resp = self.regrade(body={'exercise_id': str(self.other_exercise.id)})
-        self.assertEqual(resp.data, {'submissions': 1, 'changed': 1, 'truncated': False})
+        self.assertEqual(resp.data, {'submissions': 1, 'changed': 1, 'truncated': False, 'errors': 0})
         other.refresh_from_db()
         self.assertFalse(other.is_correct)
         self.assertTrue(self.result().is_completed)
@@ -150,7 +155,7 @@ class RegradeTestCase(APITestCase):
             grading_setup_for_exercise(self.exercise, self.lesson),
             reveal_rows=True, max_count=1,
         )
-        self.assertEqual(report, {'submissions': 1, 'changed': 1, 'truncated': True})
+        self.assertEqual(report, {'submissions': 1, 'changed': 1, 'truncated': True, 'errors': 0})
         first.refresh_from_db()
         second.refresh_from_db()
         self.assertFalse(first.is_correct)
@@ -166,7 +171,48 @@ class RegradeTestCase(APITestCase):
             grading_setup_for_exercise(self.exercise, self.lesson),
             reveal_rows=True, budget_seconds=0,
         )
-        self.assertEqual(report, {'submissions': 0, 'changed': 0, 'truncated': True})
+        self.assertEqual(report, {'submissions': 0, 'changed': 0, 'truncated': True, 'errors': 0})
+
+    def test_a_truncated_regrade_continues_with_the_rest(self):
+        first = self.submit(ALL_ROWS)
+        second = self.submit(ALL_ROWS, self.other_exercise)
+        self.set_reference(self.exercise, NOTHING)
+        self.set_reference(self.other_exercise, NOTHING)
+        exercises = list(self.lesson.exercises.select_related('dataset'))
+
+        one = regrade_lesson(self.lesson, exercises, max_count=1)
+        two = regrade_lesson(self.lesson, exercises, max_count=1)
+        self.assertEqual(one, {'submissions': 1, 'changed': 1, 'truncated': True, 'errors': 0})
+        self.assertEqual(two['changed'], 1)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertFalse(first.is_correct)
+        self.assertFalse(second.is_correct)
+        self.assertFalse(self.result().is_completed)
+        self.assertFalse(self.result(self.other_exercise).is_completed)
+
+    def test_grading_failures_count_toward_the_limit(self):
+        first = self.submit(ALL_ROWS)
+        self.submit(ALL_ROWS)
+        with mock.patch('submissions.regrade.grade_submission', side_effect=RuntimeError('boom')),                 self.assertLogs('submissions.regrade', level='ERROR'):
+            report = regrade_submissions(
+                self.exercise.submissions.all(),
+                grading_setup_for_exercise(self.exercise, self.lesson),
+                reveal_rows=True, max_count=1,
+            )
+        self.assertEqual(report, {'submissions': 0, 'changed': 0, 'truncated': True, 'errors': 1})
+        first.refresh_from_db()
+        self.assertTrue(first.is_correct)
+        self.assertTrue(self.result().is_completed)
+
+    def test_answers_being_graded_are_left_alone(self):
+        running = self.submit(ALL_ROWS)
+        Submission.objects.filter(pk=running.pk).update(status=Submission.Status.RUNNING)
+        self.set_reference(self.exercise, NOTHING)
+        resp = self.regrade()
+        self.assertEqual(resp.data['submissions'], 0)
+        running.refresh_from_db()
+        self.assertTrue(running.is_correct)
 
     def test_student_is_forbidden(self):
         self.assertEqual(self.regrade(user=self.student).status_code, status.HTTP_403_FORBIDDEN)
@@ -214,7 +260,7 @@ class AssignmentRegradeTestCase(APITestCase):
 
         resp = self.regrade()
         self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data, {'submissions': 2, 'changed': 2, 'truncated': False})
+        self.assertEqual(resp.data, {'submissions': 2, 'changed': 2, 'truncated': False, 'errors': 0})
         right.refresh_from_db()
         wrong.refresh_from_db()
         self.assertFalse(right.is_correct)

@@ -43,7 +43,7 @@ class AssignmentListSerializer(serializers.ModelSerializer):
 
     def get_user_best_score(self, obj):
         result = self._get_user_result(obj)
-        return float(result.best_score) if result else None
+        return float(result.effective_score) if result else None
 
     def get_user_completed(self, obj):
         result = self._get_user_result(obj)
@@ -96,7 +96,7 @@ class AssignmentDetailSerializer(serializers.ModelSerializer):
 
     def get_user_best_score(self, obj):
         result = self._get_user_result(obj)
-        return float(result.best_score) if result else None
+        return float(result.effective_score) if result else None
 
     def get_user_completed(self, obj):
         result = self._get_user_result(obj)

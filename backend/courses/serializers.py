@@ -298,7 +298,8 @@ class LessonListSerializer(serializers.ModelSerializer):
         results = self._get_user_results(obj)
         if not results:
             return None
-        return sum((r.best_score for r in results if r.exercise_id), start=0)
+        # The instructor's manual score, where set, replaces the automatic one.
+        return sum((r.effective_score for r in results if r.exercise_id), start=0)
 
 
 class LessonDetailSerializer(serializers.ModelSerializer):

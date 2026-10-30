@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import NamedTuple
+from typing import Callable, NamedTuple, Union
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from grading.runner import build_task, make_runner, make_sequence_runner
@@ -126,33 +126,42 @@ def grade_into(submission, setup: GradingSetup, *, reveal_rows: bool) -> None:
 
 
 def _empty_report() -> dict:
-    return {'submissions': 0, 'changed': 0, 'truncated': False}
+    return {'submissions': 0, 'changed': 0, 'truncated': False, 'errors': 0}
 
 
-def regrade_submissions(submissions_qs, setup: GradingSetup, *, reveal_rows: bool,
-                        max_count: int = MAX_COUNT,
+def regrade_submissions(submissions_qs,
+                        setup: Union[GradingSetup, Callable[[Submission], GradingSetup]], *,
+                        reveal_rows: bool, max_count: int = MAX_COUNT,
                         budget_seconds: float = BUDGET_SECONDS) -> dict:
-    """Regrade stored answers oldest first, then rebuild the results they feed.
+    """Regrade stored answers, least recently graded first, then rebuild their results.
 
-    Stops after `max_count` answers or once `budget_seconds` have passed and reports
-    `truncated`; the answers not reached keep their previous grade. An answer whose
-    grading raises is left as it was.
+    `setup` is one grading setup, or a function giving the setup of a submission when
+    the answers belong to different exercises. Answers being graded right now are
+    skipped. Every attempted answer counts toward `max_count`; once it or the time
+    budget is exhausted the report says `truncated`, and the next call continues with
+    the answers not reached, since the ones just regraded sort last. An answer whose
+    grading raises is left as it was and counted in `errors`.
     """
+    setup_for = setup if callable(setup) else (lambda submission: setup)
     report = _empty_report()
     deadline = time.monotonic() + budget_seconds
     touched = set()
 
+    queryset = submissions_qs.exclude(status=Submission.Status.RUNNING).order_by(
+        F('graded_at').asc(nulls_first=True), 'submitted_at', 'id')
     # One extra row tells a cut-off batch from one that ended exactly at the limit.
-    candidates = list(submissions_qs.order_by('submitted_at', 'id')[:max(max_count, 0) + 1])
+    candidates = list(queryset[:max(max_count, 0) + 1])
     for submission in candidates:
-        if report['submissions'] >= max_count or time.monotonic() >= deadline:
+        attempted = report['submissions'] + report['errors']
+        if attempted >= max_count or time.monotonic() >= deadline:
             report['truncated'] = True
             break
         before = (submission.score, submission.is_correct)
         try:
-            grade_into(submission, setup, reveal_rows=reveal_rows)
+            grade_into(submission, setup_for(submission), reveal_rows=reveal_rows)
         except Exception:
             logger.exception('Regrading submission %s failed', submission.id)
+            report['errors'] += 1
             continue
         with transaction.atomic():
             submission.save()
@@ -167,58 +176,52 @@ def regrade_submissions(submissions_qs, setup: GradingSetup, *, reveal_rows: boo
 
 
 def recompute_result(student_id, *, assignment_id=None, exercise_id=None) -> None:
-    """Rebuild the best score and completion of one result from all its answers.
+    """Rebuild the best score and completion of one result from its graded answers.
 
-    Attempts, the manual score and the timer extension are left untouched.
+    The result row is locked so a new answer cannot update it in between. Attempts,
+    the manual score and the timer extension are left untouched.
     """
     task = Q(exercise_id=exercise_id) if exercise_id else Q(assignment_id=assignment_id)
-    submissions = list(
-        Submission.objects.filter(task, student_id=student_id)
-        .order_by('submitted_at', 'id')
-        .values('id', 'score', 'is_correct', 'submitted_at')
-    )
-    scored = [s for s in submissions if s['score'] is not None]
-    best_score = max((s['score'] for s in scored), default=0)
-    best = next((s for s in scored if s['score'] == best_score), None)
-    first_correct = next((s for s in submissions if s['is_correct']), None)
-
-    results = UserResult.objects.filter(student_id=student_id)
-    results = (results.filter(exercise_id=exercise_id) if exercise_id
-               else results.filter(assignment_id=assignment_id))
-    results.update(
-        best_score=best_score,
-        best_submission_id=best['id'] if best else None,
-        is_completed=first_correct is not None,
-        first_completed_at=first_correct['submitted_at'] if first_correct else None,
-    )
-
-
-def _regrade_all(jobs, *, reveal_rows, max_count, budget_seconds) -> dict:
-    """Regrade several (queryset, setup) pairs under one count and time budget."""
-    report = _empty_report()
-    deadline = time.monotonic() + budget_seconds
-    for submissions_qs, setup in jobs:
-        part = regrade_submissions(
-            submissions_qs, setup, reveal_rows=reveal_rows,
-            max_count=max_count - report['submissions'],
-            budget_seconds=deadline - time.monotonic(),
+    with transaction.atomic():
+        result = (UserResult.objects.select_for_update()
+                  .filter(task, student_id=student_id).first())
+        if result is None:
+            return
+        submissions = list(
+            Submission.objects.filter(task, student_id=student_id)
+            .exclude(status=Submission.Status.RUNNING)
+            .order_by('submitted_at', 'id')
+            .values('id', 'score', 'is_correct', 'submitted_at')
         )
-        report['submissions'] += part['submissions']
-        report['changed'] += part['changed']
-        if part['truncated']:
-            report['truncated'] = True
-            break
-    return report
+        scored = [s for s in submissions if s['score'] is not None]
+        best_score = max((s['score'] for s in scored), default=0)
+        best = next((s for s in scored if s['score'] == best_score), None)
+        first_correct = next((s for s in submissions if s['is_correct']), None)
+
+        UserResult.objects.filter(pk=result.pk).update(
+            best_score=best_score,
+            best_submission_id=best['id'] if best else None,
+            is_completed=first_correct is not None,
+            first_completed_at=first_correct['submitted_at'] if first_correct else None,
+        )
 
 
 def regrade_lesson(lesson, exercises, *, max_count: int = MAX_COUNT,
                    budget_seconds: float = BUDGET_SECONDS) -> dict:
-    jobs = (
-        (exercise.submissions.all(), grading_setup_for_exercise(exercise, lesson))
-        for exercise in exercises
+    """Regrade the answers to the given exercises of a lesson in one ordered pass."""
+    exercises = {exercise.id: exercise for exercise in exercises}
+    setups = {}
+
+    def setup_for(submission):
+        if submission.exercise_id not in setups:
+            setups[submission.exercise_id] = grading_setup_for_exercise(
+                exercises[submission.exercise_id], lesson)
+        return setups[submission.exercise_id]
+
+    return regrade_submissions(
+        Submission.objects.filter(exercise_id__in=list(exercises)), setup_for,
+        reveal_rows=reveals_rows(lesson), max_count=max_count, budget_seconds=budget_seconds,
     )
-    return _regrade_all(jobs, reveal_rows=reveals_rows(lesson),
-                        max_count=max_count, budget_seconds=budget_seconds)
 
 
 def regrade_assignment(assignment, *, max_count: int = MAX_COUNT,
