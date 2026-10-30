@@ -107,7 +107,8 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
     criteria = serializers.JSONField(required=False, allow_null=True)
     # Blank passes the field check so that validate() can accept a legacy expected_result
     # or reject the empty reference with the instructor-facing message.
-    expected_query = serializers.CharField(allow_blank=True, style={'base_template': 'textarea.html'})
+    expected_query = serializers.CharField(allow_blank=True, required=False,
+                                           style={'base_template': 'textarea.html'})
 
     class Meta:
         model = Assignment
@@ -138,8 +139,10 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
         if self.instance is not None:
             merged = {name: getattr(self.instance, name) for name in CRITERIA_SOURCE_FIELDS}
             merged['criteria'] = self.instance.criteria
+        else:
+            merged['expected_query'] = ''   # a new assignment without the key has none
         merged.update(attrs)
-        if 'expected_query' in attrs:
+        if 'expected_query' in attrs or self.instance is None:
             validate_reference_present(merged)
         if 'criteria' in attrs or self.instance is None:
             attrs['criteria'] = validate_criteria_value(

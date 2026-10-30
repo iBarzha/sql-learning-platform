@@ -128,8 +128,18 @@ class LessonExerciseSerializer(serializers.ModelSerializer):
             course = getattr(root_instance, 'course', None)
         return course.database_type if course else 'sqlite'
 
+    def _updates_stored_exercise(self, attrs):
+        """True when this item edits an exercise the lesson being updated already has."""
+        exercise_id = attrs.get('id')
+        lesson = getattr(self.root, 'instance', None)
+        if not exercise_id or not isinstance(lesson, Lesson):
+            return False
+        return lesson.exercises.filter(id=exercise_id).exists()
+
     def validate(self, attrs):
-        validate_reference_present(attrs)
+        if 'expected_query' in attrs or not self._updates_stored_exercise(attrs):
+            # A new exercise without the key has an empty reference.
+            validate_reference_present({'expected_query': '', **attrs})
         # Exercises always arrive whole (the form sends every field), so the attrs alone
         # describe the task the criteria must fit.
         attrs['criteria'] = validate_criteria_value(

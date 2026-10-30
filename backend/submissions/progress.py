@@ -19,7 +19,7 @@ def course_progress(student, courses) -> list[dict]:
     """One progress entry per course, in the given order.
 
     Tasks are the published assignments plus the exercises of published practice and
-    mixed lessons. The whole computation takes three queries whatever the course count.
+    mixed lessons. The whole computation takes four queries whatever the course count.
     """
     courses = list(courses)
     course_ids = [course.id for course in courses]

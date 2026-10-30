@@ -200,9 +200,38 @@ class ReferenceRequiredTests(CriteriaApiBase):
             self.assertEqual(resp.data, {'exercises': [{'expected_query': [REFERENCE_REQUIRED]}]})
         self.assertFalse(Lesson.objects.filter(title='L').exists())
 
+    def test_creating_a_lesson_with_an_exercise_that_omits_expected_query_returns_400(self):
+        resp = self.create_lesson({})
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertEqual(resp.data, {'exercises': [{'expected_query': [REFERENCE_REQUIRED]}]})
+
     def test_exercise_with_a_legacy_expected_result_is_accepted(self):
         resp = self.create_lesson({'expected_query': '', 'expected_result': LEGACY_RESULT})
         self.assertEqual(resp.status_code, 201, resp.data)
+        resp = self.create_lesson({'expected_result': LEGACY_RESULT})     # key omitted
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+    def test_patch_item_omitting_the_key_depends_on_whether_the_exercise_exists(self):
+        self.assertEqual(self.create_lesson({'expected_query': 'SELECT a FROM t'}).status_code, 201)
+        lesson = Lesson.objects.get(title='L')
+        exercise = lesson.exercises.first()
+        url = f'/api/courses/{self.course.id}/lessons/{lesson.id}/'
+        # Editing the stored exercise without resending the reference keeps it.
+        resp = self.client.patch(url, {
+            'exercises': [{'id': str(exercise.id), 'title': 'E2'}],
+        }, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        exercise.refresh_from_db()
+        self.assertEqual(exercise.expected_query, 'SELECT a FROM t')
+        # An item whose id matches no stored exercise is a new one and needs a reference.
+        resp = self.client.patch(url, {
+            'exercises': [{'id': str(exercise.id), 'title': 'E2'},
+                          {'id': '00000000-0000-0000-0000-000000000001', 'title': 'Нова'},
+                          {'title': 'Ще одна'}],
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data, {'exercises': [
+            {}, {'expected_query': [REFERENCE_REQUIRED]}, {'expected_query': [REFERENCE_REQUIRED]}]})
 
     def test_lesson_patch_with_an_emptied_reference_is_rejected(self):
         self.assertEqual(self.create_lesson({'expected_query': 'SELECT a FROM t'}).status_code, 201)
@@ -223,9 +252,17 @@ class ReferenceRequiredTests(CriteriaApiBase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data, {'expected_query': [REFERENCE_REQUIRED]})
 
+    def test_assignment_created_without_the_key_gets_the_same_message(self):
+        resp = self.create_assignment()
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data, {'expected_query': [REFERENCE_REQUIRED]})
+
     def test_assignment_with_a_legacy_expected_result_is_accepted(self):
         resp = self.create_assignment(expected_query='', expected_result=LEGACY_RESULT)
         self.assertEqual(resp.status_code, 201, resp.data)
+        resp = self.create_assignment(title='B', expected_result=LEGACY_RESULT)  # key omitted
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(Assignment.objects.get(title='B').expected_query, '')
 
     def test_assignment_patch_without_the_reference_is_not_affected(self):
         self.assertEqual(self.create_assignment(expected_query='SELECT a FROM t').status_code, 201)

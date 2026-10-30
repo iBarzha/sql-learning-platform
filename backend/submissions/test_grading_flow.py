@@ -4,6 +4,7 @@ Instructor creates a course, dataset, module and lesson with exercises; a studen
 joins by code and submits answers; scores, feedback and aggregates are asserted.
 """
 
+import json
 from decimal import Decimal
 
 from rest_framework import status
@@ -330,7 +331,8 @@ class GradingFlowTestCase(APITestCase):
             'expected_query': 'SELECT name FROM employees WHERE salary >= 5000',
         }], time_limit_seconds=time_limit_seconds)
         self.as_student()
-        resp = self.submit('SELECT name FROM employees WHERE salary > 5500',
+        # Misses Коваленко (7000) and adds Петренко (4000).
+        resp = self.submit('SELECT name FROM employees WHERE salary BETWEEN 4000 AND 6000',
                            exercise=lesson.exercises.get(), lesson=lesson)
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
         self.assertFalse(resp.data['is_correct'])
@@ -340,12 +342,17 @@ class GradingFlowTestCase(APITestCase):
         feedback = self.wrong_answer_feedback(600)
         self.assertEqual(feedback['missing_rows'], [])
         self.assertEqual(feedback['extra_rows'], [])
-        for criterion in feedback['criteria']:
-            self.assertNotIn('Бондаренко', criterion['detail'] or '')
+        text = json.dumps(feedback, ensure_ascii=False)       # hints included
+        cell_values = ['Іваненко', 'Петренко', 'Коваленко', 'Шевченко', 'Бондаренко',
+                       'Розробка', 'Аналітика', 'Підтримка', '6000', '4000', '7000', '3000',
+                       '5500']
+        for value in cell_values:
+            self.assertNotIn(value, text)
 
     def test_untimed_lesson_still_shows_the_missing_rows(self):
         feedback = self.wrong_answer_feedback(None)
-        self.assertTrue(any('Бондаренко' in row for row in feedback['missing_rows']), feedback)
+        self.assertTrue(any('Коваленко' in row for row in feedback['missing_rows']), feedback)
+        self.assertTrue(any('Петренко' in row for row in feedback['extra_rows']), feedback)
 
     # ── instructor validation of datasets ───────────────────────────────
 
@@ -403,17 +410,23 @@ class GradingFlowTestCase(APITestCase):
         }, format='json')
 
     def test_check_datasets_must_be_a_list(self):
-        resp = self.create_lesson_raw([{'title': 'x', 'check_datasets': 'oops'}])
+        resp = self.create_lesson_raw([{'title': 'x', 'expected_query': 'SELECT 1',
+                                        'check_datasets': 'oops'}])
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('check_datasets', resp.data['exercises'][0])
 
     def test_check_dataset_items_need_seed_sql(self):
-        resp = self.create_lesson_raw([{'title': 'x', 'check_datasets': [{'name': 'n'}]}])
+        resp = self.create_lesson_raw([{'title': 'x', 'expected_query': 'SELECT 1',
+                                        'check_datasets': [{'name': 'n'}]}])
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('check_datasets', resp.data['exercises'][0])
 
     def test_too_many_check_datasets_are_rejected(self):
         items = [{'name': f'd{i}', 'seed_sql': 'SELECT 1'} for i in range(11)]
-        resp = self.create_lesson_raw([{'title': 'x', 'check_datasets': items}])
+        resp = self.create_lesson_raw([{'title': 'x', 'expected_query': 'SELECT 1',
+                                        'check_datasets': items}])
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('check_datasets', resp.data['exercises'][0])
 
     def test_check_datasets_are_normalized_on_save(self):
         resp = self.create_lesson_raw([{'title': 'x', 'expected_query': 'SELECT 1',
