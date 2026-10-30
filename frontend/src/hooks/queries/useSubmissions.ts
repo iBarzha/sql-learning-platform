@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import submissionsApi, { type SubmitQueryData } from '@/api/submissions';
+import submissionsApi, { resultStudentId, type SubmitQueryData } from '@/api/submissions';
 import type { ManualScoreData } from '@/types';
 
 export function useMySubmissions(courseId: string | undefined, assignmentId: string | undefined) {
@@ -66,7 +66,7 @@ export function useSetManualScore() {
       submissionsApi.setManualScore(resultId, data),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['results'] });
-      qc.invalidateQueries({ queryKey: ['student', result.student, 'progress'] });
+      qc.invalidateQueries({ queryKey: ['student', resultStudentId(result), 'progress'] });
     },
   });
 }

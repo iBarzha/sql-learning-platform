@@ -156,7 +156,10 @@ export function StudentTimersDialog({ courseId, studentId, studentName, open, on
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!resetTarget} onOpenChange={(isOpen) => !isOpen && setResetTarget(null)}>
+      <Dialog
+        open={!!resetTarget}
+        onOpenChange={(isOpen) => !isOpen && !timerAction.isPending && setResetTarget(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('students.timers.resetConfirmTitle')}</DialogTitle>
@@ -165,7 +168,7 @@ export function StudentTimersDialog({ courseId, studentId, studentName, open, on
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setResetTarget(null)}>
+            <Button variant="outline" onClick={() => setResetTarget(null)} disabled={timerAction.isPending}>
               {t('courseManage.cancel')}
             </Button>
             <Button variant="destructive" onClick={confirmReset} disabled={timerAction.isPending}>

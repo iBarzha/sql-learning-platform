@@ -55,20 +55,25 @@ function groupResults(results: StudentResult[], assignmentsTitle: string): Resul
   return all;
 }
 
+function scoreText(value: StudentResult['manual_score']): string {
+  return value === null ? '' : String(Number(value));
+}
+
 function ResultRow({ result }: { result: StudentResult }) {
   const { t } = useTranslation('instructor');
   const setManualScore = useSetManualScore();
-  const [score, setScore] = useState(result.manual_score === null ? '' : String(Number(result.manual_score)));
+  const [score, setScore] = useState(scoreText(result.manual_score));
   const [comment, setComment] = useState(result.manual_comment ?? '');
 
-  const parsedScore = score.trim() === '' ? null : Number(score);
-  const scoreValid = parsedScore !== null && parsedScore >= 0 && parsedScore <= result.max_score;
+  // An empty score is allowed with a comment (sent as null); a typed score must be in range.
+  const scoreEmpty = score.trim() === '';
+  const parsedScore = scoreEmpty ? null : Number(score);
+  const scoreInRange = parsedScore !== null && Number.isFinite(parsedScore) && parsedScore >= 0 && parsedScore <= result.max_score;
+  const canSave = scoreEmpty ? comment.trim() !== '' : scoreInRange;
 
   async function save(data: ManualScoreData) {
     try {
-      const saved = await setManualScore.mutateAsync({ resultId: result.id, data });
-      setScore(saved.manual_score === null ? '' : String(Number(saved.manual_score)));
-      setComment(saved.manual_comment ?? '');
+      await setManualScore.mutateAsync({ resultId: result.id, data });
       toast.success(t('students.results.saved'));
     } catch (err) {
       toast.error(getApiErrorMessage(err, t('students.results.saveFailed')));
@@ -80,7 +85,7 @@ function ResultRow({ result }: { result: StudentResult }) {
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium flex-1 min-w-0">{result.exercise_title ?? result.assignment_title}</p>
         <span className="text-sm">
-          {t('students.results.best', { score: result.best_score, max: result.max_score })}
+          {t('students.results.best', { score: Number(result.best_score), max: result.max_score })}
         </span>
         <span className="text-sm text-muted-foreground">
           {t('students.results.attempts', { count: result.total_attempts })}
@@ -113,7 +118,7 @@ function ResultRow({ result }: { result: StudentResult }) {
         <Button
           type="button"
           size="sm"
-          disabled={setManualScore.isPending || !scoreValid}
+          disabled={setManualScore.isPending || !canSave}
           onClick={() => save({ manual_score: parsedScore, manual_comment: comment.trim() })}
         >
           {t('students.results.save')}
@@ -130,7 +135,7 @@ function ResultRow({ result }: { result: StudentResult }) {
           </Button>
         )}
       </div>
-      {score.trim() !== '' && !scoreValid && (
+      {!scoreEmpty && !scoreInRange && (
         <p className="text-xs text-destructive">
           {t('students.results.scoreRange', { max: result.max_score })}
         </p>
@@ -167,7 +172,9 @@ export function StudentResultsDialog({ courseId, studentId, studentName, open, o
               <div key={group.key} className="space-y-2">
                 <h4 className="text-sm font-semibold">{group.title}</h4>
                 {group.results.map((result) => (
-                  <ResultRow key={result.id} result={result} />
+                  // Keyed by the manual-score timestamp so a refetch with new stored
+                  // values remounts the row and its inputs show them.
+                  <ResultRow key={`${result.id}-${result.manual_set_at ?? ''}`} result={result} />
                 ))}
               </div>
             ))}

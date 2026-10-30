@@ -33,6 +33,8 @@ import { useLesson, useLessonSubmissions, useStartLesson, useSubmitLesson } from
 import type { LessonTiming } from '@/api/lessons';
 import { useAttachments } from '@/hooks/queries/useAttachments';
 import { useLessonResults } from '@/hooks/queries/useSubmissions';
+import { resultStudentId } from '@/api/submissions';
+import { useAuthStore } from '@/store/authStore';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
@@ -423,7 +425,11 @@ export function LessonPage() {
   const { data: lesson, isLoading: lessonLoading } = useLesson(courseId, lessonId);
   const { data: submissions = [], isLoading: subsLoading } = useLessonSubmissions(courseId, lessonId);
   const { data: attachments = [] } = useAttachments(courseId, lessonId);
-  const { data: lessonResults = [] } = useLessonResults(lessonId);
+  const { user } = useAuthStore();
+  // Only a student's own results can carry a teacher score for them; an instructor
+  // previewing the lesson would get every student's results from the same route.
+  const isStudent = user?.role === 'student';
+  const { data: lessonResults = [] } = useLessonResults(isStudent ? lessonId : undefined);
   const submitMutation = useSubmitLesson(courseId!, lessonId!);
   const startMutation = useStartLesson(courseId!, lessonId!);
   const loading = lessonLoading || subsLoading;
@@ -572,7 +578,9 @@ export function LessonPage() {
   const activeSub = activeExId ? submissionsByExercise[activeExId] ?? null : null;
   const activeLocal = activeExId ? localResultByExercise[activeExId] ?? null : null;
   const activeTeacherResult = activeExId
-    ? lessonResults.find((r) => r.exercise === activeExId && r.manual_score !== null)
+    ? lessonResults.find(
+        (r) => r.exercise === activeExId && r.manual_score !== null && resultStudentId(r) === user?.id
+      )
     : undefined;
   const activeHistory = activeExId
     ? submissions

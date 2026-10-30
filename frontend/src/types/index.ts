@@ -186,7 +186,8 @@ export interface UserResult {
 /** One graded task of a student (lesson exercise or assignment), from `/results/`. */
 export interface StudentResult {
   id: string;
-  student: string;
+  /** The student's id, or the nested user when the serializer expands it. */
+  student: string | { id: string };
   assignment: string | null;
   assignment_title: string | null;
   lesson: string | null;
@@ -195,16 +196,17 @@ export interface StudentResult {
   exercise_title: string | null;
   max_score: number;
   best_submission: string | null;
-  best_score: number;
+  // Decimal fields: DRF may send them as strings such as "20.00".
+  best_score: number | string;
   total_attempts: number;
   is_completed: boolean;
   first_completed_at: string | null;
   last_attempt_at: string | null;
   extra_seconds: number;
-  manual_score: number | null;
+  manual_score: number | string | null;
   manual_comment: string;
   manual_set_at: string | null;
-  effective_score: number;
+  effective_score: number | string;
 }
 
 export interface ManualScoreData {

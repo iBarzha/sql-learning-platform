@@ -12,6 +12,10 @@ export interface SubmitQueryData {
   query: string;
 }
 
+export function resultStudentId(result: StudentResult): string {
+  return typeof result.student === 'string' ? result.student : result.student.id;
+}
+
 const submissionsApi = {
   submit: async (courseId: string, assignmentId: string, data: SubmitQueryData) => {
     const response = await apiClient.post<Submission>(
