@@ -377,6 +377,19 @@ class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
     db_type = 'postgresql'
     select_into = 'SELECT * INTO emp_copy FROM employees'
     read_back = 'SELECT COUNT(*) FROM emp_copy'
+    huge_cross_join = ('SELECT a.x FROM generate_series(1, 3000) a(x) '
+                       'CROSS JOIN generate_series(1, 3000) b CROSS JOIN generate_series(1, 3000) c')
+
+    def test_parenthesised_statement_list_stays_one_statement(self):
+        results = self.on_one_connection([
+            'CREATE TABLE audit (id INTEGER); CREATE TABLE audit2 (id INTEGER)',
+            'CREATE RULE log_dept AS ON INSERT TO departments DO ALSO '
+            '(INSERT INTO audit VALUES (NEW.id); INSERT INTO audit2 VALUES (NEW.id))',
+            "INSERT INTO departments VALUES (9, 'x')",
+            'SELECT (SELECT COUNT(*) FROM audit), (SELECT COUNT(*) FROM audit2)',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[3].rows, [[1, 1]])
 
     def test_script_returns_the_last_result(self):
         r = self.run_one('CREATE TEMP TABLE tt AS SELECT id FROM employees; '
@@ -418,8 +431,6 @@ class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
         self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
         self.assertEqual(results[1].rows, [[5]])
         self.assertEqual(results[3].rows, [[0]])
-    huge_cross_join = ('SELECT a.x FROM generate_series(1, 3000) a(x) '
-                       'CROSS JOIN generate_series(1, 3000) b CROSS JOIN generate_series(1, 3000) c')
 
     def test_select_into_falls_back_to_a_plain_statement(self):
         results = self.run_sequence(['SELECT * INTO emp_copy FROM employees',

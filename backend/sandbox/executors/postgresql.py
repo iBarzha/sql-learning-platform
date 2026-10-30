@@ -41,6 +41,11 @@ _TRANSACTION_CONTROL = frozenset({
 })
 # Left over outside every recognised token, these mean the tokenizer may have
 # misread the text (nested /* */, "$" inside a bare identifier, an unclosed quote).
+# Two contrived inputs still get past this check: a nested comment whose outer
+# close sits inside a later literal, and the same $x$ appearing in two bare
+# identifiers (read as one dollar quote). Both fail safe: the text is taken as
+# fewer statements than it holds, so it ends in a server-side syntax error or a
+# result capped like any other; nothing is split inside a literal.
 _UNSAFE_LEFTOVERS = ("'", '"', '$', '/*', '*/')
 _SAVEPOINT = 'sandbox_cursor'
 
@@ -67,21 +72,34 @@ def _split_statements(query: str) -> list[str] | None:
     tokenizer so literals, comments and dollar quotes stay intact.
 
     Pieces that are empty or only comments are dropped. Returns None when the
-    tokenization cannot be trusted; the caller then keeps the plain execute.
+    tokenization cannot be trusted, or when a semicolon sits inside parentheses
+    (CREATE RULE ... DO (a; b) is one statement) or they do not balance; the
+    caller then keeps the plain execute.
     """
     pieces = []
     start = 0
     gap_start = 0
+    depth = 0
     matches = list(_STANDARD_TOKENS.finditer(query))
     for gap_end, next_start in [(m.start(), m.end()) for m in matches] + [(len(query), len(query))]:
         gap = query[gap_start:gap_end]
         if any(mark in gap for mark in _UNSAFE_LEFTOVERS):
             return None
         for offset, char in enumerate(gap):
-            if char == ';':
+            if char == '(':
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                if depth < 0:
+                    return None
+            elif char == ';':
+                if depth:
+                    return None
                 pieces.append(query[start:gap_start + offset])
                 start = gap_start + offset + 1
         gap_start = next_start
+    if depth:
+        return None
     pieces.append(query[start:])
     return [piece.strip() for piece in pieces if _strip_sql_comments(piece, _STANDARD_TOKENS)]
 

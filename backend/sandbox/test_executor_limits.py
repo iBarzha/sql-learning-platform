@@ -3,6 +3,7 @@
 SQLite runs in-process. PostgreSQL and MariaDB run against faked driver
 objects here; the real engines are covered by test_grading_engines.py.
 """
+import re
 from unittest import mock
 
 import psycopg2
@@ -89,6 +90,8 @@ class _FakePgPlainCursor:
                 raise self.conn.declare_error
             return
         if word == 'FETCH':
+            if self.conn.fetch_error is not None:
+                raise self.conn.fetch_error
             columns, rows = self.conn.named_result
             self.description = [(c,) for c in columns]
             self._rows = list(rows[:int(query.split()[2])])
@@ -185,7 +188,6 @@ class PostgresStreamingTests(SimpleTestCase):
 
     def statements(self, conn):
         """Plain-cursor statements with generated cursor names replaced by "c"."""
-        import re
         return [re.sub(r'"sandbox_fetch_[0-9a-f]+"', '"c"', e[1]) for e in conn.log
                 if e[0] == 'plain' and not e[1].startswith('SET ')]
 
@@ -313,6 +315,18 @@ class PostgresStreamingTests(SimpleTestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.affected_rows, 1)
 
+    def test_timeout_during_in_transaction_fetch_leaves_the_transaction_alone(self):
+        executor = PostgreSQLExecutor('fake-host', 5432)
+        executor._connection = conn = _FakePgConnection(
+            named_result=(['x'], []), fetch_error=psycopg2.errors.QueryCanceled('timeout'),
+            transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
+        with self.assertRaises(QueryTimeoutError):
+            executor.execute_query('SELECT x FROM t', timeout=5)
+        self.assertNotIn(('commit',), conn.log)
+        self.assertNotIn(('rollback',), conn.log)
+        self.assertFalse(any(s.startswith(('ROLLBACK', 'COMMIT')) for s in self.statements(conn)))
+        self.assertTrue(conn.autocommit)
+
     def test_failed_transaction_keeps_the_plain_cursor(self):
         _, conn, _ = self.run_query(
             'SELECT x FROM t', plain_result=(['x'], [(1,)]),
@@ -383,7 +397,9 @@ class PostgresStreamingTests(SimpleTestCase):
 
     def test_scripts_kept_whole(self):
         for query in ('BEGIN; SELECT 1', 'SELECT 1; COMMIT', 'INSERT INTO t VALUES (1); END',
-                      'SELECT 1 /* a /* b */ ; */; SELECT 2', 'SELECT a$b FROM t; SELECT 2'):
+                      'SELECT 1 /* a /* b */ ; */; SELECT 2', 'SELECT a$b FROM t; SELECT 2',
+                      'CREATE RULE r AS ON INSERT TO t DO ALSO '
+                      '(INSERT INTO a VALUES (1); INSERT INTO b VALUES (2))'):
             with self.subTest(query=query):
                 _, conn, _ = self.run_query(query, plain_rowcount=1)
                 self.assertEqual(self.statements(conn), [query])
@@ -413,6 +429,8 @@ class _FakeMyCursor:
 
     def execute(self, query, params=None):
         self.conn.log.append(('buffered', query))
+        if query == 'SET SESSION sql_select_limit = DEFAULT' and self.conn.reset_error:
+            raise self.conn.reset_error
         if query.startswith('SET '):
             return
         result = self.conn.result
@@ -456,7 +474,9 @@ class _FakeSSCursor:
 
 
 class _FakeMyConnection:
-    def __init__(self, result=None, rowcount=0, server_status=0, execute_error=None):
+    def __init__(self, result=None, rowcount=0, server_status=0, execute_error=None,
+                 reset_error=None):
+        self.reset_error = reset_error
         self.result = result
         self.rowcount = rowcount
         self.server_status = server_status
@@ -541,7 +561,7 @@ class MariadbStreamingTests(SimpleTestCase):
         statements = [e[1] for e in conn.log if not e[1].startswith('SET max_')]
         self.assertEqual(statements, ['SET SESSION sql_select_limit = %s', 'SELECT x FROM t',
                                       'SET SESSION sql_select_limit = DEFAULT'])
-        self.assertEqual(conn.log[1][0], 'buffered')
+        self.assertIn(('buffered', 'SET SESSION sql_select_limit = %s'), conn.log)
         self.assertEqual(len(conn.unbuffered), 1)
         self.assertTrue(conn.unbuffered[0].closed)   # drained, the transaction stays
         self.assertFalse(conn.closed)
@@ -557,6 +577,15 @@ class MariadbStreamingTests(SimpleTestCase):
         self.assertEqual(conn.log[-1], ('buffered', 'SET SESSION sql_select_limit = DEFAULT'))
         self.assertFalse(result.success)
         self.connect.assert_not_called()
+
+    def test_failed_select_limit_reset_after_success_is_not_swallowed(self):
+        in_trans = pymysql.constants.SERVER_STATUS.SERVER_STATUS_IN_TRANS
+        conn, result = self.run_query(
+            'SELECT x FROM t', result=(['x'], [(1,)]), server_status=in_trans,
+            reset_error=pymysql.err.OperationalError(2013, 'Lost connection'))
+        self.assertTrue(conn.unbuffered[0].closed)
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_message, 'Lost connection')
 
     def test_outside_a_transaction_the_select_limit_is_not_touched(self):
         conn, _ = self.run_query('SELECT 1', result=(['1'], [(1,)]))
@@ -604,6 +633,7 @@ class SplitStatementsTests(SimpleTestCase):
             'SELECT $t$x;$$y$t$; SELECT 2': ['SELECT $t$x;$$y$t$', 'SELECT 2'],
             'SELECT 1 -- c;\n; SELECT 2': ['SELECT 1 -- c;', 'SELECT 2'],
             'SELECT /* ; */ 1; SELECT 2': ['SELECT /* ; */ 1', 'SELECT 2'],
+            "SELECT (1), ')'; SELECT f(2)": ["SELECT (1), ')'", 'SELECT f(2)'],
         }
         for query, expected in cases.items():
             with self.subTest(query=query):
@@ -616,6 +646,10 @@ class SplitStatementsTests(SimpleTestCase):
     def test_untrusted_tokenization_is_refused(self):
         for query in ('SELECT 1 /* a /* b */ ; */; SELECT 2',   # nested comment
                       'SELECT a$b FROM t; SELECT 2',             # $ in a bare identifier
-                      "SELECT 'open; SELECT 2"):                 # unclosed literal
+                      "SELECT 'open; SELECT 2",                  # unclosed literal
+                      'CREATE RULE r AS ON INSERT TO t DO ALSO '
+                      '(INSERT INTO a VALUES (1); INSERT INTO b VALUES (2))',  # ; in parens
+                      'SELECT (1; SELECT 2',                     # unbalanced
+                      'SELECT 1); SELECT (2'):
             with self.subTest(query=query):
                 self.assertIsNone(self.split(query))
