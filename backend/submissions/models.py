@@ -128,6 +128,20 @@ class UserResult(models.Model):
     # Lesson-level row (exercise=NULL): when the student first opened the practice.
     # The lesson's time limit is counted from here, server-side.
     started_at = models.DateTimeField(null=True, blank=True)
+    # Extra time an instructor granted on top of the lesson's limit (lesson-level row).
+    extra_seconds = models.PositiveIntegerField(default=0)
+
+    # An instructor's override of the automatic score, with the reason shown to the student.
+    manual_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    manual_comment = models.TextField(blank=True)
+    manual_set_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+'
+    )
+    manual_set_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'user_results'
@@ -158,6 +172,20 @@ class UserResult(models.Model):
     def __str__(self):
         target = self.lesson.title if self.lesson else (self.assignment.title if self.assignment else 'Unknown')
         return f'{self.student.email} - {target}: {self.best_score}'
+
+    @property
+    def effective_score(self):
+        """The score that counts: the instructor's manual score when set, else the best one."""
+        return self.manual_score if self.manual_score is not None else self.best_score
+
+    @property
+    def max_score(self):
+        """Maximum score of the task this result belongs to; None for the lesson timer row."""
+        if self.exercise_id:
+            return self.exercise.max_score
+        if self.assignment_id:
+            return self.assignment.max_score
+        return None
 
     def update_from_submission(self, submission):
         """Update result based on a new submission (atomic)."""

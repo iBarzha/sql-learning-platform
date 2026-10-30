@@ -55,6 +55,18 @@ class UserResultSerializer(serializers.ModelSerializer):
         ]
 
 
+class TimerActionSerializer(serializers.Serializer):
+    """Instructor's change to one student's lesson clock."""
+    student = serializers.UUIDField()
+    action = serializers.ChoiceField(choices=['reset', 'extend'])
+    minutes = serializers.IntegerField(min_value=1, max_value=180, required=False)
+
+    def validate(self, attrs):
+        if attrs['action'] == 'extend' and 'minutes' not in attrs:
+            raise serializers.ValidationError({'minutes': 'Required for extend.'})
+        return attrs
+
+
 class StudentProgressSerializer(serializers.Serializer):
     """Summary of student progress in a course."""
     student = UserSerializer(read_only=True)

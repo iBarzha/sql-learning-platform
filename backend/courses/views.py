@@ -5,6 +5,7 @@ from django.db.models import Count, Exists, Max, OuterRef, Prefetch, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -26,7 +27,7 @@ from .serializers import (
     ModuleCreateSerializer,
     AttachmentSerializer,
 )
-from config.permissions import IsInstructor, IsCourseInstructor
+from config.permissions import IsInstructor, IsCourseInstructor, require_course_manager
 
 
 class CourseViewSet(viewsets.ModelViewSet):
@@ -366,6 +367,30 @@ class CourseViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+    @action(detail=True, methods=['get'], url_path='timers')
+    def timers(self, request, pk=None):
+        """A student's clock in every published timed lesson (course owner or admin)."""
+        from submissions.timing import course_timers
+
+        course = get_object_or_404(Course, pk=pk)
+        require_course_manager(request.user, course)
+        student = _course_student(course, request.query_params.get('student'))
+        lessons = course.lessons.filter(
+            is_published=True, time_limit_seconds__gt=0,
+        ).exclude(lesson_type='theory').order_by('order', 'created_at')
+        return Response(course_timers(student, lessons))
+
+
+def _course_student(course, student_id):
+    """A user enrolled (in any status) in the course, for the instructor tools."""
+    if not student_id:
+        raise ValidationError({'student': 'This parameter is required.'})
+    enrollment = get_object_or_404(
+        Enrollment.objects.select_related('student'), course=course, student_id=student_id,
+    )
+    return enrollment.student
+
+
 class DatasetViewSet(viewsets.ModelViewSet):
     serializer_class = DatasetSerializer
     permission_classes = [IsAuthenticated]
@@ -697,6 +722,31 @@ class LessonViewSet(viewsets.ModelViewSet):
             report.append(entry)
 
         return Response({'lesson_id': str(lesson.id), 'exercises': report})
+
+    def _managed_lesson(self, course_pk, pk):
+        """The lesson, for its course owner or an admin; 403 for anyone else."""
+        lesson = get_object_or_404(
+            Lesson.objects.select_related('course'), pk=pk, course_id=course_pk,
+        )
+        require_course_manager(self.request.user, lesson.course)
+        return lesson
+
+    @action(detail=True, methods=['post'], url_path='timer')
+    def timer(self, request, course_pk=None, pk=None):
+        """Reset or extend one student's clock in this lesson."""
+        from submissions.serializers import TimerActionSerializer
+        from submissions.timing import extend_timer, reset_timer
+
+        lesson = self._managed_lesson(course_pk, pk)
+        payload = TimerActionSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        if not lesson.time_limit_seconds:
+            return Response({'detail': 'This lesson has no time limit'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        student = _course_student(lesson.course, payload.validated_data['student'])
+        if payload.validated_data['action'] == 'reset':
+            return Response(reset_timer(student, lesson))
+        return Response(extend_timer(student, lesson, payload.validated_data['minutes']))
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsInstructor])
     def reorder(self, request, course_pk=None):

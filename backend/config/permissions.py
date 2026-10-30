@@ -1,4 +1,20 @@
 from rest_framework import permissions
+from rest_framework.exceptions import PermissionDenied
+
+
+def can_manage_course(user, course) -> bool:
+    """The course owner or an admin."""
+    return bool(
+        user.is_authenticated
+        and (course.instructor_id == user.id
+             or user.is_superuser
+             or getattr(user, 'role', None) == 'admin')
+    )
+
+
+def require_course_manager(user, course):
+    if not can_manage_course(user, course):
+        raise PermissionDenied('Not authorized for this course')
 
 
 class IsInstructor(permissions.BasePermission):
