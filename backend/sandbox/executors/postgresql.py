@@ -1,6 +1,9 @@
 """PostgreSQL query executor."""
 
 import logging
+import re
+import uuid
+
 import psycopg2
 from psycopg2 import sql, extensions
 from psycopg2.extras import RealDictCursor
@@ -12,8 +15,35 @@ from ..exceptions import (
     QueryTimeoutError,
     QuerySyntaxError,
 )
+from ..query_validator import _STANDARD_TOKENS, _strip_sql_comments
 
 logger = logging.getLogger(__name__)
+
+# Statements that start with these keywords return rows and are streamed.
+_ROW_QUERY_KEYWORDS = frozenset({'SELECT', 'WITH', 'VALUES', 'TABLE'})
+_FIRST_WORD = re.compile(r'[\s(]*([A-Za-z]+)')
+
+# DECLARE refuses some row queries that run fine on their own (SELECT ... INTO,
+# data-modifying WITH, FOR UPDATE ...). Nothing has executed yet, so these are
+# retried once on the plain cursor, which also reports real syntax errors as before.
+_DECLARE_REJECTED = (
+    psycopg2.errors.SyntaxError,
+    psycopg2.errors.FeatureNotSupported,
+    psycopg2.errors.InvalidCursorDefinition,
+)
+
+
+def _is_row_query(query: str) -> bool:
+    """A single SELECT / WITH / VALUES / TABLE statement, ignoring comments.
+
+    Several statements in one string keep the plain cursor: DECLARE would take
+    only the first of them, while the plain cursor returns the last result.
+    """
+    body = _strip_sql_comments(query, _STANDARD_TOKENS).rstrip('; ')
+    if not body or ';' in body:
+        return False
+    match = _FIRST_WORD.match(body)
+    return bool(match) and match.group(1).upper() in _ROW_QUERY_KEYWORDS
 
 
 class PostgreSQLExecutor(BaseExecutor):
@@ -70,6 +100,12 @@ class PostgreSQLExecutor(BaseExecutor):
                 except Exception:
                     pass  # ROLE-level timeout takes precedence
 
+                if _is_row_query(query):
+                    try:
+                        return self._execute_streaming(query)
+                    except _DECLARE_REJECTED:
+                        pass  # run it as a plain statement below
+
                 result, elapsed_ms = self._measure_time(cur.execute, query)
 
                 # Check if query returns data
@@ -105,6 +141,57 @@ class PostgreSQLExecutor(BaseExecutor):
                 success=False,
                 error_message=error_msg,
             )
+
+    def _execute_streaming(self, query: str) -> QueryResult:
+        """Run a row query through a server-side cursor; at most MAX_RESULT_ROWS + 1
+        rows ever leave the server.
+
+        The cursor lives in a short explicit transaction rather than WITH HOLD in
+        autocommit: a holdable cursor is materialised in full at the implicit commit,
+        after statement_timeout has already been disarmed, so a huge join would run
+        unbounded on the server. Here the DECLARE and the FETCH are each ordinary
+        statements under statement_timeout, and only the fetched rows are computed
+        when the plan allows it. The transaction is committed, as autocommit would
+        have done, and autocommit is restored whatever happens.
+        """
+        conn = self._connection
+        conn.autocommit = False
+        try:
+            cur = conn.cursor(name=f'sandbox_fetch_{uuid.uuid4().hex[:12]}')
+            cur.itersize = MAX_RESULT_ROWS + 1
+
+            def run():
+                cur.execute(query)
+                return cur.fetchmany(MAX_RESULT_ROWS + 1)
+
+            # The rows are computed during FETCH, so both statements are timed.
+            fetched, elapsed_ms = self._measure_time(run)
+            # A named cursor learns its columns from the first FETCH.
+            columns = [desc[0] for desc in cur.description] if cur.description else []
+            cur.close()
+            conn.commit()
+        except BaseException:
+            try:
+                conn.rollback()
+            except psycopg2.Error:
+                pass
+            raise
+        finally:
+            if not conn.closed:
+                conn.autocommit = True
+
+        rows = [list(row) for row in fetched]
+        truncated = len(rows) > MAX_RESULT_ROWS
+        if truncated:
+            rows = rows[:MAX_RESULT_ROWS]
+        return QueryResult(
+            success=True,
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            execution_time_ms=elapsed_ms,
+            truncated=truncated,
+        )
 
     def initialize_schema(self, schema_sql: str) -> QueryResult:
         """Initialize PostgreSQL schema."""

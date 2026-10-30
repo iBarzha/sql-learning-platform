@@ -213,8 +213,112 @@ class SqliteEngineTests(SqlEngineMixin, TestCase):
     db_type = 'sqlite'
 
 
-class PostgresEngineTests(SqlEngineMixin, TestCase):
+SERIES_2500 = ('WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 2500) '
+               'SELECT x FROM n')
+
+
+class StreamingMixin:
+    """Server-side streaming: only MAX_RESULT_ROWS + 1 rows may leave the sandbox.
+
+    Subclasses set `huge_cross_join`, a result far too large to compute or transfer
+    in full; it must come back capped and fast because only the fetched rows are produced.
+    """
+
+    huge_cross_join = ''
+
+    def run_one(self, query, timeout=10):
+        from sandbox.pool import get_sandbox_pool
+        return get_sandbox_pool().execute_query(self.db_type, query, SQL_SCHEMA, SQL_SEED,
+                                                timeout=timeout)
+
+    def run_sequence(self, queries):
+        from sandbox.pool import get_sandbox_pool
+        return get_sandbox_pool().execute_sequence(self.db_type, queries, SQL_SCHEMA, SQL_SEED,
+                                                   timeout=10)
+
+    def test_large_result_is_capped(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        r = self.run_one(SERIES_2500)
+        self.assertTrue(r.success, r.error_message)
+        self.assertEqual(r.columns, ['x'])
+        self.assertEqual(len(r.rows), MAX_RESULT_ROWS)
+        self.assertEqual(r.row_count, MAX_RESULT_ROWS)
+        self.assertEqual([row[0] for row in r.rows[:3]], [1, 2, 3])
+        self.assertTrue(r.truncated)
+
+    def test_huge_result_is_not_computed_in_full(self):
+        import time
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        start = time.monotonic()
+        r = self.run_one(self.huge_cross_join, timeout=5)
+        self.assertTrue(r.success, r.error_message)
+        self.assertEqual(len(r.rows), MAX_RESULT_ROWS)
+        self.assertTrue(r.truncated)
+        self.assertLess(time.monotonic() - start, 5)
+
+    def test_empty_select_keeps_columns(self):
+        r = self.run_one('SELECT id, name FROM employees WHERE id < 0')
+        self.assertTrue(r.success, r.error_message)
+        self.assertEqual(r.columns, ['id', 'name'])
+        self.assertEqual(r.rows, [])
+        self.assertEqual(r.row_count, 0)
+        self.assertFalse(r.truncated)
+
+    def test_dml_reports_affected_rows(self):
+        results = self.run_sequence([
+            'UPDATE employees SET salary = salary + 1000 WHERE dept_id = 1',
+            'SELECT COUNT(*) FROM employees WHERE salary > 5500',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[0].affected_rows, 2)
+        self.assertEqual(results[0].columns, [])
+        self.assertEqual(results[1].rows, [[2]])
+
+    def test_connection_is_usable_after_a_truncated_result(self):
+        results = self.run_sequence([
+            'CREATE TABLE notes (id INTEGER)',
+            SERIES_2500,
+            'INSERT INTO notes VALUES (1)',
+            'SELECT COUNT(*) FROM notes',
+        ])
+        self.assertEqual(len(results), 4, [r.error_message for r in results])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertTrue(results[1].truncated)
+        self.assertEqual(results[3].rows, [[1]])
+
+    def test_syntax_error_still_fails(self):
+        r = self.run_one('SELECT FROM WHERE')
+        self.assertFalse(r.success)
+        self.assertTrue(r.error_message)
+
+
+class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
     db_type = 'postgresql'
+    huge_cross_join = ('SELECT a.x FROM generate_series(1, 3000) a(x) '
+                       'CROSS JOIN generate_series(1, 3000) b CROSS JOIN generate_series(1, 3000) c')
+
+    def test_select_into_falls_back_to_a_plain_statement(self):
+        results = self.run_sequence(['SELECT * INTO emp_copy FROM employees',
+                                     'SELECT COUNT(*) FROM emp_copy'])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[1].rows, [[5]])
+
+    def test_data_modifying_with_falls_back_to_a_plain_statement(self):
+        results = self.run_sequence([
+            'WITH gone AS (DELETE FROM employees WHERE dept_id = 1 RETURNING id) '
+            'SELECT COUNT(*) FROM gone',
+            'SELECT COUNT(*) FROM employees',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[0].rows, [[2]])
+        self.assertEqual(results[1].rows, [[3]])
+
+    def test_timeout_still_applies_to_streamed_queries(self):
+        import time
+        start = time.monotonic()
+        r = self.run_one(self.huge_cross_join + ' ORDER BY 1 DESC', timeout=1)
+        self.assertFalse(r.success)
+        self.assertLess(time.monotonic() - start, 9)
 
     def test_truncated_result_is_still_graded_exactly(self):
         # 1500 rows exceed MAX_RESULT_ROWS; the verdict must come from EXCEPT ALL.
@@ -224,8 +328,9 @@ class PostgresEngineTests(SqlEngineMixin, TestCase):
         self.assertFalse(self.grade(almost, ref).passed)
 
 
-class MariadbEngineTests(SqlEngineMixin, TestCase):
+class MariadbEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
     db_type = 'mariadb'
+    huge_cross_join = 'SELECT a.seq FROM seq_1_to_3000 a, seq_1_to_3000 b, seq_1_to_3000 c'
 
     def test_truncated_result_is_still_graded_exactly(self):
         ref = 'SELECT seq FROM seq_1_to_1500'
