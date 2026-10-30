@@ -75,7 +75,7 @@ class PostgreSQLExecutor(BaseExecutor):
                 # Check if query returns data
                 if cur.description:
                     columns = [desc[0] for desc in cur.description]
-                    rows = [list(row) for row in cur.fetchall()]
+                    rows = [list(row) for row in cur.fetchmany(MAX_RESULT_ROWS + 1)]
                     truncated = len(rows) > MAX_RESULT_ROWS
                     if truncated:
                         rows = rows[:MAX_RESULT_ROWS]
