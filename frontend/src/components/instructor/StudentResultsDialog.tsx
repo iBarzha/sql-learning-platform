@@ -67,7 +67,8 @@ function ResultRow({ result }: { result: StudentResult }) {
 
   // An empty score is allowed with a comment (sent as null); a typed score must be in range.
   const scoreEmpty = score.trim() === '';
-  const parsedScore = scoreEmpty ? null : Number(score);
+  // Rounded to the two decimals the server stores, so it never rejects the value.
+  const parsedScore = scoreEmpty ? null : Math.round(Number(score) * 100) / 100;
   const scoreInRange = parsedScore !== null && Number.isFinite(parsedScore) && parsedScore >= 0 && parsedScore <= result.max_score;
   const canSave = scoreEmpty ? comment.trim() !== '' : scoreInRange;
 
@@ -101,7 +102,7 @@ function ResultRow({ result }: { result: StudentResult }) {
           type="number"
           min={0}
           max={result.max_score}
-          step="any"
+          step="0.01"
           className="w-28"
           placeholder={t('students.results.manualScore')}
           aria-label={t('students.results.manualScore')}

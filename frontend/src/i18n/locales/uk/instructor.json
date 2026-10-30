@@ -116,6 +116,11 @@
     "regradeDone_many": "Перевірено {{count}} відповідей, змінено оцінок: {{changed}}",
     "regradeDone_other": "Перевірено {{count}} відповіді, змінено оцінок: {{changed}}",
     "regradeTruncated": "Перевірено не всі відповіді: спрацювало обмеження за кількістю або часом.",
+    "regradeErrors": "Не вдалося перевірити відповідей: {{count}}",
+    "regradeErrors_one": "Не вдалося перевірити відповідей: {{count}}",
+    "regradeErrors_few": "Не вдалося перевірити відповідей: {{count}}",
+    "regradeErrors_many": "Не вдалося перевірити відповідей: {{count}}",
+    "regradeErrors_other": "Не вдалося перевірити відповідей: {{count}}",
     "regradeFailed": "Не вдалося перевірити відповіді заново"
   },
   "lessonForm": {

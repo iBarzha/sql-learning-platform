@@ -142,9 +142,15 @@ export function CourseManagePage() {
     if (!regradeLesson) return;
     try {
       const summary = await regradeMutation.mutateAsync(regradeLesson.id);
+      const notes = [
+        summary.truncated ? t('courseManage.regradeTruncated') : null,
+        summary.errors > 0 ? t('courseManage.regradeErrors', { count: summary.errors }) : null,
+      ].filter((note): note is string => note !== null);
       toast.success(
         t('courseManage.regradeDone', { count: summary.submissions, changed: summary.changed }),
-        summary.truncated ? { description: t('courseManage.regradeTruncated') } : undefined
+        notes.length
+          ? { description: <>{notes.map((note) => <div key={note}>{note}</div>)}</> }
+          : undefined
       );
     } catch (err) {
       toast.error(getApiErrorMessage(err, t('courseManage.regradeFailed')));

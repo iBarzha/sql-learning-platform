@@ -229,6 +229,8 @@ export interface RegradeSummary {
   submissions: number;
   changed: number;
   truncated: boolean;
+  /** Answers whose grading failed (e.g. the sandbox was down); they were left as they were. */
+  errors: number;
 }
 
 export interface Enrollment {

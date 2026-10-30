@@ -108,6 +108,9 @@
     "regradeDone_one": "Regraded {{count}} answer, scores changed: {{changed}}",
     "regradeDone_other": "Regraded {{count}} answers, scores changed: {{changed}}",
     "regradeTruncated": "Not every answer was regraded: the count or time limit was reached.",
+    "regradeErrors": "Answers that could not be graded: {{count}}",
+    "regradeErrors_one": "Answers that could not be graded: {{count}}",
+    "regradeErrors_other": "Answers that could not be graded: {{count}}",
     "regradeFailed": "Failed to regrade the answers"
   },
   "lessonForm": {
