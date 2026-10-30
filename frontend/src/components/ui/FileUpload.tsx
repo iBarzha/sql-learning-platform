@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface FileUploadProps {
   onUpload: (file: File) => void;
@@ -31,6 +32,7 @@ export default function FileUpload({
   accept,
 }: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation('common');
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');
 
@@ -93,15 +95,11 @@ export default function FileUpload({
           accept={accept}
         />
         {isUploading ? (
-          <p className="text-sm text-muted-foreground">Uploading...</p>
+          <p className="text-sm text-muted-foreground">{t('upload.uploading')}</p>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
-              Drop file here or click to browse
-            </p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              Max {maxSizeMB}MB
-            </p>
+            <p className="text-sm text-muted-foreground">{t('upload.drop')}</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">{t('upload.max', { mb: maxSizeMB })}</p>
           </>
         )}
       </div>

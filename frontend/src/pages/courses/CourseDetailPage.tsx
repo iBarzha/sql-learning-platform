@@ -56,7 +56,7 @@ function LessonRow({ lesson, index, courseId }: { lesson: Lesson; index: number;
       className="flex items-center gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
     >
       <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
-        {index + 1}
+        {index}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -105,7 +105,7 @@ function LessonsList({
     return (
       <div className="space-y-2">
         {lessons.map((lesson, index) => (
-          <LessonRow key={lesson.id} lesson={lesson} index={index} courseId={courseId} />
+          <LessonRow key={lesson.id} lesson={lesson} index={index + 1} courseId={courseId} />
         ))}
       </div>
     );

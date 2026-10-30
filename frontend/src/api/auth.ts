@@ -114,10 +114,51 @@ export const authApi = {
   },
 };
 
+export interface AdminUpdateUserData {
+  role?: 'student' | 'instructor' | 'admin';
+  is_active?: boolean;
+}
+
+export interface AdminResetPasswordResponse {
+  user: User;
+  temporary_password: string;
+}
+
+export interface AdminCourseOption {
+  id: string;
+  title: string;
+}
+
 export const adminApi = {
   createUser: async (data: AdminCreateUserData): Promise<AdminCreateUserResponse> => {
     const response = await apiClient.post<AdminCreateUserResponse>('/auth/admin/create-user/', data);
     return response.data;
+  },
+
+  updateUser: async (id: string, data: AdminUpdateUserData): Promise<User> => {
+    const response = await apiClient.patch<User>(`/auth/admin/users/${id}/`, data);
+    return response.data;
+  },
+
+  resetPassword: async (id: string): Promise<AdminResetPasswordResponse> => {
+    const response = await apiClient.post<AdminResetPasswordResponse>(
+      `/auth/admin/users/${id}/reset-password/`
+    );
+    return response.data;
+  },
+
+  deleteUser: async (id: string): Promise<void> => {
+    await apiClient.delete(`/auth/admin/users/${id}/`);
+  },
+
+  // Published courses the admin is not enrolled in; the plain course list only
+  // shows courses the admin teaches.
+  listAvailableCourses: async (): Promise<AdminCourseOption[]> => {
+    const response = await apiClient.get<AdminCourseOption[] | PaginatedResponse<AdminCourseOption>>(
+      '/courses/available/'
+    );
+    const data = response.data;
+    return Array.isArray(data) ? data : data.results;
   },
 
   listUsers: async (params?: {

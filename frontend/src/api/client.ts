@@ -1,7 +1,9 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/store/authStore';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// A production build without VITE_API_URL talks to the host it was served from,
+// so the same image works behind any address or port.
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
 export const apiClient = axios.create({
   baseURL: `${API_URL}/api`,

@@ -1,10 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import datasetsApi, { type DatasetCreateData } from '@/api/datasets';
+import coursesApi from '@/api/courses';
 
 export function useMyDatasets() {
   return useQuery({
     queryKey: ['datasets', 'mine'],
     queryFn: () => datasetsApi.list(),
+  });
+}
+
+export function useCourseDatasets(courseId: string | undefined) {
+  return useQuery({
+    queryKey: ['course', courseId, 'datasets'],
+    queryFn: () => coursesApi.getDatasets(courseId!),
+    enabled: !!courseId,
   });
 }
 

@@ -104,10 +104,10 @@ class SessionResetView(APIView):
             )
 
         # Verify session ownership before allowing reset
-        from .session_manager import get_session_manager
+        from .session_manager import get_session_manager, owned_by
         manager = get_session_manager()
         session = manager._sessions.get(session_id)
-        if session and session.user_id is not None and session.user_id != request.user.id:
+        if session and not owned_by(session, request.user.id):
             return Response(
                 {'error': 'Not authorized to reset this session'},
                 status=status.HTTP_403_FORBIDDEN,

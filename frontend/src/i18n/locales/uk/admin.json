@@ -56,6 +56,103 @@
     "noUsers": "Користувачів не знайдено",
     "noUsersYet": "Користувачів ще немає",
     "mustChangePassword": "Потрібна зміна пароля",
-    "createdAt": "Створено"
+    "createdAt": "Створено",
+    "noName": "Без імені",
+    "you": "це ви",
+    "roleStudent": "Студент",
+    "roleInstructor": "Викладач",
+    "roleAdmin": "Адмін",
+    "active": "Активний",
+    "inactive": "Вимкнений",
+    "lastLogin": "Останній вхід",
+    "neverLoggedIn": "не входив",
+    "resetPassword": "Скинути пароль",
+    "resetPasswordTitle": "Новий тимчасовий пароль",
+    "resetPasswordInstructions": "Передайте цей пароль користувачу. При наступному вході його попросять встановити власний.",
+    "temporaryPassword": "Тимчасовий пароль",
+    "deleteUser": "Видалити",
+    "deleteUserTitle": "Видалити користувача?",
+    "deleteUserConfirm": "Обліковий запис {{email}} і всі його відповіді буде видалено без можливості відновлення.",
+    "cancel": "Скасувати",
+    "confirmDelete": "Так, видалити",
+    "actionFailed": "Не вдалося виконати дію"
+  },
+  "dashboard": {
+    "title": "Панель адміністратора",
+    "subtitle": "Метрики сервера, бази даних і застосунку в реальному часі",
+    "updated": "Оновлено {{when}}",
+    "refresh": "оновити",
+    "loadError": "Не вдалося завантажити панель адміністратора",
+    "never": "ніколи",
+    "ago": {
+      "s": "{{n}} с тому",
+      "m": "{{n}} хв тому",
+      "h": "{{n}} год тому",
+      "d": "{{n}} д тому"
+    },
+    "uptime": {
+      "dh": "{{d}} д {{h}} год",
+      "hm": "{{h}} год {{m}} хв",
+      "m": "{{m}} хв"
+    },
+    "tiles": {
+      "users": "Користувачі",
+      "usersHint": "{{count}} активних за 24 год",
+      "courses": "Курси",
+      "coursesHint": "опубліковано {{count}}",
+      "lessons": "Уроки",
+      "lessonsHint": "опубліковано {{count}}",
+      "exercises": "Вправи",
+      "datasets": "Датасети",
+      "datasetsHint": "{{system}} системних / {{owned}} викладачів",
+      "submissions": "Відповіді",
+      "submissionsHint": "{{count}} за 24 год"
+    },
+    "server": {
+      "title": "Сервер",
+      "description": "Аптайм: {{uptime}} · {{cpu}} CPU",
+      "unavailable": "метрики недоступні",
+      "cpu": "CPU",
+      "memory": "Пам'ять",
+      "disk": "Диск",
+      "noPsutil": "psutil на цьому сервері недоступний"
+    },
+    "database": {
+      "title": "База даних",
+      "connected": "підключено",
+      "offline": "офлайн",
+      "description": "{{engine}} @ {{host}}:{{port}} · {{name}} · розмір: {{size}}",
+      "topTables": "Найбільші таблиці за кількістю рядків",
+      "noTables": "Таблиць ще немає",
+      "rows": "{{count}} рядків · {{size}}"
+    },
+    "sandbox": {
+      "title": "Пул пісочниць",
+      "description": "Доступність контейнерів за типом бази",
+      "running": "Пул працює",
+      "yes": "так",
+      "no": "ні",
+      "noData": "Немає даних про пул",
+      "availability": "доступно · {{busy}} зайнято"
+    },
+    "roles": {
+      "title": "Користувачі за ролями",
+      "admins": "Адміністратори",
+      "instructors": "Викладачі",
+      "students": "Студенти",
+      "active24h": "Активні за останні 24 год"
+    },
+    "recentUsers": {
+      "title": "Нові користувачі",
+      "empty": "Користувачів немає",
+      "seen": "був {{when}}",
+      "neverLoggedIn": "ще не входив"
+    },
+    "recentSubmissions": {
+      "title": "Останні відповіді",
+      "empty": "Відповідей немає",
+      "correct": "правильно",
+      "wrong": "неправильно"
+    }
   }
 }

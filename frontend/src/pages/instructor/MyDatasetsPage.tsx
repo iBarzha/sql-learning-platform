@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,7 @@ const emptyForm: FormState = {
 };
 
 export function MyDatasetsPage() {
+  const { t } = useTranslation('instructor');
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
 
@@ -129,7 +131,7 @@ export function MyDatasetsPage() {
       }
       setShowForm(false);
     } catch (err) {
-      setApiError(getApiErrorMessage(err, 'Failed to save dataset'));
+      setApiError(getApiErrorMessage(err, t('datasets.errors.save')));
     }
   }
 
@@ -146,7 +148,7 @@ export function MyDatasetsPage() {
       setEditingId(undefined);
       setShowForm(true);
     } catch (err) {
-      setApiError(getApiErrorMessage(err, 'Failed to parse SQL file'));
+      setApiError(getApiErrorMessage(err, t('datasets.errors.parse')));
     }
   }
 
@@ -158,7 +160,7 @@ export function MyDatasetsPage() {
       const result = await datasetsApi.preview(ds.id);
       setPreviewResult(result);
     } catch (err) {
-      const msg = getApiErrorMessage(err, 'Preview failed');
+      const msg = getApiErrorMessage(err, t('datasets.errors.preview'));
       setPreviewResult({ success: false, error_message: msg });
     } finally {
       setPreviewLoading(false);
@@ -195,7 +197,7 @@ export function MyDatasetsPage() {
       setShowGenerator(false);
       setShowForm(true);
     } catch (err) {
-      setGenError(getApiErrorMessage(err, 'Generation failed'));
+      setGenError(getApiErrorMessage(err, t('datasets.errors.generate')));
     } finally {
       setGenLoading(false);
     }
@@ -219,7 +221,7 @@ export function MyDatasetsPage() {
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>{getApiErrorMessage(error, 'Failed to load datasets')}</AlertDescription>
+        <AlertDescription>{getApiErrorMessage(error, t('datasets.errors.load'))}</AlertDescription>
       </Alert>
     );
   }
@@ -230,11 +232,9 @@ export function MyDatasetsPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Database className="h-6 w-6" />
-            My Datasets
+            {t('datasets.title')}
           </h1>
-          <p className="text-muted-foreground">
-            Reusable schemas and seed data for your courses
-          </p>
+          <p className="text-muted-foreground">{t('datasets.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <input
@@ -250,15 +250,15 @@ export function MyDatasetsPage() {
           />
           <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4 mr-2" />
-            Upload SQL
+            {t('datasets.uploadSql')}
           </Button>
           <Button variant="outline" onClick={() => { setGenError(''); setShowGenerator(true); }}>
             <Sparkles className="h-4 w-4 mr-2" />
-            Generate with AI
+            {t('datasets.generateAi')}
           </Button>
           <Button onClick={openNew}>
             <Plus className="h-4 w-4 mr-2" />
-            New Dataset
+            {t('datasets.newDataset')}
           </Button>
         </div>
       </div>
@@ -269,33 +269,31 @@ export function MyDatasetsPage() {
         </Alert>
       )}
 
-      <DatasetSection title="Your datasets" datasets={grouped.own} onEdit={openEdit} onDelete={(id) => setDeleteId(id)} onPreview={handlePreview} canManage emptyText="You haven't created any datasets yet." />
+      <DatasetSection title={t('datasets.sections.own')} datasets={grouped.own} onEdit={openEdit} onDelete={(id) => setDeleteId(id)} onPreview={handlePreview} canManage emptyText={t('datasets.ownEmpty')} />
 
       {grouped.system.length > 0 && (
-        <DatasetSection title="System datasets" datasets={grouped.system} onPreview={handlePreview} />
+        <DatasetSection title={t('datasets.sections.system')} datasets={grouped.system} onPreview={handlePreview} />
       )}
 
       {isAdmin && grouped.others.length > 0 && (
-        <DatasetSection title="Other instructors' datasets" datasets={grouped.others} onEdit={openEdit} onDelete={(id) => setDeleteId(id)} onPreview={handlePreview} canManage />
+        <DatasetSection title={t('datasets.sections.others')} datasets={grouped.others} onEdit={openEdit} onDelete={(id) => setDeleteId(id)} onPreview={handlePreview} canManage />
       )}
 
       {/* Create/Edit dialog */}
       <Dialog open={showForm} onOpenChange={(o) => !o && setShowForm(false)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? 'Edit Dataset' : 'New Dataset'}</DialogTitle>
-            <DialogDescription>
-              Define schema and seed SQL. This dataset becomes selectable in lesson exercises.
-            </DialogDescription>
+            <DialogTitle>{editingId ? t('datasets.form.editTitle') : t('datasets.form.createTitle')}</DialogTitle>
+            <DialogDescription>{t('datasets.form.description')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Name *</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g., Library System" />
+                <Label>{t('datasets.form.name')} *</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('datasets.form.namePlaceholder')} />
               </div>
               <div className="space-y-2">
-                <Label>Database Type *</Label>
+                <Label>{t('datasets.form.dbType')} *</Label>
                 <Select value={form.database_type} onValueChange={(v) => setForm({ ...form, database_type: v })}>
                   <SelectTrigger>
                     <SelectValue />
@@ -309,36 +307,36 @@ export function MyDatasetsPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Description</Label>
-              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What's in this dataset?" />
+              <Label>{t('datasets.form.descriptionLabel')}</Label>
+              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('datasets.form.descriptionPlaceholder')} />
             </div>
             <div className="space-y-2">
-              <Label>Schema SQL (CREATE TABLE / ALTER / DROP)</Label>
+              <Label>{t('datasets.form.schema')}</Label>
               <SqlEditor
                 value={form.schema_sql}
                 onChange={(v) => setForm({ ...form, schema_sql: v })}
                 height="160px"
-                placeholder="CREATE TABLE users (...);"
+                placeholder={t('datasets.form.schemaPlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label>Seed SQL (INSERT statements)</Label>
+              <Label>{t('datasets.form.seed')}</Label>
               <SqlEditor
                 value={form.seed_sql}
                 onChange={(v) => setForm({ ...form, seed_sql: v })}
                 height="160px"
-                placeholder="INSERT INTO users VALUES ...;"
+                placeholder={t('datasets.form.seedPlaceholder')}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>{t('datasets.form.cancel')}</Button>
             <Button
               onClick={handleSave}
               disabled={!form.name.trim() || !form.schema_sql.trim() || createMutation.isPending || updateMutation.isPending}
             >
               {(createMutation.isPending || updateMutation.isPending) && <Spinner size="sm" className="mr-2" />}
-              {editingId ? 'Save Changes' : 'Create Dataset'}
+              {editingId ? t('datasets.form.save') : t('datasets.form.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -350,7 +348,7 @@ export function MyDatasetsPage() {
           <DialogHeader>
             <DialogTitle>{previewDataset?.name}</DialogTitle>
             <DialogDescription>
-              {previewDataset?.description || 'Dataset preview'}
+              {previewDataset?.description || t('datasets.previewDialog.description')}
             </DialogDescription>
           </DialogHeader>
           {previewLoading ? (
@@ -365,7 +363,7 @@ export function MyDatasetsPage() {
             ) : (
               <div className="space-y-3">
                 <div className="text-xs text-muted-foreground">
-                  {previewResult.row_count} rows · {previewResult.execution_time_ms}ms
+                  {t('datasets.previewDialog.rows', { count: previewResult.row_count, ms: previewResult.execution_time_ms })}
                 </div>
                 <div className="overflow-auto border rounded-md">
                   <table className="text-sm w-full">
@@ -401,12 +399,9 @@ export function MyDatasetsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5" />
-              Generate Dataset with AI
+              {t('datasets.generator.title')}
             </DialogTitle>
-            <DialogDescription>
-              Describe what you want and Gemini will generate matching schema + seed data.
-              You can edit the result before saving.
-            </DialogDescription>
+            <DialogDescription>{t('datasets.generator.description')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {genError && (
@@ -415,34 +410,32 @@ export function MyDatasetsPage() {
               </Alert>
             )}
             <div className="space-y-2">
-              <Label>Topic *</Label>
+              <Label>{t('datasets.generator.topic')} *</Label>
               <Textarea
                 value={genTopic}
                 onChange={(e) => setGenTopic(e.target.value)}
-                placeholder="e.g., A small bookstore with customers, books, authors and orders. Include returns and bestseller flags."
+                placeholder={t('datasets.generator.topicPlaceholder')}
                 rows={3}
                 disabled={genLoading}
               />
-              <p className="text-xs text-muted-foreground">
-                Describe entities, relationships, and any specific data you want to see.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('datasets.generator.topicHint')}</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Size</Label>
+                <Label>{t('datasets.generator.size')}</Label>
                 <Select value={genSize} onValueChange={(v) => setGenSize(v as 'small' | 'medium' | 'large')} disabled={genLoading}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="small">Small (~10 rows)</SelectItem>
-                    <SelectItem value="medium">Medium (~50 rows)</SelectItem>
-                    <SelectItem value="large">Large (~200 rows)</SelectItem>
+                    <SelectItem value="small">{t('datasets.generator.small')}</SelectItem>
+                    <SelectItem value="medium">{t('datasets.generator.medium')}</SelectItem>
+                    <SelectItem value="large">{t('datasets.generator.large')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Database Type</Label>
+                <Label>{t('datasets.generator.dbType')}</Label>
                 <Select value={genDbType} onValueChange={setGenDbType} disabled={genLoading}>
                   <SelectTrigger>
                     <SelectValue />
@@ -458,11 +451,11 @@ export function MyDatasetsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowGenerator(false)} disabled={genLoading}>
-              Cancel
+              {t('datasets.generator.cancel')}
             </Button>
             <Button onClick={handleGenerate} disabled={!genTopic.trim() || genLoading}>
               {genLoading ? <Spinner size="sm" className="mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              {genLoading ? 'Generating...' : 'Generate'}
+              {genLoading ? t('datasets.generator.generating') : t('datasets.generator.generate')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -472,16 +465,14 @@ export function MyDatasetsPage() {
       <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Dataset</DialogTitle>
-            <DialogDescription>
-              This permanently deletes the dataset. Lessons that reference it will lose the link.
-            </DialogDescription>
+            <DialogTitle>{t('datasets.delete.title')}</DialogTitle>
+            <DialogDescription>{t('datasets.delete.description')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>{t('datasets.delete.cancel')}</Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending && <Spinner size="sm" className="mr-2" />}
-              Delete
+              {t('datasets.delete.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -501,15 +492,16 @@ interface SectionProps {
 }
 
 function DatasetSection({ title, datasets, onEdit, onDelete, onPreview, canManage, emptyText }: SectionProps) {
+  const { t } = useTranslation('instructor');
   return (
     <Card variant="glass">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription>{datasets.length} datasets</CardDescription>
+        <CardDescription>{t('datasets.count', { count: datasets.length })}</CardDescription>
       </CardHeader>
       <CardContent>
         {datasets.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">{emptyText ?? 'No datasets'}</p>
+          <p className="text-sm text-muted-foreground text-center py-6">{emptyText ?? t('datasets.noDatasets')}</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {datasets.map((ds) => (
@@ -522,17 +514,17 @@ function DatasetSection({ title, datasets, onEdit, onDelete, onPreview, canManag
                   <Badge variant="outline" className="shrink-0 text-xs">{ds.database_type}</Badge>
                 </div>
                 {ds.created_by_name && (
-                  <p className="text-xs text-muted-foreground">by {ds.created_by_name}</p>
+                  <p className="text-xs text-muted-foreground">{t('datasets.by', { name: ds.created_by_name })}</p>
                 )}
                 <div className="flex items-center gap-1 pt-2">
                   <Button variant="ghost" size="sm" onClick={() => onPreview(ds)}>
                     <Play className="h-3 w-3 mr-1" />
-                    Preview
+                    {t('datasets.preview')}
                   </Button>
                   {canManage && onEdit && (
                     <Button variant="ghost" size="sm" onClick={() => onEdit(ds)}>
                       <Edit className="h-3 w-3 mr-1" />
-                      Edit
+                      {t('datasets.edit')}
                     </Button>
                   )}
                   {canManage && onDelete && (

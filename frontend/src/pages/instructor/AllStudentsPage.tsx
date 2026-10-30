@@ -102,10 +102,8 @@ export function AllStudentsPage() {
         <CardHeader>
           <CardTitle>{t('students.allStudents')}</CardTitle>
           <CardDescription>
-            {t('students.studentsAcrossCourses', {
-              studentCount: students.length,
-              courseCount: courses.length,
-            })}
+            {t('students.studentsN', { count: students.length })}{' '}
+            {t('students.onCoursesN', { count: courses.length })}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -161,7 +159,7 @@ export function AllStudentsPage() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-sm font-medium">
-                      {item.enrollments.length} {item.enrollments.length === 1 ? 'course' : 'courses'}
+                      {t('students.courseCount', { count: item.enrollments.length })}
                     </div>
                   </div>
                 </div>

@@ -57,6 +57,11 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Behind the stack's own ingress (docker-compose.server.yml) the client address arrives in
+# X-Real-IP; without this every per-IP rate limit would count the ingress container.
+if os.getenv('USE_X_REAL_IP', 'False').lower() == 'true':
+    MIDDLEWARE.insert(0, 'config.middleware.RealIPMiddleware')
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
@@ -133,6 +138,7 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'EXCEPTION_HANDLER': 'config.ratelimit.exception_handler',
     # In production only return JSON. The browsable HTML UI is dev-only.
     'DEFAULT_RENDERER_CLASSES': (
         ('rest_framework.renderers.JSONRenderer',)
@@ -146,6 +152,8 @@ REST_FRAMEWORK = {
 
 # Simple JWT
 SIMPLE_JWT = {
+    # Without this the admin dashboard reports every user as "never logged in".
+    'UPDATE_LAST_LOGIN': True,
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=2),
     'ROTATE_REFRESH_TOKENS': True,
@@ -199,3 +207,5 @@ if not DEBUG:
         SECURE_HSTS_PRELOAD = True
         SECURE_SSL_REDIRECT = True
         SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+        # Container health checks call these over plain HTTP from inside the stack.
+        SECURE_REDIRECT_EXEMPT = [r'^api/(health|ready)/$']

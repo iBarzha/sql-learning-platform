@@ -43,6 +43,9 @@ staticfiles/
 .env
 .env.local
 .env.production
+.env.demo
+.env.server
+.env.server.local
 .env.*.local
 
 # IDE
@@ -106,3 +109,7 @@ temp/
 *.key
 secrets/
 CLAUDE.md
+
+# Old server backup (dumps, certificates) and the SSH helper with its credentials
+server-backup/
+remote_exec.py

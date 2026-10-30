@@ -1,9 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { adminApi } from '@/api/auth';
 import type { AdminCreateUserData } from '@/api/auth';
+import type { User } from '@/types';
+import { useAuthStore } from '@/store/authStore';
 import { useCourses } from '@/hooks/queries/useCourses';
+import {
+  useAdminUsers,
+  useAvailableCourses,
+  useCreateUser,
+  useDeleteUser,
+  useResetUserPassword,
+  useUpdateUser,
+} from '@/hooks/queries/useAdminUsers';
 import { getApiErrorMessage } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -35,11 +44,27 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  KeyRound,
+  Trash2,
 } from 'lucide-react';
+
+type Role = User['role'];
+
+const ROLES: Role[] = ['student', 'instructor', 'admin'];
+
+function useCopy() {
+  const [copied, setCopied] = useState(false);
+  const copy = (text: string) =>
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  return { copied, copy, reset: () => setCopied(false) };
+}
 
 export function UserManagementPage() {
   const { t } = useTranslation(['admin', 'common', 'auth']);
-  const queryClient = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
 
   // Create user form state
   const [email, setEmail] = useState('');
@@ -47,11 +72,18 @@ export function UserManagementPage() {
   const [courseId, setCourseId] = useState<string>('');
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Password dialog state
-  const [passwordDialog, setPasswordDialog] = useState(false);
-  const [createdEmail, setCreatedEmail] = useState('');
-  const [createdPassword, setCreatedPassword] = useState('');
-  const [copied, setCopied] = useState(false);
+  // Credentials dialog (used both for created users and password resets)
+  const [credentials, setCredentials] = useState<{
+    title: string;
+    description: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const credentialsCopy = useCopy();
+
+  // Delete confirmation
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Users list state
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,18 +92,29 @@ export function UserManagementPage() {
   const pageSize = 20;
 
   const { data: coursesData } = useCourses();
-  const courses = coursesData?.results ?? [];
+  const { data: availableCourses = [] } = useAvailableCourses();
+  const courses = [...(coursesData?.results ?? []), ...availableCourses].filter(
+    (course, i, all) => all.findIndex((c) => c.id === course.id) === i
+  );
 
-  const usersQuery = useQuery({
-    queryKey: ['admin-users', roleFilter, searchQuery, page],
-    queryFn: () =>
-      adminApi.listUsers({
-        role: roleFilter === 'all' ? undefined : roleFilter,
-        search: searchQuery || undefined,
-        page,
-        page_size: pageSize,
-      }),
+  const usersQuery = useAdminUsers({
+    role: roleFilter === 'all' ? undefined : roleFilter,
+    search: searchQuery || undefined,
+    page,
+    page_size: pageSize,
   });
+
+  const createUserMutation = useCreateUser();
+  const updateUserMutation = useUpdateUser();
+  const resetPasswordMutation = useResetUserPassword();
+  const deleteUserMutation = useDeleteUser();
+
+  const roleLabel = (value: Role) =>
+    value === 'admin'
+      ? t('admin:userManagement.roleAdmin')
+      : value === 'instructor'
+        ? t('admin:userManagement.roleInstructor')
+        : t('admin:userManagement.roleStudent');
 
   const getCredentialsText = (emailVal: string, passwordVal: string) => {
     const loginLabel = t('admin:userManagement.copyLoginLabel');
@@ -79,33 +122,11 @@ export function UserManagementPage() {
     return `${loginLabel}: ${emailVal}\n${passwordLabel}: ${passwordVal}`;
   };
 
-  const createUserMutation = useMutation({
-    mutationFn: (data: AdminCreateUserData) => adminApi.createUser(data),
-    onSuccess: (response) => {
-      setCreatedEmail(response.user.email);
-      setCreatedPassword(response.password);
-      setPasswordDialog(true);
-      setCopied(false);
-
-      // Auto-copy credentials
-      const text = getCredentialsText(response.user.email, response.password);
-      navigator.clipboard.writeText(text).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-
-      // Reset form
-      setEmail('');
-      setRole('');
-      setCourseId('');
-      setCreateError(null);
-
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-    },
-    onError: (error) => {
-      setCreateError(getApiErrorMessage(error, 'Failed to create user'));
-    },
-  });
+  const showCredentials = (title: string, description: string, emailVal: string, password: string) => {
+    setCredentials({ title, description, email: emailVal, password });
+    credentialsCopy.reset();
+    credentialsCopy.copy(getCredentialsText(emailVal, password));
+  };
 
   const handleCreateUser = () => {
     setCreateError(null);
@@ -113,19 +134,68 @@ export function UserManagementPage() {
 
     const data: AdminCreateUserData = {
       email,
-      role: role as 'student' | 'instructor' | 'admin',
+      role: role as Role,
     };
     if (courseId && courseId !== 'none') {
       data.course_id = courseId;
     }
-    createUserMutation.mutate(data);
+    createUserMutation.mutate(data, {
+      onSuccess: (response) => {
+        showCredentials(
+          t('admin:userManagement.passwordGenerated'),
+          t('admin:userManagement.passwordInstructions'),
+          response.user.email,
+          response.password
+        );
+        setEmail('');
+        setRole('');
+        setCourseId('');
+      },
+      onError: (error) => setCreateError(getApiErrorMessage(error, t('admin:userManagement.actionFailed'))),
+    });
   };
 
-  const handleCopyCredentials = () => {
-    const text = getCredentialsText(createdEmail, createdPassword);
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleRoleChange = (user: User, value: string) => {
+    // Radix Select emits '' when its controlled value changes from outside.
+    if (!value || value === user.role) return;
+    setActionError(null);
+    updateUserMutation.mutate(
+      { id: user.id, data: { role: value as Role } },
+      { onError: (error) => setActionError(getApiErrorMessage(error, t('admin:userManagement.actionFailed'))) }
+    );
+  };
+
+  const handleActiveChange = (user: User, active: boolean) => {
+    setActionError(null);
+    updateUserMutation.mutate(
+      { id: user.id, data: { is_active: active } },
+      { onError: (error) => setActionError(getApiErrorMessage(error, t('admin:userManagement.actionFailed'))) }
+    );
+  };
+
+  const handleResetPassword = (user: User) => {
+    setActionError(null);
+    resetPasswordMutation.mutate(user.id, {
+      onSuccess: (response) =>
+        showCredentials(
+          t('admin:userManagement.resetPasswordTitle'),
+          t('admin:userManagement.resetPasswordInstructions'),
+          response.user.email,
+          response.temporary_password
+        ),
+      onError: (error) => setActionError(getApiErrorMessage(error, t('admin:userManagement.actionFailed'))),
+    });
+  };
+
+  const confirmDelete = () => {
+    if (!userToDelete) return;
+    setActionError(null);
+    deleteUserMutation.mutate(userToDelete.id, {
+      onSuccess: () => setUserToDelete(null),
+      onError: (error) => {
+        setUserToDelete(null);
+        setActionError(getApiErrorMessage(error, t('admin:userManagement.actionFailed')));
+      },
     });
   };
 
@@ -133,6 +203,7 @@ export function UserManagementPage() {
   const totalCount = usersQuery.data?.count ?? 0;
   const hasNext = !!usersQuery.data?.next;
   const hasPrev = !!usersQuery.data?.previous;
+  const busy = updateUserMutation.isPending || resetPasswordMutation.isPending || deleteUserMutation.isPending;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -168,33 +239,37 @@ export function UserManagementPage() {
             </div>
             <div className="space-y-2">
               <Label>{t('admin:userManagement.role')}</Label>
-              <Select value={role} onValueChange={setRole}>
+              <Select value={role} onValueChange={(val) => val && setRole(val)}>
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder={t('admin:userManagement.selectRole')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="student">Student</SelectItem>
-                  <SelectItem value="instructor">Instructor</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('admin:userManagement.course')}</Label>
-              <Select value={courseId} onValueChange={setCourseId}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder={t('admin:userManagement.selectCourse')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">{t('admin:userManagement.noCourse')}</SelectItem>
-                  {courses.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>
-                      {course.title}
+                  {ROLES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {roleLabel(value)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            {courses.length > 0 && (
+              <div className="space-y-2">
+                <Label>{t('admin:userManagement.course')}</Label>
+                <Select value={courseId} onValueChange={(val) => val && setCourseId(val)}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder={t('admin:userManagement.selectCourse')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t('admin:userManagement.noCourse')}</SelectItem>
+                    {courses.map((course) => (
+                      <SelectItem key={course.id} value={course.id}>
+                        {course.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label className="invisible">Action</Label>
               <Button
@@ -241,6 +316,12 @@ export function UserManagementPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {actionError && (
+            <Alert variant="destructive" className="rounded-xl">
+              <AlertDescription>{actionError}</AlertDescription>
+            </Alert>
+          )}
+
           <Tabs
             value={roleFilter}
             onValueChange={(v) => {
@@ -268,62 +349,124 @@ export function UserManagementPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {users.map((user) => (
-                <div
-                  key={user.id}
-                  className="flex items-center gap-4 p-3 rounded-xl bg-secondary/30 hover:bg-secondary/50 transition-colors"
-                >
-                  {/* Avatar */}
-                  {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
-                      alt={user.full_name}
-                      className="h-10 w-10 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <span className="text-sm font-semibold text-primary">
-                        {user.first_name?.[0] || user.email[0].toUpperCase()}
-                      </span>
-                    </div>
-                  )}
+              {users.map((user) => {
+                const isSelf = currentUser?.id === user.id;
+                const hasName = Boolean(user.first_name || user.last_name);
+                return (
+                  <div
+                    key={user.id}
+                    className={`flex flex-wrap items-center gap-3 p-3 rounded-xl bg-secondary/30 hover:bg-secondary/50 transition-colors ${
+                      user.is_active ? '' : 'opacity-60'
+                    }`}
+                  >
+                    {/* Avatar */}
+                    {user.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt={user.full_name}
+                        className="h-10 w-10 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <span className="text-sm font-semibold text-primary">
+                          {user.first_name?.[0] || user.email[0].toUpperCase()}
+                        </span>
+                      </div>
+                    )}
 
-                  {/* Name & Email */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate text-sm">
-                      {user.full_name || user.email}
-                    </p>
-                    {user.full_name && (
+                    {/* Name & Email */}
+                    <div className="flex-1 min-w-[12rem]">
+                      <p className="font-medium truncate text-sm">
+                        {hasName ? user.full_name : t('admin:userManagement.noName')}
+                        {isSelf && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            ({t('admin:userManagement.you')})
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                    )}
-                  </div>
+                      <p className="text-xs text-muted-foreground hidden sm:block">
+                        {t('admin:userManagement.lastLogin')}:{' '}
+                        {user.last_login
+                          ? new Date(user.last_login).toLocaleString()
+                          : t('admin:userManagement.neverLoggedIn')}
+                      </p>
+                    </div>
 
-                  {/* Badges */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge
-                      variant={
-                        user.role === 'admin'
-                          ? 'destructive'
-                          : user.role === 'instructor'
-                            ? 'default'
-                            : 'secondary'
-                      }
-                    >
-                      {user.role}
-                    </Badge>
-                    {user.must_change_password && (
-                      <Badge variant="warning">
-                        {t('admin:userManagement.mustChangePassword')}
-                      </Badge>
-                    )}
-                  </div>
+                    {/* Badges */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {user.must_change_password && (
+                        <Badge variant="warning">
+                          {t('admin:userManagement.mustChangePassword')}
+                        </Badge>
+                      )}
+                      {!user.is_active && (
+                        <Badge variant="destructive">{t('admin:userManagement.inactive')}</Badge>
+                      )}
+                    </div>
 
-                  {/* Created date */}
-                  <span className="text-xs text-muted-foreground shrink-0 hidden sm:block">
-                    {new Date(user.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Select
+                        value={user.role}
+                        onValueChange={(val) => handleRoleChange(user, val)}
+                        disabled={isSelf || busy}
+                      >
+                        <SelectTrigger className="h-9 w-32" aria-label={t('admin:userManagement.role')}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROLES.map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {roleLabel(value)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Switch
+                          checked={user.is_active}
+                          disabled={isSelf || busy}
+                          onCheckedChange={(checked) => handleActiveChange(user, checked)}
+                          aria-label={t('admin:userManagement.active')}
+                        />
+                        <span className="hidden md:inline">
+                          {user.is_active
+                            ? t('admin:userManagement.active')
+                            : t('admin:userManagement.inactive')}
+                        </span>
+                      </label>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => handleResetPassword(user)}
+                        title={t('admin:userManagement.resetPassword')}
+                        aria-label={t('admin:userManagement.resetPassword')}
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        <span className="hidden lg:inline ml-1">
+                          {t('admin:userManagement.resetPassword')}
+                        </span>
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive"
+                        disabled={isSelf || busy}
+                        onClick={() => setUserToDelete(user)}
+                        title={t('admin:userManagement.deleteUser')}
+                        aria-label={t('admin:userManagement.deleteUser')}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -335,6 +478,7 @@ export function UserManagementPage() {
                 size="sm"
                 onClick={() => setPage((p) => p - 1)}
                 disabled={!hasPrev}
+                aria-label={t('common:previous', { defaultValue: 'Previous' })}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -346,6 +490,7 @@ export function UserManagementPage() {
                 size="sm"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={!hasNext}
+                aria-label={t('common:next', { defaultValue: 'Next' })}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -354,25 +499,23 @@ export function UserManagementPage() {
         </CardContent>
       </Card>
 
-      {/* Password Created Dialog */}
-      <Dialog open={passwordDialog} onOpenChange={setPasswordDialog}>
+      {/* Credentials Dialog (created user / password reset) */}
+      <Dialog open={!!credentials} onOpenChange={(open) => !open && setCredentials(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('admin:userManagement.passwordGenerated')}</DialogTitle>
-            <DialogDescription>
-              {t('admin:userManagement.passwordInstructions')}
-            </DialogDescription>
+            <DialogTitle>{credentials?.title}</DialogTitle>
+            <DialogDescription>{credentials?.description}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>{t('admin:userManagement.email')}</Label>
-              <Input value={createdEmail} readOnly className="h-10" />
+              <Input value={credentials?.email ?? ''} readOnly className="h-10" />
             </div>
             <div className="space-y-2">
-              <Label>{t('auth:fields.password')}</Label>
+              <Label>{t('admin:userManagement.temporaryPassword')}</Label>
               <div className="flex gap-2">
                 <Input
-                  value={createdPassword}
+                  value={credentials?.password ?? ''}
                   readOnly
                   className="h-10 font-mono"
                 />
@@ -380,22 +523,50 @@ export function UserManagementPage() {
                   variant="outline"
                   size="icon"
                   className="h-10 w-10 shrink-0"
-                  onClick={handleCopyCredentials}
+                  aria-label={t('admin:userManagement.copyPassword')}
+                  onClick={() =>
+                    credentials && credentialsCopy.copy(getCredentialsText(credentials.email, credentials.password))
+                  }
                 >
-                  {copied ? (
+                  {credentialsCopy.copied ? (
                     <Check className="h-4 w-4 text-success" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
                 </Button>
               </div>
-              {copied && (
+              {credentialsCopy.copied && (
                 <p className="text-xs text-success">{t('admin:userManagement.passwordCopied')}</p>
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setPasswordDialog(false)}>OK</Button>
+            <Button onClick={() => setCredentials(null)}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <Dialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('admin:userManagement.deleteUserTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('admin:userManagement.deleteUserConfirm', { email: userToDelete?.email ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUserToDelete(null)}>
+              {t('admin:userManagement.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleteUserMutation.isPending}
+            >
+              {deleteUserMutation.isPending ? <Spinner size="sm" className="mr-2" /> : null}
+              {t('admin:userManagement.confirmDelete')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

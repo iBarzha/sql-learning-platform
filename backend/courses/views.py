@@ -5,6 +5,7 @@ from django.db.models import Count, Exists, Max, OuterRef, Prefetch, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -26,7 +27,7 @@ from .serializers import (
     ModuleCreateSerializer,
     AttachmentSerializer,
 )
-from config.permissions import IsInstructor, IsCourseInstructor
+from config.permissions import IsInstructor, IsCourseInstructor, require_course_manager
 
 
 class CourseViewSet(viewsets.ModelViewSet):
@@ -49,6 +50,8 @@ class CourseViewSet(viewsets.ModelViewSet):
 
         if user.is_instructor:
             if self.action == 'list':
+                if user.is_superuser or getattr(user, 'role', None) == 'admin':
+                    return queryset
                 return queryset.filter(instructor=user)
             return queryset
         else:
@@ -105,7 +108,8 @@ class CourseViewSet(viewsets.ModelViewSet):
         """Enroll in a course."""
         course = self.get_object()
 
-        if Enrollment.objects.filter(student=request.user, course=course).exists():
+        existing = Enrollment.objects.filter(student=request.user, course=course).first()
+        if existing and existing.status != Enrollment.Status.DROPPED:
             return Response(
                 {'detail': 'Already enrolled in this course'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -121,7 +125,14 @@ class CourseViewSet(viewsets.ModelViewSet):
                         {'detail': 'Course is full'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            enrollment = Enrollment.objects.create(student=request.user, course=course)
+            if existing:
+                # A dropped student is rejoining; the unique (student, course) row is reused.
+                existing.status = Enrollment.Status.ACTIVE
+                existing.completed_at = None
+                existing.save(update_fields=['status', 'completed_at'])
+                enrollment = existing
+            else:
+                enrollment = Enrollment.objects.create(student=request.user, course=course)
 
         return Response(
             EnrollmentSerializer(enrollment).data,
@@ -149,7 +160,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if Enrollment.objects.filter(student=request.user, course=course).exists():
+        existing = Enrollment.objects.filter(student=request.user, course=course).first()
+        if existing and existing.status != Enrollment.Status.DROPPED:
             return Response(
                 {'detail': 'Already enrolled in this course'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -165,7 +177,14 @@ class CourseViewSet(viewsets.ModelViewSet):
                         {'detail': 'Course is full'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            enrollment = Enrollment.objects.create(student=request.user, course=course)
+            if existing:
+                # A dropped student is rejoining; the unique (student, course) row is reused.
+                existing.status = Enrollment.Status.ACTIVE
+                existing.completed_at = None
+                existing.save(update_fields=['status', 'completed_at'])
+                enrollment = existing
+            else:
+                enrollment = Enrollment.objects.create(student=request.user, course=course)
 
         # Return course data along with enrollment
         course_data = CourseDetailSerializer(
@@ -234,19 +253,27 @@ class CourseViewSet(viewsets.ModelViewSet):
             dataset_map = {}
             module_map = {}
 
-            # Clone datasets
+            # Clone datasets that belong to the course; library datasets (course=None)
+            # are shared and keep being referenced as-is.
             for ds in course.datasets.all():
                 old_id = ds.id
                 new_ds = Dataset.objects.create(
                     name=ds.name,
                     description=ds.description,
                     course=new_course,
+                    created_by=request.user,
                     database_type=ds.database_type,
                     schema_sql=ds.schema_sql,
                     seed_sql=ds.seed_sql,
+                    quick_start_queries=ds.quick_start_queries,
                     is_default=ds.is_default,
                 )
                 dataset_map[old_id] = new_ds
+
+            def cloned_dataset(dataset_id):
+                if dataset_id is None:
+                    return None
+                return dataset_map.get(dataset_id) or Dataset.objects.filter(pk=dataset_id).first()
 
             # Clone modules
             for mod in course.modules.all():
@@ -288,7 +315,10 @@ class CourseViewSet(viewsets.ModelViewSet):
                         order_matters=ex.order_matters,
                         max_score=ex.max_score,
                         hints=ex.hints,
-                        dataset=dataset_map.get(ex.dataset_id),
+                        check_datasets=ex.check_datasets,
+                        criteria=ex.criteria,
+                        ignore_column_order=ex.ignore_column_order,
+                        dataset=cloned_dataset(ex.dataset_id),
                     )
 
             # Clone assignments
@@ -296,7 +326,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                 Assignment.objects.create(
                     course=new_course,
                     module=module_map.get(asn.module_id),
-                    dataset=dataset_map.get(asn.dataset_id),
+                    dataset=cloned_dataset(asn.dataset_id),
+                    check_datasets=asn.check_datasets,
                     title=asn.title,
                     description=asn.description,
                     instructions=asn.instructions,
@@ -307,6 +338,8 @@ class CourseViewSet(viewsets.ModelViewSet):
                     required_keywords=asn.required_keywords,
                     forbidden_keywords=asn.forbidden_keywords,
                     order_matters=asn.order_matters,
+                    ignore_column_order=asn.ignore_column_order,
+                    criteria=asn.criteria,
                     partial_match=asn.partial_match,
                     max_score=asn.max_score,
                     time_limit_seconds=asn.time_limit_seconds,
@@ -332,6 +365,30 @@ class CourseViewSet(viewsets.ModelViewSet):
         enrollments = course.enrollments.select_related('student')
         serializer = EnrollmentSerializer(enrollments, many=True)
         return Response(serializer.data)
+
+
+    @action(detail=True, methods=['get'], url_path='timers')
+    def timers(self, request, pk=None):
+        """A student's clock in every published timed lesson (course owner or admin)."""
+        from submissions.timing import course_timers
+
+        course = get_object_or_404(Course, pk=pk)
+        require_course_manager(request.user, course)
+        student = _course_student(course, request.query_params.get('student'))
+        lessons = course.lessons.filter(
+            is_published=True, time_limit_seconds__gt=0,
+        ).exclude(lesson_type='theory').order_by('order', 'created_at')
+        return Response(course_timers(student, lessons))
+
+
+def _course_student(course, student_id):
+    """A user enrolled (in any status) in the course, for the instructor tools."""
+    if not student_id:
+        raise ValidationError({'student': 'This parameter is required.'})
+    enrollment = get_object_or_404(
+        Enrollment.objects.select_related('student'), course=course, student_id=student_id,
+    )
+    return enrollment.student
 
 
 class DatasetViewSet(viewsets.ModelViewSet):
@@ -455,7 +512,12 @@ class StandaloneDatasetViewSet(viewsets.ModelViewSet):
 
         result = generate_dataset(topic=topic, size=size, database_type=database_type)
         if not result.success:
-            return Response({'detail': result.error}, status=status.HTTP_502_BAD_GATEWAY)
+            not_configured = 'not configured' in (result.error or '').lower()
+            return Response(
+                {'detail': result.error},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE if not_configured
+                else status.HTTP_502_BAD_GATEWAY,
+            )
 
         return Response({
             'name': result.name,
@@ -519,8 +581,13 @@ class LessonViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = Lesson.objects.filter(course_id=course_id)
 
-        # Students only see published lessons
-        if not user.is_instructor:
+        # Drafts are for the course owner and admins; everyone else sees published lessons.
+        owns_course = (
+            user.is_authenticated
+            and (getattr(user, 'role', None) == 'admin' or user.is_superuser
+                 or Course.objects.filter(id=course_id, instructor=user).exists())
+        )
+        if not owns_course:
             queryset = queryset.filter(is_published=True)
 
         # Prefetch user results for the current user to avoid N+1 in serializers
@@ -569,6 +636,129 @@ class LessonViewSet(viewsets.ModelViewSet):
             serializer.save(course_id=course_id, order=max_order + 1)
         else:
             serializer.save(course_id=course_id)
+
+    @action(detail=True, methods=['post'], url_path='start')
+    def start(self, request, course_pk=None, pk=None):
+        """Open the practice: records the student's start time and returns the deadline."""
+        from submissions.timing import timing_for
+
+        lesson = self.get_object()
+        if lesson.lesson_type == 'theory':
+            return Response({'detail': 'This lesson has no practice component'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if user.is_instructor:
+            # Preview only; nothing is recorded for instructors.
+            return Response({
+                'started_at': None,
+                'time_limit_seconds': lesson.time_limit_seconds,
+                'deadline': None,
+                'remaining_seconds': lesson.time_limit_seconds,
+            })
+
+        if not lesson.is_published:
+            return Response({'detail': 'This content is not available'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not lesson.course.enrollments.filter(student=user, status='active').exists():
+            return Response({'detail': 'Not enrolled in this course'},
+                            status=status.HTTP_403_FORBIDDEN)
+        return Response(timing_for(user, lesson))
+
+    @action(detail=True, methods=['post'], url_path='validate-exercises',
+            permission_classes=[IsAuthenticated, IsInstructor])
+    def validate_exercises(self, request, course_pk=None, pk=None):
+        """Report which wrong answers the exercise datasets cannot distinguish from the reference."""
+        from grading.compose import QueryShapeError
+        from grading.mutants import validate_datasets
+        from grading.runner import build_task, make_runner
+
+        lesson = self.get_object()
+        if lesson.course.instructor != request.user and not request.user.is_superuser:
+            raise PermissionDenied('Not authorized for this lesson')
+
+        db_type = lesson.course.database_type
+        timeout = lesson.time_limit_seconds or 600
+        report = []
+        for exercise in lesson.exercises.select_related('dataset'):
+            entry = {'exercise_id': str(exercise.id), 'title': exercise.title}
+            if not exercise.expected_query:
+                entry['skipped'] = 'no expected_query'
+                report.append(entry)
+                continue
+
+            task = build_task(
+                db_type,
+                reference_query=exercise.expected_query,
+                dataset=exercise.dataset,
+                check_datasets=exercise.check_datasets,
+            )
+            try:
+                result = validate_datasets(
+                    exercise.expected_query,
+                    [task.primary, *task.hidden],
+                    make_runner(db_type, timeout),
+                    db_type,
+                )
+            except QueryShapeError as err:
+                entry['error'] = str(err)
+                report.append(entry)
+                continue
+
+            entry.update({
+                'datasets': [task.primary.name, *(d.name for d in task.hidden)],
+                'mutants_total': result.mutants_total,
+                'checked': result.checked,
+                'truncated': result.truncated,
+                'killed': result.killed,
+                'surviving': [
+                    {'kind': m.kind, 'description': m.description, 'sql': m.sql}
+                    for m in result.surviving
+                ],
+                'reference_empty_on': result.reference_empty_on,
+                'reference_errors': result.reference_errors,
+                'warnings': result.warnings,
+            })
+            report.append(entry)
+
+        return Response({'lesson_id': str(lesson.id), 'exercises': report})
+
+    def _managed_lesson(self, course_pk, pk):
+        """The lesson, for its course owner or an admin; 403 for anyone else."""
+        lesson = get_object_or_404(
+            Lesson.objects.select_related('course'), pk=pk, course_id=course_pk,
+        )
+        require_course_manager(self.request.user, lesson.course)
+        return lesson
+
+    @action(detail=True, methods=['post'], url_path='timer')
+    def timer(self, request, course_pk=None, pk=None):
+        """Reset or extend one student's clock in this lesson."""
+        from submissions.serializers import TimerActionSerializer
+        from submissions.timing import extend_timer, reset_timer
+
+        lesson = self._managed_lesson(course_pk, pk)
+        payload = TimerActionSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        if not lesson.time_limit_seconds:
+            return Response({'detail': 'This lesson has no time limit'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        student = _course_student(lesson.course, payload.validated_data['student'])
+        if payload.validated_data['action'] == 'reset':
+            return Response(reset_timer(student, lesson))
+        return Response(extend_timer(student, lesson, payload.validated_data['minutes']))
+
+    @action(detail=True, methods=['post'], url_path='regrade')
+    def regrade(self, request, course_pk=None, pk=None):
+        """Regrade the stored answers of this lesson, or of one exercise in it."""
+        from submissions.regrade import regrade_lesson
+
+        lesson = self._managed_lesson(course_pk, pk)
+        exercises = lesson.exercises.select_related('dataset')
+        exercise_id = request.data.get('exercise_id')
+        if exercise_id:
+            exercises = [get_object_or_404(exercises, pk=exercise_id)]
+        return Response(regrade_lesson(lesson, exercises))
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsInstructor])
     def reorder(self, request, course_pk=None):

@@ -29,11 +29,16 @@
   "sortedSets": "Sorted Sets",
   "noRows": "Рядків не повернуто",
   "rowsAffected": "{{count}} рядків змінено",
+  "rowsAffected_one": "{{count}} рядок змінено",
+  "rowsAffected_few": "{{count}} рядки змінено",
+  "rowsAffected_many": "{{count}} рядків змінено",
+  "rowsAffected_other": "{{count}} рядків змінено",
   "showingRows": "Показано {{shown}} з {{total}} рядків",
   "clear": "Очистити",
   "datasetDescription": "Оберіть набір або визначте власну схему нижче",
   "hide": "Сховати",
   "show": "Показати",
   "runQuery": "Виконати запит",
-  "error": "Помилка"
+  "error": "Помилка",
+  "queryPlaceholder": "-- Напишіть ваш SQL запит тут"
 }

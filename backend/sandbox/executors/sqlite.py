@@ -67,7 +67,7 @@ class SQLiteExecutor(BaseExecutor):
             # Check if query returns data
             if cursor.description:
                 columns = [desc[0] for desc in cursor.description]
-                rows = [list(row) for row in cursor.fetchall()]
+                rows = [list(row) for row in cursor.fetchmany(MAX_RESULT_ROWS + 1)]
                 truncated = len(rows) > MAX_RESULT_ROWS
                 if truncated:
                     rows = rows[:MAX_RESULT_ROWS]

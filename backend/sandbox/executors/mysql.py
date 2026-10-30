@@ -1,8 +1,11 @@
 """MySQL/MariaDB query executor."""
 
 import logging
+import re
+
 import pymysql
-from pymysql.cursors import DictCursor
+from pymysql.constants import SERVER_STATUS
+from pymysql.cursors import DictCursor, SSCursor
 
 from .base import BaseExecutor, QueryResult, MAX_RESULT_ROWS
 from ..exceptions import (
@@ -11,8 +14,26 @@ from ..exceptions import (
     QueryTimeoutError,
     QuerySyntaxError,
 )
+from ..query_validator import _MYSQL_TOKENS, _strip_sql_comments
 
 logger = logging.getLogger(__name__)
+
+# Statements that start with these keywords return rows and are streamed.
+_ROW_QUERY_KEYWORDS = frozenset({'SELECT', 'WITH', 'VALUES', 'TABLE'})
+_FIRST_WORD = re.compile(r'[\s(]*([A-Za-z]+)')
+
+
+def _is_row_query(query: str) -> bool:
+    """A single SELECT / WITH / VALUES / TABLE statement, ignoring comments.
+
+    Several statements in one string keep the buffered cursor, so abandoning a
+    truncated result can never skip the statements that follow it.
+    """
+    body = _strip_sql_comments(query, _MYSQL_TOKENS).rstrip('; ')
+    if not body or ';' in body:
+        return False
+    match = _FIRST_WORD.match(body)
+    return bool(match) and match.group(1).upper() in _ROW_QUERY_KEYWORDS
 
 
 class MySQLExecutor(BaseExecutor):
@@ -71,12 +92,21 @@ class MySQLExecutor(BaseExecutor):
                     except pymysql.Error:
                         pass  # If neither works, proceed without timeout
 
+                if _is_row_query(query):
+                    # Inside a user transaction the connection must not be dropped
+                    # after a truncated result: that would roll the transaction back.
+                    in_trans = (self._connection.server_status
+                                & SERVER_STATUS.SERVER_STATUS_IN_TRANS)
+                    if in_trans:
+                        return self._execute_capped_in_transaction(cur, query)
+                    return self._execute_streaming(query)
+
                 result, elapsed_ms = self._measure_time(cur.execute, query)
 
                 # Check if query returns data
                 if cur.description:
                     columns = [desc[0] for desc in cur.description]
-                    rows = [list(row) for row in cur.fetchall()]
+                    rows = [list(row) for row in cur.fetchmany(MAX_RESULT_ROWS + 1)]
                     truncated = len(rows) > MAX_RESULT_ROWS
                     if truncated:
                         rows = rows[:MAX_RESULT_ROWS]
@@ -113,6 +143,99 @@ class MySQLExecutor(BaseExecutor):
                 success=False,
                 error_message=error_msg,
             )
+
+    def _execute_capped_in_transaction(self, cur, query: str) -> QueryResult:
+        """Row query inside a user transaction, without reconnecting.
+
+        sql_select_limit makes the server send at most MAX_RESULT_ROWS + 1 rows. An
+        explicit LIMIT in the query takes precedence over it, so the unbuffered
+        cursor still keeps memory bounded: whatever is left is drained and
+        discarded, never stored. The limit is reset afterwards, also on error.
+        """
+        cur.execute('SET SESSION sql_select_limit = %s', [MAX_RESULT_ROWS + 1])
+        try:
+            result = self._execute_streaming(query, reconnect=False)
+        except BaseException:
+            try:
+                cur.execute('SET SESSION sql_select_limit = DEFAULT')
+            except Exception:
+                pass  # a broken connection must not mask the original error
+            raise
+        # Outside the error path a failed reset must surface: a lingering limit
+        # would silently cut later results short.
+        cur.execute('SET SESSION sql_select_limit = DEFAULT')
+        return result
+
+    def _execute_streaming(self, query: str, reconnect: bool = True) -> QueryResult:
+        """Run a row query on an unbuffered cursor; at most MAX_RESULT_ROWS + 1 rows
+        are kept.
+
+        A truncated result is not drained: closing the cursor would read every
+        remaining row. The connection is dropped instead (the server abandons the
+        result) and a fresh one opened to the same database. With reconnect=False
+        (inside a transaction) the remainder is drained instead.
+        """
+        cur = self._connection.cursor(SSCursor)
+        try:
+            def run():
+                cur.execute(query)
+                return cur.fetchmany(MAX_RESULT_ROWS + 1) if cur.description else []
+
+            # Unbuffered rows arrive during the fetch, so both are timed.
+            fetched, elapsed_ms = self._measure_time(run)
+        except BaseException:
+            try:
+                cur.close()
+            except Exception:
+                pass  # a broken socket must not mask the original error
+            raise
+
+        if not cur.description:
+            affected_rows = cur.rowcount if cur.rowcount >= 0 else 0
+            cur.close()
+            return QueryResult(
+                success=True,
+                affected_rows=affected_rows,
+                execution_time_ms=elapsed_ms,
+            )
+
+        columns = [desc[0] for desc in cur.description]
+        rows = [list(row) for row in fetched]
+        truncated = len(rows) > MAX_RESULT_ROWS
+        if truncated:
+            rows = rows[:MAX_RESULT_ROWS]
+        if truncated and reconnect:
+            self._reconnect()
+            # Detach the abandoned result so garbage collection does not try to
+            # drain it from the closed socket (SSCursor and MySQLResult both would).
+            # These are PyMySQL 1.1 private attributes.
+            result = getattr(cur, '_result', None)
+            if result is not None:
+                result.unbuffered_active = False
+            cur._result = None
+            cur.connection = None
+        else:
+            cur.close()
+        return QueryResult(
+            success=True,
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            execution_time_ms=elapsed_ms,
+            truncated=truncated,
+        )
+
+    def _reconnect(self) -> None:
+        """Replace the connection; the rows already read stay valid if this fails."""
+        try:
+            self._connection.close()
+        except Exception:
+            pass
+        self._connection = None
+        try:
+            self.connect()
+        except DatabaseConnectionError as e:
+            logger.warning(f'MySQL reconnect after a truncated result failed: {e}')
 
     def initialize_schema(self, schema_sql: str) -> QueryResult:
         """Initialize MySQL schema."""

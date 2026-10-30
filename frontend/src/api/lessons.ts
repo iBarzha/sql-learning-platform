@@ -1,7 +1,15 @@
+import type { CriteriaSummary, ExerciseCriteria } from '@/types';
 import apiClient from './client';
-import type { PaginatedResponse, Submission } from '@/types';
+import type { PaginatedResponse, RegradeSummary, StudentTimer, Submission } from '@/types';
 
 export type LessonType = 'theory' | 'practice' | 'mixed';
+
+export interface CheckDataset {
+  name: string;
+  seed_sql: string;
+  schema_sql?: string;
+  targets?: string;
+}
 
 export interface LessonExercise {
   id?: string;
@@ -11,11 +19,15 @@ export interface LessonExercise {
   initial_code?: string;
   expected_query?: string;
   expected_result?: unknown;
+  check_datasets?: CheckDataset[];
   required_keywords?: string[];
   forbidden_keywords?: string[];
   order_matters?: boolean;
+  ignore_column_order?: boolean;
   max_score: number;
   hints?: string[];
+  criteria?: ExerciseCriteria;
+  criteria_summary?: CriteriaSummary;
   dataset?: {
     id: string;
     name: string;
@@ -37,9 +49,11 @@ export interface Lesson {
   order: number;
   module: string;
   theory_content?: string;
-  time_limit_seconds: number;
+  time_limit_seconds: number | null;
   max_attempts?: number;
   exercises: LessonExercise[];
+  /** Present in the lesson list, which does not carry the exercises themselves. */
+  exercise_count?: number;
   is_published: boolean;
   user_completed?: boolean;
   user_best_score?: number;
@@ -53,7 +67,7 @@ export interface CreateLessonData {
   lesson_type: string;
   order?: number;
   theory_content?: string;
-  time_limit_seconds?: number;
+  time_limit_seconds?: number | null;
   max_attempts?: number;
   exercises?: LessonExercise[];
   module_id: string;
@@ -61,6 +75,44 @@ export interface CreateLessonData {
 }
 
 export type UpdateLessonData = Partial<CreateLessonData>;
+
+export interface SurvivingMutant {
+  kind: string;
+  description: string;
+  sql: string;
+}
+
+export interface ExerciseValidation {
+  exercise_id: string;
+  title: string;
+  skipped?: string;
+  error?: string;
+  datasets?: string[];
+  mutants_total?: number;
+  checked?: number;
+  truncated?: boolean;
+  killed?: number;
+  surviving?: SurvivingMutant[];
+  warnings?: string[];
+  reference_empty_on?: string[];
+  reference_errors?: Record<string, string>;
+}
+
+export interface LessonValidation {
+  lesson_id: string;
+  exercises: ExerciseValidation[];
+}
+
+export type TimerActionData =
+  | { student: string; action: 'reset' }
+  | { student: string; action: 'extend'; minutes: number };
+
+export interface LessonTiming {
+  started_at: string | null;
+  time_limit_seconds: number | null;
+  deadline: string | null;
+  remaining_seconds: number | null;
+}
 
 const lessonsApi = {
   list: async (courseId: string) => {
@@ -105,11 +157,41 @@ const lessonsApi = {
     return response.data;
   },
 
+  start: async (courseId: string, lessonId: string) => {
+    const response = await apiClient.post<LessonTiming>(
+      `/courses/${courseId}/lessons/${lessonId}/start/`
+    );
+    return response.data;
+  },
+
+  validateExercises: async (courseId: string, lessonId: string) => {
+    const response = await apiClient.post<LessonValidation>(
+      `/courses/${courseId}/lessons/${lessonId}/validate-exercises/`
+    );
+    return response.data;
+  },
+
   // Submit practice
   submit: async (courseId: string, lessonId: string, query: string, exerciseId: string) => {
     const response = await apiClient.post<Submission>(
       `/courses/${courseId}/lessons/${lessonId}/submissions/`,
       { query, exercise_id: exerciseId }
+    );
+    return response.data;
+  },
+
+  timerAction: async (courseId: string, lessonId: string, data: TimerActionData) => {
+    const response = await apiClient.post<StudentTimer>(
+      `/courses/${courseId}/lessons/${lessonId}/timer/`,
+      data
+    );
+    return response.data;
+  },
+
+  regrade: async (courseId: string, lessonId: string, exerciseId?: string) => {
+    const response = await apiClient.post<RegradeSummary>(
+      `/courses/${courseId}/lessons/${lessonId}/regrade/`,
+      exerciseId ? { exercise_id: exerciseId } : {}
     );
     return response.data;
   },
