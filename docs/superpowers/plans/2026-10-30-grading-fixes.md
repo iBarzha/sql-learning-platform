@@ -214,3 +214,17 @@ Full backend suite green. Commit per step.
 - [ ] **Step 2:** Part II: mark problems 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 19 as "(виправлено 30.10.2026)" in the heading, keep the original description, add one sentence saying what was done (as entry 1 does). Update "Рекомендований порядок" to list only the remaining items (8, 9, 10, 11, 16, 17, 18, 20, 21).
 - [ ] **Step 3:** `PROJECT_DOCUMENTATION.md`: add the new endpoints (timers, timer, regrade, results PATCH, filters) to section 12; mention the new fields in section 11 if the ER list enumerates fields. Keep the file's language (Russian) and line endings (CRLF).
 - [ ] **Step 4:** Commit: "docs: describe the grading fixes of 2026-10-30".
+
+---
+
+### Task 6: Bounded row fetch in the sandbox executors
+
+**Files:**
+- Modify: `backend/sandbox/executors/postgresql.py`, `backend/sandbox/executors/mysql.py`, `backend/sandbox/executors/sqlite.py`
+- Tests: `backend/sandbox/tests.py` (or a new `backend/sandbox/test_executor_limits.py`)
+
+**Why:** the executors call `cursor.fetchall()` and only then slice to `MAX_RESULT_ROWS` (1000), so a query that returns millions of rows (a cross join, or the `join_condition` mutant of Task 1 on a large dataset) is materialised in the backend process before the cap applies. The cap must bound peak memory, not only the returned list.
+
+- [ ] **Step 1:** In each of the three executors replace the `fetchall()` + slice with `cursor.fetchmany(MAX_RESULT_ROWS + 1)`; `truncated = len(rows) > MAX_RESULT_ROWS`; keep the returned rows at most `MAX_RESULT_ROWS` and keep everything else (column names, affected rows, timing, error handling) unchanged. For psycopg, make sure the cursor is a client-side cursor as today (no server-side cursor needed). Only the result-set branch changes; the `fetchall()` calls used for listing tables and sequences during reset stay.
+- [ ] **Step 2:** Test with the in-process SQLite executor: a query producing 2500 rows (`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 2500) SELECT x FROM n`) returns exactly 1000 rows with `truncated=True`; a query producing 1000 rows returns 1000 with `truncated=False`; 1001 rows gives `truncated=True`. PostgreSQL and MariaDB cannot be exercised locally (no Docker); state that in the report.
+- [ ] **Step 3:** Run `manage.py test sandbox --settings=config.settings_test` and the full suite; commit as "fix: cap sandbox result fetch at the row limit".
