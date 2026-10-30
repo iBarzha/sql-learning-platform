@@ -7,13 +7,17 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 
 from .models import Submission, UserResult
 from .progress import course_progress
-from .storage import json_safe
+from .regrade import (
+    grade_into,
+    grading_setup_for_assignment,
+    grading_setup_for_exercise,
+    reveals_rows,
+)
 from .serializers import (
     SubmissionSerializer,
     SubmissionCreateSerializer,
@@ -22,8 +26,6 @@ from .serializers import (
 )
 from assignments.models import Assignment
 from courses.models import Course, Enrollment, Lesson, LessonExercise
-from grading.runner import build_task, make_runner, make_sequence_runner
-from grading.service import grade as grade_submission
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
@@ -85,17 +87,6 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             max_attempts = assignment.max_attempts
             is_published = assignment.is_published
             dataset = assignment.dataset
-            expected_query = assignment.expected_query
-            expected_result = assignment.expected_result
-            required_keywords = assignment.required_keywords or []
-            forbidden_keywords = assignment.forbidden_keywords or []
-            order_matters = assignment.order_matters
-            max_score = assignment.max_score
-            time_limit = assignment.time_limit_seconds or 30
-            check_datasets = assignment.check_datasets or []
-            query_type = assignment.query_type
-            criteria = assignment.criteria or {}
-            ignore_column_order = assignment.ignore_column_order
 
         elif lesson_id:
             try:
@@ -129,17 +120,6 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             max_attempts = lesson.max_attempts
             is_published = lesson.is_published
             dataset = exercise.dataset
-            expected_query = exercise.expected_query
-            expected_result = exercise.expected_result
-            required_keywords = exercise.required_keywords or []
-            forbidden_keywords = exercise.forbidden_keywords or []
-            order_matters = exercise.order_matters
-            max_score = exercise.max_score
-            time_limit = lesson.time_limit_seconds or 600
-            check_datasets = exercise.check_datasets or []
-            query_type = 'select'
-            criteria = exercise.criteria or {}
-            ignore_column_order = exercise.ignore_column_order
         else:
             return Response(
                 {'detail': 'Assignment or lesson ID required'},
@@ -213,57 +193,16 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         )
 
         try:
-            task = build_task(
-                course.database_type,
-                reference_query=expected_query,
-                dataset=dataset,
-                check_datasets=check_datasets,
-                required_keywords=required_keywords,
-                forbidden_keywords=forbidden_keywords,
-                order_matters=order_matters,
-                max_score=max_score,
-                query_type=query_type,
-                expected_result=expected_result,
-                criteria=criteria,
-                ignore_column_order=ignore_column_order,
-            )
-            runner = make_runner(
-                course.database_type,
-                time_limit,
+            attribution = dict(
                 user_id=request.user.id,
                 submission_id=submission.id,
                 dataset_id=dataset.id if dataset else None,
             )
-            graded = grade_submission(
-                task, student_query, runner,
-                run_sequence=make_sequence_runner(course.database_type, time_limit),
-                # A timed lesson is a test: the reference rows would hand out the answer.
-                reveal_rows=not (lesson is not None and bool(lesson.time_limit_seconds)),
-            )
-            execution = graded.execution
-
-            submission.execution_time_ms = execution.execution_time_ms
-            if execution.success:
-                submission.status = Submission.Status.COMPLETED
-                submission.result = {
-                    'success': True,
-                    'columns': json_safe(execution.columns),
-                    'rows': json_safe(execution.rows),
-                    'row_count': len(execution.rows),
-                    'affected_rows': execution.affected_rows,
-                    'execution_time_ms': execution.execution_time_ms,
-                    'error_message': '',
-                    'truncated': execution.truncated,
-                }
+            if assignment:
+                setup = grading_setup_for_assignment(assignment, **attribution)
             else:
-                submission.status = Submission.Status.ERROR
-                submission.error_message = execution.error
-                submission.result = {'success': False, 'error_message': execution.error}
-
-            submission.score = graded.score
-            submission.is_correct = graded.passed
-            submission.feedback = json_safe(graded.feedback)
-            submission.graded_at = timezone.now()
+                setup = grading_setup_for_exercise(exercise, lesson, **attribution)
+            grade_into(submission, setup, reveal_rows=reveals_rows(lesson))
             submission.save()
         except Exception as e:
             submission.status = Submission.Status.ERROR

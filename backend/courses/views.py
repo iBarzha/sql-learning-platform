@@ -748,6 +748,18 @@ class LessonViewSet(viewsets.ModelViewSet):
             return Response(reset_timer(student, lesson))
         return Response(extend_timer(student, lesson, payload.validated_data['minutes']))
 
+    @action(detail=True, methods=['post'], url_path='regrade')
+    def regrade(self, request, course_pk=None, pk=None):
+        """Regrade the stored answers of this lesson, or of one exercise in it."""
+        from submissions.regrade import regrade_lesson
+
+        lesson = self._managed_lesson(course_pk, pk)
+        exercises = lesson.exercises.select_related('dataset')
+        exercise_id = request.data.get('exercise_id')
+        if exercise_id:
+            exercises = [get_object_or_404(exercises, pk=exercise_id)]
+        return Response(regrade_lesson(lesson, exercises))
+
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsInstructor])
     def reorder(self, request, course_pk=None):
         """Reorder lessons within a course.

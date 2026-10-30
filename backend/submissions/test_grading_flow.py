@@ -507,7 +507,7 @@ class GradingFlowTestCase(APITestCase):
                                  [['Іваненко', Decimal('6000.00'), dt.date(2021, 3, 15)]])
             return run
 
-        with mock.patch('submissions.views.make_runner', fake_runner):
+        with mock.patch('submissions.regrade.make_runner', fake_runner):
             resp = self.submit('SELECT name, salary, hired FROM employees', self.exercises[1])
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
         self.assertEqual(resp.data['result']['rows'][0], ['Іваненко', 6000, '2021-03-15'])

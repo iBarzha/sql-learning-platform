@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Avg, Max, Min, Prefetch
@@ -14,7 +15,7 @@ from .serializers import (
     AssignmentInstructorSerializer,
 )
 from courses.models import Course
-from config.permissions import IsInstructor, IsCourseInstructor
+from config.permissions import IsInstructor, IsCourseInstructor, require_course_manager
 
 
 class AssignmentViewSet(viewsets.ModelViewSet):
@@ -74,6 +75,17 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if course.instructor != self.request.user:
             raise PermissionDenied('Not authorized to add assignments to this course')
         serializer.save(course=course)
+
+    @action(detail=True, methods=['post'], url_path='regrade')
+    def regrade(self, request, pk=None, course_pk=None):
+        """Regrade every stored answer to this assignment (course owner or admin)."""
+        from submissions.regrade import regrade_assignment
+
+        assignment = get_object_or_404(
+            Assignment.objects.select_related('course', 'dataset'), pk=pk, course_id=course_pk,
+        )
+        require_course_manager(request.user, assignment.course)
+        return Response(regrade_assignment(assignment))
 
     @action(detail=True, methods=['get'])
     def stats(self, request, pk=None, course_pk=None):
