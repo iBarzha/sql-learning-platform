@@ -165,6 +165,33 @@ def normalize_rows(rows: Sequence[Sequence[Any]], *, lenient_numbers: bool = Fal
     return [normalize_row(row, lenient_numbers=lenient_numbers) for row in rows]
 
 
+def loose_value(value: Any) -> Any:
+    """Tag-free form of a normalized value, for telling a type mismatch from a wrong value.
+
+    A number and the numeric-looking text of it give the same text ('10', 10 and
+    '10.0' all become '10'), as do a date and its ISO text. NULL, bytes, JSON, NaN and
+    infinity are returned unchanged.
+    """
+    if not isinstance(value, tuple) or len(value) != 2:
+        return value
+    tag, payload = value
+    if tag == TAG_NUMBER:
+        return str(payload)
+    if tag == TAG_STRING:
+        if _NUMERIC_TEXT.match(payload):
+            number = _normalize_number(payload.strip())
+            if number[0] == TAG_NUMBER:
+                return str(number[1])
+        return payload.strip()
+    if tag == TAG_TEMPORAL:
+        return payload
+    return value
+
+
+def loose_row(row: Sequence[Any]) -> tuple:
+    return tuple(loose_value(cell) for cell in row)
+
+
 def describe_value(value: Any) -> str:
     """Human-readable form of a normalized value, for feedback messages."""
     if value is NULL:

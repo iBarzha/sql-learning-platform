@@ -475,5 +475,28 @@ class ScoreShapeTests(unittest.TestCase):
             self.assertIn(key, r.feedback)
 
 
+class HiddenRowsTests(unittest.TestCase):
+    NAMES = ('Іваненко', 'Петренко', 'Коваленко', 'Шевченко', 'Бондаренко',
+             'Розробка', 'Аналітика', 'Підтримка')
+
+    def test_feedback_reveals_no_cell_value(self):
+        r = grade(task('SELECT name, salary FROM employees', hidden=[EMPTY_DEPT]),
+                  'SELECT e.name, e.bonus FROM employees e WHERE e.dept_id = 1',
+                  sqlite_runner(), reveal_rows=False)
+        self.assertFalse(r.passed)
+        self.assertEqual(r.feedback['missing_rows'], [])
+        self.assertEqual(r.feedback['extra_rows'], [])
+        dump = json.dumps(r.feedback, ensure_ascii=False)
+        for value in self.NAMES + ('6000', '4000', '7000', '3000', '5500', '500', '300', '800'):
+            self.assertNotIn(value, dump)
+        self.assertIn('Не вистачає рядків: 5.', r.feedback['hints'])
+
+    def test_rows_are_listed_by_default(self):
+        r = grade(task('SELECT name FROM employees'), 'SELECT name FROM departments',
+                  sqlite_runner())
+        self.assertTrue(r.feedback['missing_rows'])
+        self.assertTrue(r.feedback['extra_rows'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,6 @@
 """Unit tests for multiset result comparison. No database required."""
 
+import datetime as dt
 import unittest
 from decimal import Decimal
 
@@ -194,6 +195,94 @@ class DiagnosticsTests(unittest.TestCase):
         first = cmp([['a']], [['c'], ['b'], ['a']]).describe_missing()
         second = cmp([['a']], [['b'], ['c'], ['a']]).describe_missing()
         self.assertEqual(first, second)
+
+
+class KeyOrderTests(unittest.TestCase):
+    """The order check follows the reference's sort keys; ties may come in any order."""
+
+    def test_rows_with_equal_keys_may_be_swapped(self):
+        diff = cmp([['b', 1], ['a', 1], ['c', 2]], [['a', 1], ['b', 1], ['c', 2]],
+                   ordered=True, key_positions=[1])
+        self.assertTrue(diff.equal)
+
+    def test_rows_in_a_different_key_order_fail(self):
+        diff = cmp([['c', 2], ['a', 1], ['b', 1]], [['a', 1], ['b', 1], ['c', 2]],
+                   ordered=True, key_positions=[1])
+        self.assertEqual(diff.kind, KIND_ORDER)
+
+    def test_strict_fallback_without_keys_still_fails_swapped_tied_rows(self):
+        diff = cmp([['b', 1], ['a', 1]], [['a', 1], ['b', 1]], ordered=True, key_positions=None)
+        self.assertEqual(diff.kind, KIND_ORDER)
+
+    def test_null_keys_tie_with_each_other(self):
+        diff = cmp([['b', None], ['a', None], ['c', 1]], [['a', None], ['b', None], ['c', 1]],
+                   ordered=True, key_positions=[1])
+        self.assertTrue(diff.equal)
+
+    def test_keys_do_not_hide_wrong_rows(self):
+        diff = cmp([['x', 1]], [['a', 1]], ordered=True, key_positions=[1])
+        self.assertEqual(diff.kind, KIND_ROWS)
+
+
+class TypeOnlyTests(unittest.TestCase):
+    def test_number_as_text_is_type_only(self):
+        diff = cmp([['10']], [[10]])
+        self.assertFalse(diff.equal)
+        self.assertTrue(diff.type_only)
+
+    def test_date_as_text_is_type_only(self):
+        diff = cmp([['2000-10-03']], [[dt.date(2000, 10, 3)]])
+        self.assertTrue(diff.type_only)
+
+    def test_real_difference_is_not_type_only(self):
+        diff = cmp([['11']], [[10]])
+        self.assertFalse(diff.type_only)
+
+    def test_equal_results_are_not_type_only(self):
+        self.assertFalse(cmp([[10]], [[10]]).type_only)
+
+
+class ColumnPermutationTests(unittest.TestCase):
+    def test_swapped_columns_pass_only_with_the_flag(self):
+        student, expected = [[1, 'a'], [2, 'b']], [['a', 1], ['b', 2]]
+        self.assertFalse(cmp(student, expected).equal)
+        diff = cmp(student, expected, ignore_column_order=True)
+        self.assertTrue(diff.equal)
+        self.assertEqual(diff.kind, KIND_OK)
+        self.assertEqual(diff.column_permutation, [1, 0])
+
+    def test_identical_value_columns_are_resolved_by_verifying_rows(self):
+        # Columns 0 and 1 of the student hold the same values, but only one pairing
+        # with the name column reproduces the expected rows.
+        expected = [['a', 1, 2], ['b', 2, 1]]
+        student = [[2, 1, 'a'], [1, 2, 'b']]
+        diff = cmp(student, expected, ignore_column_order=True)
+        self.assertTrue(diff.equal)
+        self.assertEqual(diff.column_permutation, [2, 1, 0])
+
+    def test_no_permutation_means_rows_differ(self):
+        diff = cmp([[1, 'a']], [['a', 2]], ignore_column_order=True)
+        self.assertEqual(diff.kind, KIND_ROWS)
+        self.assertIsNone(diff.column_permutation)
+
+    def test_order_is_checked_on_the_reordered_rows(self):
+        expected = [['a', 1], ['b', 2]]
+        in_order = cmp([[1, 'a'], [2, 'b']], expected, ordered=True, ignore_column_order=True)
+        self.assertTrue(in_order.equal)
+        reversed_ = cmp([[2, 'b'], [1, 'a']], expected, ordered=True, ignore_column_order=True)
+        self.assertEqual(reversed_.kind, KIND_ORDER)
+        self.assertFalse(reversed_.equal)
+        self.assertEqual(reversed_.column_permutation, [1, 0])
+
+    def test_flag_does_not_alter_a_matching_result(self):
+        diff = cmp([['a', 1]], [['a', 1]], ignore_column_order=True)
+        self.assertTrue(diff.equal)
+        self.assertIsNone(diff.column_permutation)
+
+    def test_too_many_columns_are_not_permuted(self):
+        expected = [list(range(11))]
+        student = [list(reversed(range(11)))]
+        self.assertFalse(cmp(student, expected, ignore_column_order=True).equal)
 
 
 if __name__ == '__main__':

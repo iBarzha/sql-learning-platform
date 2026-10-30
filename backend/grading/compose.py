@@ -325,3 +325,61 @@ def constructs(node: exp.Expression) -> set[str]:
         found.add('AGGREGATE')
 
     return found
+
+
+_SET_OPERATIONS = (exp.Union, exp.Except, exp.Intersect)
+
+
+def _output_select(node: exp.Expression) -> Optional[exp.Select]:
+    """The SELECT whose list names the output columns: the left-most set operand."""
+    while isinstance(node, (*_SET_OPERATIONS, exp.Subquery, exp.Paren)):
+        node = node.this
+    return node if isinstance(node, exp.Select) else None
+
+
+def _key_position(term: exp.Expression, items: list[exp.Expression]) -> Optional[int]:
+    """0-based output column an ORDER BY term sorts by, or None when it is not one."""
+    if isinstance(term, exp.Literal) and not term.is_string:
+        try:
+            ordinal = int(term.this)
+        except ValueError:
+            return None
+        return ordinal - 1 if 1 <= ordinal <= len(items) else None
+    if isinstance(term, (exp.Column, exp.Identifier)) and not term.is_star:
+        name = term.name.lower()
+        for index, item in enumerate(items):
+            if isinstance(item, exp.Alias) and item.alias.lower() == name:
+                return index
+        for index, item in enumerate(items):
+            if isinstance(item, exp.Column) and item.name.lower() == name:
+                return index
+    text = term.sql()
+    for index, item in enumerate(items):
+        if item.unalias().sql() == text:
+            return index
+    return None
+
+
+def order_key_positions(node: Optional[exp.Expression]) -> Optional[list[int]]:
+    """Output column indices the outermost ORDER BY sorts by, in order.
+
+    Rows that tie on these keys may come back in any order, so only the keys are
+    compared. None means "compare whole rows": no ORDER BY, a `*` in the select list,
+    or a term that is not an output column (e.g. sorting by an unselected column).
+    """
+    if node is None or node.args.get('order') is None:
+        return None
+    select = _output_select(node)
+    if select is None:
+        return None
+    items = list(select.expressions)
+    if not items or any(item.is_star for item in items):
+        return None
+    positions = []
+    for ordered in node.args['order'].expressions:
+        term = ordered.this if isinstance(ordered, exp.Ordered) else ordered
+        position = _key_position(term, items)
+        if position is None:
+            return None
+        positions.append(position)
+    return positions

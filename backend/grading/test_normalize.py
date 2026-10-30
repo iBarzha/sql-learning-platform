@@ -10,6 +10,8 @@ from grading.normalize import (
     canonical_json,
     describe_row,
     describe_value,
+    loose_row,
+    loose_value,
     normalize_row,
     normalize_rows,
     normalize_value,
@@ -191,6 +193,31 @@ class DescribeTests(unittest.TestCase):
 
     def test_row_is_readable(self):
         self.assertEqual(describe_row(normalize_row(['Київ', 3])), '(Київ, 3)')
+
+
+class LooseValueTests(unittest.TestCase):
+    def loose(self, value):
+        return loose_value(normalize_value(value))
+
+    def test_number_and_its_text_agree(self):
+        self.assertEqual(self.loose(10), '10')
+        self.assertEqual(self.loose('10'), '10')
+        self.assertEqual(self.loose(' 10.0 '), '10')
+        self.assertEqual(self.loose(Decimal('10.50')), self.loose('10.5'))
+
+    def test_date_and_its_text_agree(self):
+        self.assertEqual(self.loose(dt.date(2000, 10, 3)), self.loose('2000-10-03'))
+
+    def test_other_text_is_stripped(self):
+        self.assertEqual(self.loose('  Київ '), 'Київ')
+
+    def test_null_bytes_and_special_numbers_are_unchanged(self):
+        self.assertIs(self.loose(None), NULL)
+        for value in (b'\x01', float('nan'), float('inf'), {'a': 1}):
+            self.assertEqual(self.loose(value), normalize_value(value))
+
+    def test_loose_row_applies_per_cell(self):
+        self.assertEqual(loose_row(normalize_row(['7', 7, None])), ('7', '7', NULL))
 
 
 if __name__ == '__main__':

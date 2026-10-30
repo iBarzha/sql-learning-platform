@@ -29,6 +29,7 @@ from .compose import (
     dialect_for,
     has_order_by,
     is_constant_query,
+    order_key_positions,
     parse_query,
     parse_statement,
     reads_data,
@@ -279,6 +280,8 @@ MSG = {
     'dataset': 'Не збіглося на контрольних даних.',
     'mismatch': 'Результат не збігається з еталоном.',
     'no_result': 'Запит не повернув результату.',
+    'type_only': ('Значення збігаються, але тип стовпця інший: число записане як текст '
+                  'або дата як рядок. Приберіть зайве перетворення типів.'),
 }
 
 
@@ -350,11 +353,13 @@ class Context:
     truncated_but_decided = False
 
     def __init__(self, task: GradingTask, student_query: str, run: RunFn,
-                 run_sequence: Optional[SequenceRunFn]):
+                 run_sequence: Optional[SequenceRunFn], *, reveal_rows: bool = True):
         self.task = task
         self.student_query = student_query
         self.run = run
         self.run_sequence = run_sequence
+        # False: details give row counts only, never the reference's values.
+        self.reveal_rows = reveal_rows
         self.kind = task_kind(task)
         self.dialect = dialect_for(task.db_type)
         self.shape_error = ''
@@ -470,7 +475,8 @@ class Context:
         student, expected = self.student_exec, self.reference_exec
         d = cmp.compare(student.columns, self.student_rows, expected.columns, self.expected_rows,
                         ordered=False, student_truncated=student.truncated,
-                        expected_truncated=expected.truncated, lenient_numbers=self.from_snapshot)
+                        expected_truncated=expected.truncated, lenient_numbers=self.from_snapshot,
+                        ignore_column_order=self.task.ignore_column_order)
         if d.kind == cmp.KIND_TRUNCATED:
             verdict = self.diff_in_database(self.task.primary)
             if verdict is not None:
@@ -485,14 +491,24 @@ class Context:
             return None
         return cmp.compare(self.student_exec.columns, self.student_rows,
                            self.reference_exec.columns, self.expected_rows,
-                           ordered=True, lenient_numbers=self.from_snapshot)
+                           ordered=True, lenient_numbers=self.from_snapshot,
+                           key_positions=self.order_keys,
+                           ignore_column_order=self.task.ignore_column_order)
+
+    @cached_property
+    def order_keys(self) -> Optional[list[int]]:
+        """Output columns the reference sorts by; None compares whole rows."""
+        if self.kind != KIND_SELECT:
+            return None
+        return order_key_positions(reference_node(self.task))
 
     # ── in-database difference and hidden datasets ──
     def diff_in_database(self, dataset: CheckDataset) -> Optional[bool]:
         """Symmetric difference inside the engine; None when the engine cannot do it."""
         task = self.task
+        # EXCEPT ALL matches columns by position and cannot try another column order.
         if (self.student_node is None or not task.reference_query
-                or not supports_except_all(task.db_type)):
+                or not supports_except_all(task.db_type) or task.ignore_column_order):
             return None
         try:
             sql = build_symmetric_difference(self.student_query, task.reference_query, task.db_type)
@@ -519,7 +535,8 @@ class Context:
         d = cmp.compare(student.columns, prepare_rows(self.task.db_type, student.rows),
                         reference.columns, prepare_rows(self.task.db_type, reference.rows),
                         student_truncated=student.truncated,
-                        expected_truncated=reference.truncated)
+                        expected_truncated=reference.truncated,
+                        ignore_column_order=self.task.ignore_column_order)
         return d.equal
 
     def dataset_verdict(self, index: int) -> Verdict:
@@ -570,6 +587,8 @@ def _column_names(ctx: Context) -> Verdict:
         return Verdict(False, MSG['columns_block'])
     expected = ctx.reference_exec.columns
     actual = ctx.student_exec.columns
+    if d.column_permutation is not None:
+        actual = [actual[j] for j in d.column_permutation]
     for position, (e, a) in enumerate(zip(expected, actual), start=1):
         if e.strip().lower() != a.strip().lower():
             return Verdict(False, f'Стовпець {position}: очікується {e}, отримано {a}.')
@@ -593,6 +612,10 @@ def _complete(ctx: Context) -> Verdict:
         return guard
     d = ctx.diff
     if d.missing:
+        if d.type_only:
+            return Verdict(False, MSG['type_only'])
+        if not ctx.reveal_rows:
+            return Verdict(False, f'Не вистачає рядків: {len(d.missing)}.')
         return Verdict(False, 'Не вистачає рядків: ' + d.describe_missing() + '.')
     if not d.equal and not d.extra:
         return Verdict(False, MSG['mismatch'])   # decided inside the database, no row detail
@@ -605,6 +628,10 @@ def _precise(ctx: Context) -> Verdict:
         return guard
     d = ctx.diff
     if d.extra:
+        if d.type_only:
+            return Verdict(False, MSG['type_only'])
+        if not ctx.reveal_rows:
+            return Verdict(False, f'Зайві рядки: {len(d.extra)}.')
         return Verdict(False, 'Зайві рядки: ' + d.describe_extra() + '.')
     if not d.equal and not d.missing:
         return Verdict(False, MSG['mismatch'])
@@ -657,6 +684,9 @@ def _state(ctx: Context) -> Verdict:
         if d.kind == cmp.KIND_COLUMN_COUNT:
             details.append(f'таблиця {table}: очікується {d.expected_columns} стовпців, '
                            f'отримано {d.student_columns}')
+        elif not ctx.reveal_rows:
+            details.append(f'таблиця {table}: бракує рядків {len(d.missing)}, '
+                           f'зайвих {len(d.extra)}')
         else:
             if d.missing:
                 details.append(f'таблиця {table}, бракує рядків: {d.describe_missing()}')
@@ -693,10 +723,11 @@ def _derived(ctx: Context, cid: str) -> Verdict:
 
 
 def evaluate(task: GradingTask, student_query: str, run: RunFn,
-             run_sequence: Optional[SequenceRunFn] = None) -> CriteriaResult:
+             run_sequence: Optional[SequenceRunFn] = None, *,
+             reveal_rows: bool = True) -> CriteriaResult:
     enabled, raw_threshold = resolve_config(task, task.criteria)
     derived = derived_specs(task)
-    ctx = Context(task, student_query, run, run_sequence)
+    ctx = Context(task, student_query, run, run_sequence, reveal_rows=reveal_rows)
 
     items: list[dict] = []
 

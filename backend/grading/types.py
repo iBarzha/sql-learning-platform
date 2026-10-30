@@ -62,6 +62,8 @@ class GradingTask:
     expected_result: Optional[dict] = None
     # {"enabled": [...general criterion ids...], "threshold": int}; empty = defaults
     criteria: Optional[dict] = None
+    # Accept the right columns in a different order (opt-in; off keeps strict positions).
+    ignore_column_order: bool = False
 
     @property
     def is_select_task(self) -> bool:

@@ -46,8 +46,10 @@ class GradeResult:
 
 
 def grade(task: GradingTask, student_query: str, run: RunFn,
-          run_sequence: Optional[SequenceRunFn] = None) -> GradeResult:
-    result = evaluate(task, student_query, run, run_sequence)
+          run_sequence: Optional[SequenceRunFn] = None, *,
+          reveal_rows: bool = True) -> GradeResult:
+    """`reveal_rows=False` keeps the reference's values out of the feedback."""
+    result = evaluate(task, student_query, run, run_sequence, reveal_rows=reveal_rows)
     score = (Decimal(task.max_score) if result.passed else Decimal(0)).quantize(
         Decimal('0.01'), rounding=ROUND_HALF_UP)
     return GradeResult(score, task.max_score, result.passed, _feedback(task, result),
@@ -69,7 +71,7 @@ def _feedback(task: GradingTask, result: CriteriaResult) -> dict:
     missing_rows: list[str] = []
     extra_rows: list[str] = []
     diff = ctx.diff if ctx.kind != KIND_DML else None
-    if diff is not None and diff.kind == cmp.KIND_ROWS:
+    if diff is not None and diff.kind == cmp.KIND_ROWS and ctx.reveal_rows:
         missing_rows = [describe_row(r) for r in diff.missing[:5]]
         extra_rows = [describe_row(r) for r in diff.extra[:5]]
 

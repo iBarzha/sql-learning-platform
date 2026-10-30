@@ -323,3 +323,43 @@ class ConstructsInComparisonsTests(unittest.TestCase):
         from grading.compose import constructs, parse_query
         node = parse_query('SELECT * FROM (SELECT snum FROM Orders) t', 'postgres')
         self.assertNotIn('SUBQUERY', constructs(node))
+
+
+class OrderKeyPositionsTests(unittest.TestCase):
+    def keys(self, sql):
+        from grading.compose import order_key_positions
+        return order_key_positions(parse_query(sql, PG))
+
+    def test_ordinal(self):
+        self.assertEqual(self.keys('SELECT snum, amt FROM Orders ORDER BY 2 DESC'), [1])
+
+    def test_ordinal_out_of_range_is_unmappable(self):
+        self.assertIsNone(self.keys('SELECT snum, amt FROM Orders ORDER BY 3'))
+
+    def test_alias(self):
+        self.assertEqual(
+            self.keys('SELECT snum, SUM(amt) AS total FROM Orders GROUP BY snum ORDER BY total'),
+            [1])
+
+    def test_bare_column_with_table_qualifier(self):
+        self.assertEqual(
+            self.keys('SELECT c.cname, rating FROM Customers c ORDER BY c.rating DESC, 1'),
+            [1, 0])
+
+    def test_expression(self):
+        self.assertEqual(self.keys('SELECT onum, amt * .12 FROM Orders ORDER BY amt * .12'), [1])
+
+    def test_star_gives_none(self):
+        self.assertIsNone(self.keys('SELECT * FROM Orders ORDER BY amt'))
+
+    def test_unselected_column_gives_none(self):
+        self.assertIsNone(self.keys('SELECT name FROM employees ORDER BY salary'))
+
+    def test_no_order_by_gives_none(self):
+        self.assertIsNone(self.keys('SELECT name FROM employees'))
+
+    def test_set_operation_uses_first_operand_select_list(self):
+        self.assertEqual(
+            self.keys('SELECT cname, city FROM Customers UNION SELECT sname, city FROM Salespeople '
+                      'ORDER BY city'),
+            [1])

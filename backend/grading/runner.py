@@ -101,6 +101,7 @@ def build_task(
     query_type: str = 'select',
     expected_result: Optional[dict] = None,
     criteria: Optional[dict] = None,
+    ignore_column_order: bool = False,
 ) -> GradingTask:
     schema_sql = dataset.schema_sql if dataset else ''
     seed_sql = dataset.seed_sql if dataset else ''
@@ -129,4 +130,5 @@ def build_task(
         query_type=query_type or 'select',
         expected_result=expected_result if isinstance(expected_result, dict) else None,
         criteria=criteria if isinstance(criteria, dict) else None,
+        ignore_column_order=bool(ignore_column_order),
     )

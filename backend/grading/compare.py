@@ -11,15 +11,18 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
-from .normalize import describe_row, normalize_rows
+from .normalize import describe_row, loose_row, normalize_rows
 
 KIND_OK = 'ok'
 KIND_COLUMN_COUNT = 'column_count'
 KIND_ROWS = 'rows'
 KIND_ORDER = 'order'
 KIND_TRUNCATED = 'truncated'
+
+# Column permutations are searched by backtracking; beyond this width it is not worth it.
+MAX_PERMUTED_COLUMNS = 10
 
 
 @dataclass
@@ -33,6 +36,11 @@ class Diff:
     expected_rows: int = 0
     student_columns: int = 0
     expected_columns: int = 0
+    # The rows differ only in value types: '10' against 10, a date against its text.
+    type_only: bool = False
+    # column_permutation[i] is the student column that stands for expected column i;
+    # set only when the columns had to be reordered to match.
+    column_permutation: Optional[list[int]] = None
 
     def describe_missing(self, limit: int = 3) -> str:
         return _preview(self.missing, limit)
@@ -51,8 +59,16 @@ def compare(
     student_truncated: bool = False,
     expected_truncated: bool = False,
     lenient_numbers: bool = False,
+    key_positions: Optional[Sequence[int]] = None,
+    ignore_column_order: bool = False,
 ) -> Diff:
-    """Compare two result sets as multisets, optionally as ordered sequences."""
+    """Compare two result sets as multisets, optionally as ordered sequences.
+
+    `key_positions` are the expected columns the reference sorts by: with them the
+    order check compares only those keys, so rows that tie on every key may come
+    back in any order. `ignore_column_order` accepts the right columns in another
+    order, as long as one reordering makes every row match.
+    """
     if len(student_columns) != len(expected_columns):
         return Diff(
             equal=False,
@@ -92,14 +108,67 @@ def compare(
 
     counts = (len(student), len(expected), len(student_columns), len(expected_columns))
 
+    permutation = None
+    if (missing or extra) and ignore_column_order:
+        permutation = _column_permutation(student, expected, expected_counts)
+        if permutation is not None:
+            student = [tuple(row[j] for j in permutation) for row in student]
+            missing, extra = [], []
+
     if missing or extra:
-        return _diff(False, KIND_ROWS, counts, overlap, missing, extra)
-    if ordered and student != expected:
-        return _diff(False, KIND_ORDER, counts, 1.0)
-    return _diff(True, KIND_OK, counts, 1.0)
+        type_only = Counter(map(loose_row, student)) == Counter(map(loose_row, expected))
+        return _diff(False, KIND_ROWS, counts, overlap, missing, extra, type_only=type_only)
+    if ordered and (_order_view(student, key_positions, len(expected_columns))
+                    != _order_view(expected, key_positions, len(expected_columns))):
+        return _diff(False, KIND_ORDER, counts, 1.0, column_permutation=permutation)
+    return _diff(True, KIND_OK, counts, 1.0, column_permutation=permutation)
 
 
-def _diff(equal, kind, counts, overlap, missing=None, extra=None) -> Diff:
+def _order_view(rows: list[tuple], key_positions: Optional[Sequence[int]], width: int) -> list:
+    """What the order check compares: the sort keys when known, otherwise whole rows."""
+    if not key_positions or not all(0 <= i < width for i in key_positions):
+        return rows
+    return [tuple(row[i] for i in key_positions) for row in rows]
+
+
+def _column_permutation(student: list[tuple], expected: list[tuple],
+                        expected_counts: Counter) -> Optional[list[int]]:
+    """A reordering of the student's columns that makes the multisets equal, or None.
+
+    Candidates for an expected column are the student columns holding the same values.
+    Two columns can hold the same values yet pair up differently within rows, so every
+    complete assignment is verified against the whole rows.
+    """
+    width = len(expected[0]) if expected else 0
+    if not width or width > MAX_PERMUTED_COLUMNS or len(student) != len(expected):
+        return None
+    student_values = [Counter(row[j] for row in student) for j in range(width)]
+    candidates = []
+    for i in range(width):
+        values = Counter(row[i] for row in expected)
+        candidates.append([j for j in range(width) if student_values[j] == values])
+
+    chosen: list[int] = []
+
+    def search(i: int) -> Optional[list[int]]:
+        if i == width:
+            reordered = Counter(tuple(row[j] for j in chosen) for row in student)
+            return list(chosen) if reordered == expected_counts else None
+        for j in candidates[i]:
+            if j in chosen:
+                continue
+            chosen.append(j)
+            found = search(i + 1)
+            chosen.pop()
+            if found is not None:
+                return found
+        return None
+
+    return search(0)
+
+
+def _diff(equal, kind, counts, overlap, missing=None, extra=None, *, type_only=False,
+          column_permutation=None) -> Diff:
     s_rows, e_rows, s_cols, e_cols = counts
     return Diff(
         equal=equal,
@@ -111,6 +180,8 @@ def _diff(equal, kind, counts, overlap, missing=None, extra=None) -> Diff:
         expected_rows=e_rows,
         student_columns=s_cols,
         expected_columns=e_cols,
+        type_only=type_only,
+        column_permutation=column_permutation,
     )
 
 
