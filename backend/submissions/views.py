@@ -5,6 +5,8 @@ import uuid
 from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils.decorators import method_decorator
@@ -23,9 +25,11 @@ from .serializers import (
     SubmissionCreateSerializer,
     SubmissionResultSerializer,
     UserResultSerializer,
+    ManualScoreSerializer,
 )
 from assignments.models import Assignment
 from courses.models import Course, Enrollment, Lesson, LessonExercise
+from config.permissions import require_course_manager
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
@@ -243,17 +247,30 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
+class UserResultViewSet(viewsets.ModelViewSet):
+    """Results are read by everyone involved; PATCH only sets the instructor's manual score."""
     serializer_class = UserResultSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def _uuid_param(self, name):
+        value = self.request.query_params.get(name)
+        if not value:
+            return None
+        try:
+            return uuid.UUID(str(value))
+        except ValueError:
+            raise ValidationError({name: 'Invalid id.'})
 
     def get_queryset(self):
         user = self.request.user
         assignment_id = self.kwargs.get('assignment_pk')
-        lesson_id = self.kwargs.get('lesson_pk')
-        course_id = self.request.query_params.get('course')
+        lesson_id = self.kwargs.get('lesson_pk') or self._uuid_param('lesson')
+        course_id = self._uuid_param('course')
 
-        if user.is_instructor:
+        if user.is_superuser or getattr(user, 'role', None) == 'admin':
+            queryset = UserResult.objects.all()
+        elif user.is_instructor:
             queryset = UserResult.objects.filter(
                 assignment__course__instructor=user
             ) | UserResult.objects.filter(
@@ -262,6 +279,9 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
         else:
             queryset = UserResult.objects.filter(student=user)
 
+        student_id = self._uuid_param('student') if user.is_instructor else None
+        if student_id:
+            queryset = queryset.filter(student_id=student_id)
         if assignment_id:
             queryset = queryset.filter(assignment_id=assignment_id)
         if lesson_id:
@@ -273,7 +293,27 @@ class UserResultViewSet(viewsets.ReadOnlyModelViewSet):
                 lesson__course_id=course_id
             )
 
-        return queryset.select_related('student', 'assignment', 'lesson', 'best_submission')
+        return queryset.select_related(
+            'student', 'assignment', 'lesson', 'exercise', 'best_submission',
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        """Set or clear the manual score (owner of the result's course or admin)."""
+        result = get_object_or_404(
+            UserResult.objects.select_related('assignment__course', 'lesson__course', 'exercise'),
+            pk=kwargs['pk'],
+        )
+        course = result.assignment.course if result.assignment_id else (
+            result.lesson.course if result.lesson_id else None)
+        if course is None:
+            return Response({'detail': 'This result has no task to score.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        require_course_manager(request.user, course)
+        serializer = ManualScoreSerializer(
+            result, data=request.data, partial=True, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(self.get_serializer(result).data)
 
     @action(detail=False, methods=['get'])
     def my_progress(self, request, **kwargs):

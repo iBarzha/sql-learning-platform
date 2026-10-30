@@ -56,9 +56,7 @@ def course_progress(student, courses) -> list[dict]:
         entry = totals[task[0]]
         if result.is_completed:
             entry['completed'] += 1
-        # manual_score arrives with Task 3; until then every result uses best_score.
-        manual = getattr(result, 'manual_score', None)
-        entry['score'] += manual if manual is not None else result.best_score
+        entry['score'] += result.effective_score
 
     progress = []
     for course in courses:
