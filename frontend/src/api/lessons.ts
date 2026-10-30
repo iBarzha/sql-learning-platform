@@ -1,6 +1,6 @@
 import type { CriteriaSummary, ExerciseCriteria } from '@/types';
 import apiClient from './client';
-import type { PaginatedResponse, Submission } from '@/types';
+import type { PaginatedResponse, RegradeSummary, StudentTimer, Submission } from '@/types';
 
 export type LessonType = 'theory' | 'practice' | 'mixed';
 
@@ -23,6 +23,7 @@ export interface LessonExercise {
   required_keywords?: string[];
   forbidden_keywords?: string[];
   order_matters?: boolean;
+  ignore_column_order?: boolean;
   max_score: number;
   hints?: string[];
   criteria?: ExerciseCriteria;
@@ -51,6 +52,8 @@ export interface Lesson {
   time_limit_seconds: number | null;
   max_attempts?: number;
   exercises: LessonExercise[];
+  /** Present in the lesson list, which does not carry the exercises themselves. */
+  exercise_count?: number;
   is_published: boolean;
   user_completed?: boolean;
   user_best_score?: number;
@@ -90,6 +93,7 @@ export interface ExerciseValidation {
   truncated?: boolean;
   killed?: number;
   surviving?: SurvivingMutant[];
+  warnings?: string[];
   reference_empty_on?: string[];
   reference_errors?: Record<string, string>;
 }
@@ -98,6 +102,10 @@ export interface LessonValidation {
   lesson_id: string;
   exercises: ExerciseValidation[];
 }
+
+export type TimerActionData =
+  | { student: string; action: 'reset' }
+  | { student: string; action: 'extend'; minutes: number };
 
 export interface LessonTiming {
   started_at: string | null;
@@ -168,6 +176,22 @@ const lessonsApi = {
     const response = await apiClient.post<Submission>(
       `/courses/${courseId}/lessons/${lessonId}/submissions/`,
       { query, exercise_id: exerciseId }
+    );
+    return response.data;
+  },
+
+  timerAction: async (courseId: string, lessonId: string, data: TimerActionData) => {
+    const response = await apiClient.post<StudentTimer>(
+      `/courses/${courseId}/lessons/${lessonId}/timer/`,
+      data
+    );
+    return response.data;
+  },
+
+  regrade: async (courseId: string, lessonId: string, exerciseId?: string) => {
+    const response = await apiClient.post<RegradeSummary>(
+      `/courses/${courseId}/lessons/${lessonId}/regrade/`,
+      exerciseId ? { exercise_id: exerciseId } : {}
     );
     return response.data;
   },

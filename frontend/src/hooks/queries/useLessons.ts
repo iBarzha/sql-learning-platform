@@ -68,6 +68,17 @@ export function useValidateExercises(courseId: string, lessonId: string) {
   });
 }
 
+export function useRegradeLesson(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lessonId: string) => lessonsApi.regrade(courseId, lessonId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['results'] });
+      qc.invalidateQueries({ queryKey: ['student'] });
+    },
+  });
+}
+
 export function useSubmitLesson(courseId: string, lessonId: string) {
   const qc = useQueryClient();
   return useMutation({

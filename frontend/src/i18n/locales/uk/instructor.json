@@ -106,7 +106,17 @@
     "save": "Зберегти",
     "duplicateConfirmTitle": "Дублювати курс?",
     "duplicateConfirm": "Буде створено чернетку-копію курсу «{{title}}» з усіма модулями, уроками та вправами. Студенти та їхні відповіді не копіюються.",
-    "codeCopied": "Скопійовано!"
+    "codeCopied": "Скопійовано!",
+    "regrade": "Перевірити заново",
+    "regradeConfirmTitle": "Перевірити заново урок «{{title}}»?",
+    "regradeConfirm": "Усі відповіді студентів у цьому уроці буде перевірено заново з поточним еталонним запитом і критеріями. Бали та статус виконання можуть змінитися; оцінки, виставлені вручну, залишаться.",
+    "regradeDone": "Перевірено {{count}} відповідей, змінено оцінок: {{changed}}",
+    "regradeDone_one": "Перевірено {{count}} відповідь, змінено оцінок: {{changed}}",
+    "regradeDone_few": "Перевірено {{count}} відповіді, змінено оцінок: {{changed}}",
+    "regradeDone_many": "Перевірено {{count}} відповідей, змінено оцінок: {{changed}}",
+    "regradeDone_other": "Перевірено {{count}} відповіді, змінено оцінок: {{changed}}",
+    "regradeTruncated": "Перевірено не всі відповіді: спрацювало обмеження за кількістю або часом.",
+    "regradeFailed": "Не вдалося перевірити відповіді заново"
   },
   "lessonForm": {
     "createTitle": "Новий урок",
@@ -188,14 +198,19 @@
       "skipped": "Пропущено: немає еталонного запиту.",
       "caught": "{{killed}} з {{total}} типових помилок ловлять набори ({{datasets}}).",
       "truncated": " Перевірено лише {{checked}} з {{total}} помилок: вичерпано ліміт часу.",
-      "referenceEmpty": "Еталон не повертає рядків на: {{names}}"
+      "referenceEmpty": "Еталон не повертає рядків на: {{names}}",
+      "warnings": "Попередження"
     },
     "deleteAttachment": "Видалити додаток",
     "errors": {
       "incompleteDataset": "Вправа {{n}}: кожен прихований набір потребує назви і SQL з даними (або видаліть порожній).",
       "validateFailed": "Не вдалося перевірити набори",
-      "saveFailed": "Не вдалося зберегти урок"
-    }
+      "saveFailed": "Не вдалося зберегти урок",
+      "expectedQueryRequired": "Потрібен еталонний запит: без нього відповідь не перевіряється."
+    },
+    "ignoreColumnOrder": "Порядок стовпців не важливий",
+    "ignoreColumnOrderDesc": "Відповідь зараховується, якщо ті самі стовпці йдуть в іншому порядку.",
+    "noHiddenDatasetsHint": "Без прихованих наборів відповідь, підігнану під видимі дані, не буде відрізнено від правильної."
   },
   "students": {
     "title": "Студенти",
@@ -242,7 +257,63 @@
     "onCoursesN_one": "на {{count}} курсі",
     "onCoursesN_few": "на {{count}} курсах",
     "onCoursesN_many": "на {{count}} курсах",
-    "onCoursesN_other": "на {{count}} курсах"
+    "onCoursesN_other": "на {{count}} курсах",
+    "timers": {
+      "open": "Час контрольних",
+      "title": "Час контрольних",
+      "limit": "Ліміт: {{count}} хвилин",
+      "limit_one": "Ліміт: {{count}} хвилина",
+      "limit_few": "Ліміт: {{count}} хвилини",
+      "limit_many": "Ліміт: {{count}} хвилин",
+      "limit_other": "Ліміт: {{count}} хвилини",
+      "startedAt": "Почато: {{time}}",
+      "deadline": "Дедлайн: {{time}}",
+      "remaining": "Залишилось {{count}} хвилин",
+      "remaining_one": "Залишилась {{count}} хвилина",
+      "remaining_few": "Залишилось {{count}} хвилини",
+      "remaining_many": "Залишилось {{count}} хвилин",
+      "remaining_other": "Залишилось {{count}} хвилини",
+      "expired": "Час вичерпано",
+      "notStarted": "Студент ще не починав",
+      "extra": "Додатковий час: {{count}} хвилин",
+      "extra_one": "Додатковий час: {{count}} хвилина",
+      "extra_few": "Додатковий час: {{count}} хвилини",
+      "extra_many": "Додатковий час: {{count}} хвилин",
+      "extra_other": "Додатковий час: {{count}} хвилини",
+      "minutesLabel": "Хвилини (1–180)",
+      "addMinutes": "+ хвилин",
+      "reset": "Скинути час",
+      "resetConfirmTitle": "Скинути час?",
+      "resetConfirm": "Таймер уроку «{{lesson}}» для студента {{student}} буде скинуто разом із доданим часом. Відлік почнеться заново, коли студент знову відкриє практику.",
+      "resetDone": "Час уроку «{{lesson}}» скинуто",
+      "extended": "«{{lesson}}»: додано {{count}} хвилин",
+      "extended_one": "«{{lesson}}»: додано {{count}} хвилину",
+      "extended_few": "«{{lesson}}»: додано {{count}} хвилини",
+      "extended_many": "«{{lesson}}»: додано {{count}} хвилин",
+      "extended_other": "«{{lesson}}»: додано {{count}} хвилини",
+      "actionFailed": "Не вдалося змінити час"
+    },
+    "results": {
+      "open": "Результати й оцінки",
+      "title": "Результати й оцінки",
+      "best": "Найкращий бал: {{score}} / {{max}}",
+      "attempts": "{{count}} спроб",
+      "attempts_one": "{{count}} спроба",
+      "attempts_few": "{{count}} спроби",
+      "attempts_many": "{{count}} спроб",
+      "attempts_other": "{{count}} спроби",
+      "completed": "Виконано",
+      "notCompleted": "Не виконано",
+      "manualScore": "Оцінка",
+      "comment": "Коментар для студента",
+      "save": "Зберегти",
+      "reset": "Скинути",
+      "saved": "Оцінку збережено",
+      "saveFailed": "Не вдалося зберегти оцінку",
+      "scoreRange": "Оцінка має бути від 0 до {{max}}",
+      "assignments": "Завдання",
+      "empty": "Студент ще не надсилав відповідей"
+    }
   },
   "datasets": {
     "title": "Мої датасети",

@@ -66,7 +66,8 @@
     "nextHint": "Наступна підказка",
     "submittedAt": "Надіслано {{time}}",
     "attemptQuery": "Запит цієї спроби",
-    "attachments": "Додатки ({{count}})"
+    "attachments": "Додатки ({{count}})",
+    "teacherScore": "Оцінка викладача: {{score}} / {{max}}"
   },
   "attachments": {
     "title": "Додатки ({{count}})"

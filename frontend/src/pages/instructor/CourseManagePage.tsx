@@ -35,6 +35,7 @@ import {
   Copy,
   ClipboardCopy,
   Check,
+  RefreshCw,
 } from 'lucide-react';
 import lessonsApi, { type Lesson } from '@/api/lessons';
 import modulesApi, { type Module } from '@/api/modules';
@@ -45,7 +46,8 @@ import {
   useDuplicateCourse,
   useDeleteCourse,
 } from '@/hooks/queries/useCourses';
-import { useLessons, useDeleteLesson } from '@/hooks/queries/useLessons';
+import { useLessons, useDeleteLesson, useRegradeLesson } from '@/hooks/queries/useLessons';
+import { getApiErrorMessage } from '@/lib/utils';
 import { useModules, useCreateModule, useDeleteModule } from '@/hooks/queries/useModules';
 
 const LESSON_TYPE_ICONS = {
@@ -70,6 +72,7 @@ export function CourseManagePage() {
   const duplicateMutation = useDuplicateCourse();
   const deleteCourseMutation = useDeleteCourse();
   const deleteLessonMutation = useDeleteLesson(courseId!);
+  const regradeMutation = useRegradeLesson(courseId!);
   const createModuleMutation = useCreateModule(courseId!);
   const deleteModuleMutation = useDeleteModule(courseId!);
 
@@ -87,6 +90,7 @@ export function CourseManagePage() {
   const [codeCopied, setCodeCopied] = useState(false);
 
   const [deleteLessonId, setDeleteLessonId] = useState<string | null>(null);
+  const [regradeLesson, setRegradeLesson] = useState<Lesson | null>(null);
   const [deleteModuleId, setDeleteModuleId] = useState<string | null>(null);
 
   const handleCopyCode = useCallback(async () => {
@@ -131,6 +135,21 @@ export function CourseManagePage() {
       setError('Failed to delete lesson');
     } finally {
       setDeleteLessonId(null);
+    }
+  }
+
+  async function confirmRegrade() {
+    if (!regradeLesson) return;
+    try {
+      const summary = await regradeMutation.mutateAsync(regradeLesson.id);
+      toast.success(
+        t('courseManage.regradeDone', { count: summary.submissions, changed: summary.changed }),
+        summary.truncated ? { description: t('courseManage.regradeTruncated') } : undefined
+      );
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('courseManage.regradeFailed')));
+    } finally {
+      setRegradeLesson(null);
     }
   }
 
@@ -475,6 +494,17 @@ export function CourseManagePage() {
                                     <EyeOff className="h-4 w-4" />
                                   )}
                                 </Button>
+                                {lesson.lesson_type !== 'theory' && (lesson.exercise_count ?? 0) > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setRegradeLesson(lesson)}
+                                    title={t('courseManage.regrade')}
+                                    aria-label={t('courseManage.regrade')}
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Link to={`/courses/${courseId}/lessons/${lesson.id}/edit`}>
                                   <Button variant="ghost" size="icon" title={t('courseManage.editLesson')} aria-label={t('courseManage.editLesson')}>
                                     <Edit className="h-4 w-4" />
@@ -568,6 +598,25 @@ export function CourseManagePage() {
             </Button>
             <Button variant="destructive" onClick={confirmDeleteLesson}>
               {t('courseManage.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Regrade Lesson Dialog */}
+      <Dialog open={!!regradeLesson} onOpenChange={(open) => !open && !regradeMutation.isPending && setRegradeLesson(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('courseManage.regradeConfirmTitle', { title: regradeLesson?.title })}</DialogTitle>
+            <DialogDescription>{t('courseManage.regradeConfirm')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRegradeLesson(null)} disabled={regradeMutation.isPending}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button onClick={confirmRegrade} disabled={regradeMutation.isPending}>
+              {regradeMutation.isPending && <Spinner size="sm" className="mr-2" />}
+              {t('courseManage.regrade')}
             </Button>
           </DialogFooter>
         </DialogContent>

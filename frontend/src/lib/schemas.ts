@@ -56,6 +56,7 @@ export const exerciseSchema = z.object({
   required_keywords: z.array(z.string()).default([]),
   forbidden_keywords: z.array(z.string()).default([]),
   order_matters: z.boolean().default(false),
+  ignore_column_order: z.boolean().default(false),
   max_score: z.number().positive().default(100),
   hints: z.array(z.string()).default([]),
   check_datasets: z
@@ -79,17 +80,32 @@ export const exerciseSchema = z.object({
 
 export type ExerciseFormData = z.infer<typeof exerciseSchema>;
 
-export const lessonSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(255),
-  description: z.string().default(''),
-  lesson_type: z.enum(['theory', 'practice', 'mixed']),
-  theory_content: z.string().default(''),
-  time_limit_seconds: z.number().positive().nullable().default(null),
-  max_attempts: z.number().positive().optional().nullable(),
-  exercises: z.array(exerciseSchema).default([]),
-  module_id: z.string().min(1, 'Module is required'),
-  is_published: z.boolean().default(false),
-});
+export const lessonSchema = z
+  .object({
+    title: z.string().min(1, 'Title is required').max(255),
+    description: z.string().default(''),
+    lesson_type: z.enum(['theory', 'practice', 'mixed']),
+    theory_content: z.string().default(''),
+    time_limit_seconds: z.number().positive().nullable().default(null),
+    max_attempts: z.number().positive().optional().nullable(),
+    exercises: z.array(exerciseSchema).default([]),
+    module_id: z.string().min(1, 'Module is required'),
+    is_published: z.boolean().default(false),
+  })
+  // Every exercise the lesson shows needs a reference query; a theory lesson does not
+  // send its hidden exercises, so they are not checked.
+  .superRefine((data, ctx) => {
+    if (data.lesson_type === 'theory') return;
+    data.exercises.forEach((ex, i) => {
+      if (!ex.expected_query.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'required',
+          path: ['exercises', i, 'expected_query'],
+        });
+      }
+    });
+  });
 
 export type LessonFormData = z.infer<typeof lessonSchema>;
 

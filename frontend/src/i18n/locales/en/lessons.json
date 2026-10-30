@@ -62,7 +62,8 @@
     "nextHint": "Next hint",
     "submittedAt": "Submitted {{time}}",
     "attemptQuery": "Query of this attempt",
-    "attachments": "Attachments ({{count}})"
+    "attachments": "Attachments ({{count}})",
+    "teacherScore": "Instructor's score: {{score}} / {{max}}"
   },
   "attachments": {
     "title": "Attachments ({{count}})"

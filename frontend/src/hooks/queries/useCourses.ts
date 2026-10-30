@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import coursesApi, { type CreateCourseData, type UpdateCourseData } from '@/api/courses';
+import lessonsApi, { type TimerActionData } from '@/api/lessons';
 
 export function useCourses(params?: { search?: string; is_published?: boolean }) {
   return useQuery({
@@ -36,6 +37,25 @@ export function useCourseDatasets(courseId: string | undefined) {
     queryKey: ['course', courseId, 'datasets'],
     queryFn: () => coursesApi.getDatasets(courseId!),
     enabled: !!courseId,
+  });
+}
+
+export function useStudentTimers(courseId: string | undefined, studentId: string | undefined) {
+  return useQuery({
+    queryKey: ['course', courseId, 'timers', studentId],
+    queryFn: () => coursesApi.getStudentTimers(courseId!, studentId!),
+    enabled: !!courseId && !!studentId,
+  });
+}
+
+export function useTimerAction(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lessonId, data }: { lessonId: string; data: TimerActionData }) =>
+      lessonsApi.timerAction(courseId, lessonId, data),
+    onSuccess: (_result, { data }) => {
+      qc.invalidateQueries({ queryKey: ['course', courseId, 'timers', data.student] });
+    },
   });
 }
 

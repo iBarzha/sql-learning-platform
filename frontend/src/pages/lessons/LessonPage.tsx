@@ -27,11 +27,12 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { SqlExerciseBlock } from '@/components/editor/SqlExerciseBlock';
 import { CriteriaChecklist } from '@/components/grading/CriteriaChecklist';
-import type { Submission } from '@/types';
+import type { StudentResult, Submission } from '@/types';
 import type { LessonExercise } from '@/api/lessons';
 import { useLesson, useLessonSubmissions, useStartLesson, useSubmitLesson } from '@/hooks/queries/useLessons';
 import type { LessonTiming } from '@/api/lessons';
 import { useAttachments } from '@/hooks/queries/useAttachments';
+import { useLessonResults } from '@/hooks/queries/useSubmissions';
 import { getApiErrorMessage } from '@/lib/utils';
 import { SqlEditor } from '@/components/editor/SqlEditor';
 import { useSqlite } from '@/hooks/useSqlite';
@@ -69,6 +70,8 @@ interface ExercisePanelProps {
   attemptsLeft?: number;
   maxAttempts?: number;
   history: Submission[];
+  /** The student's result for this exercise when the instructor set a manual score. */
+  teacherResult?: StudentResult;
 }
 
 function ExercisePanel({
@@ -84,6 +87,7 @@ function ExercisePanel({
   maxAttempts,
   databaseType,
   history,
+  teacherResult,
 }: ExercisePanelProps) {
   const { t } = useTranslation('lessons');
   const [showHint, setShowHint] = useState(false);
@@ -322,6 +326,21 @@ function ExercisePanel({
           </Card>
         )}
 
+        {teacherResult && teacherResult.manual_score !== null && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                {t('page.teacherScore', { score: Number(teacherResult.manual_score), max: teacherResult.max_score })}
+              </CardTitle>
+            </CardHeader>
+            {teacherResult.manual_comment && (
+              <CardContent>
+                <p className="text-sm whitespace-pre-wrap">{teacherResult.manual_comment}</p>
+              </CardContent>
+            )}
+          </Card>
+        )}
+
         {history.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
@@ -404,6 +423,7 @@ export function LessonPage() {
   const { data: lesson, isLoading: lessonLoading } = useLesson(courseId, lessonId);
   const { data: submissions = [], isLoading: subsLoading } = useLessonSubmissions(courseId, lessonId);
   const { data: attachments = [] } = useAttachments(courseId, lessonId);
+  const { data: lessonResults = [] } = useLessonResults(lessonId);
   const submitMutation = useSubmitLesson(courseId!, lessonId!);
   const startMutation = useStartLesson(courseId!, lessonId!);
   const loading = lessonLoading || subsLoading;
@@ -551,6 +571,9 @@ export function LessonPage() {
   const activeQuery = activeExId ? queries[activeExId] ?? '' : '';
   const activeSub = activeExId ? submissionsByExercise[activeExId] ?? null : null;
   const activeLocal = activeExId ? localResultByExercise[activeExId] ?? null : null;
+  const activeTeacherResult = activeExId
+    ? lessonResults.find((r) => r.exercise === activeExId && r.manual_score !== null)
+    : undefined;
   const activeHistory = activeExId
     ? submissions
         .filter((s: Submission) => s.exercise === activeExId)
@@ -742,6 +765,7 @@ export function LessonPage() {
               attemptsLeft={attemptsLeft}
               maxAttempts={maxAttempts}
               history={activeHistory}
+              teacherResult={activeTeacherResult}
             />
           )}
         </div>

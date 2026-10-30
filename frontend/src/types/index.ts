@@ -71,6 +71,7 @@ export interface Assignment {
   required_keywords: string[];
   forbidden_keywords: string[];
   order_matters: boolean;
+  ignore_column_order?: boolean;
   partial_match: boolean;
   max_score: number;
   criteria_summary?: CriteriaSummary;
@@ -180,6 +181,52 @@ export interface UserResult {
   is_completed: boolean;
   first_completed_at?: string;
   last_attempt_at?: string;
+}
+
+/** One graded task of a student (lesson exercise or assignment), from `/results/`. */
+export interface StudentResult {
+  id: string;
+  student: string;
+  assignment: string | null;
+  assignment_title: string | null;
+  lesson: string | null;
+  lesson_title: string | null;
+  exercise: string | null;
+  exercise_title: string | null;
+  max_score: number;
+  best_submission: string | null;
+  best_score: number;
+  total_attempts: number;
+  is_completed: boolean;
+  first_completed_at: string | null;
+  last_attempt_at: string | null;
+  extra_seconds: number;
+  manual_score: number | null;
+  manual_comment: string;
+  manual_set_at: string | null;
+  effective_score: number;
+}
+
+export interface ManualScoreData {
+  manual_score: number | null;
+  manual_comment: string;
+}
+
+/** Timer state of one timed lesson for one student. */
+export interface StudentTimer {
+  lesson_id: string;
+  lesson_title: string;
+  time_limit_seconds: number;
+  started_at: string | null;
+  deadline: string | null;
+  remaining_seconds: number | null;
+  extra_seconds: number;
+}
+
+export interface RegradeSummary {
+  submissions: number;
+  changed: number;
+  truncated: boolean;
 }
 
 export interface Enrollment {

@@ -14,6 +14,7 @@ export interface CreateAssignmentData {
   required_keywords?: string[];
   forbidden_keywords?: string[];
   order_matters?: boolean;
+  ignore_column_order?: boolean;
   partial_match?: boolean;
   max_score?: number;
   time_limit_seconds?: number;

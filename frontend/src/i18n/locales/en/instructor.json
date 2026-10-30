@@ -100,7 +100,15 @@
     "save": "Save",
     "duplicateConfirmTitle": "Duplicate course?",
     "duplicateConfirm": "A draft copy of \"{{title}}\" will be created with all modules, lessons and exercises. Students and their submissions are not copied.",
-    "codeCopied": "Copied!"
+    "codeCopied": "Copied!",
+    "regrade": "Regrade",
+    "regradeConfirmTitle": "Regrade the lesson \"{{title}}\"?",
+    "regradeConfirm": "All student answers in this lesson will be graded again with the current expected query and criteria. Scores and completion may change; manually set scores are kept.",
+    "regradeDone": "Regraded {{count}} answers, scores changed: {{changed}}",
+    "regradeDone_one": "Regraded {{count}} answer, scores changed: {{changed}}",
+    "regradeDone_other": "Regraded {{count}} answers, scores changed: {{changed}}",
+    "regradeTruncated": "Not every answer was regraded: the count or time limit was reached.",
+    "regradeFailed": "Failed to regrade the answers"
   },
   "lessonForm": {
     "createTitle": "New Lesson",
@@ -182,14 +190,19 @@
       "skipped": "Skipped: no expected query.",
       "caught": "{{killed}} of {{total}} typical mistakes are caught by {{datasets}} dataset(s).",
       "truncated": " Only {{checked}} of {{total}} mistakes were tried before the time budget ran out.",
-      "referenceEmpty": "Reference returns no rows on: {{names}}"
+      "referenceEmpty": "Reference returns no rows on: {{names}}",
+      "warnings": "Warnings"
     },
     "deleteAttachment": "Delete attachment",
     "errors": {
       "incompleteDataset": "Exercise {{n}}: every hidden check dataset needs a name and seed SQL (or remove the empty one).",
       "validateFailed": "Failed to validate datasets",
-      "saveFailed": "Failed to save lesson"
-    }
+      "saveFailed": "Failed to save lesson",
+      "expectedQueryRequired": "An expected query is required: without it the answer is not checked."
+    },
+    "ignoreColumnOrder": "Column order does not matter",
+    "ignoreColumnOrderDesc": "The answer is accepted when the same columns come in a different order.",
+    "noHiddenDatasetsHint": "Without hidden datasets an answer fitted to the visible data cannot be told from a correct one."
   },
   "students": {
     "title": "Students",
@@ -228,7 +241,53 @@
     "studentsN_other": "{{count}} students",
     "onCoursesN": "across {{count}} courses",
     "onCoursesN_one": "across {{count}} course",
-    "onCoursesN_other": "across {{count}} courses"
+    "onCoursesN_other": "across {{count}} courses",
+    "timers": {
+      "open": "Test timers",
+      "title": "Test timers",
+      "limit": "Limit: {{count}} minutes",
+      "limit_one": "Limit: {{count}} minute",
+      "limit_other": "Limit: {{count}} minutes",
+      "startedAt": "Started: {{time}}",
+      "deadline": "Deadline: {{time}}",
+      "remaining": "{{count}} minutes left",
+      "remaining_one": "{{count}} minute left",
+      "remaining_other": "{{count}} minutes left",
+      "expired": "Time is up",
+      "notStarted": "Not started yet",
+      "extra": "Extra time: {{count}} minutes",
+      "extra_one": "Extra time: {{count}} minute",
+      "extra_other": "Extra time: {{count}} minutes",
+      "minutesLabel": "Minutes (1–180)",
+      "addMinutes": "+ minutes",
+      "reset": "Reset time",
+      "resetConfirmTitle": "Reset the time?",
+      "resetConfirm": "The timer of \"{{lesson}}\" for {{student}} will be reset together with any extra time. The clock starts again when the student opens the practice.",
+      "resetDone": "Time of \"{{lesson}}\" reset",
+      "extended": "\"{{lesson}}\": added {{count}} minutes",
+      "extended_one": "\"{{lesson}}\": added {{count}} minute",
+      "extended_other": "\"{{lesson}}\": added {{count}} minutes",
+      "actionFailed": "Failed to change the time"
+    },
+    "results": {
+      "open": "Results and scores",
+      "title": "Results and scores",
+      "best": "Best score: {{score}} / {{max}}",
+      "attempts": "{{count}} attempts",
+      "attempts_one": "{{count}} attempt",
+      "attempts_other": "{{count}} attempts",
+      "completed": "Completed",
+      "notCompleted": "Not completed",
+      "manualScore": "Score",
+      "comment": "Comment for the student",
+      "save": "Save",
+      "reset": "Reset",
+      "saved": "Score saved",
+      "saveFailed": "Failed to save the score",
+      "scoreRange": "The score must be between 0 and {{max}}",
+      "assignments": "Assignments",
+      "empty": "The student has not submitted any answers yet"
+    }
   },
   "datasets": {
     "title": "My Datasets",
