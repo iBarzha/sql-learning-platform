@@ -345,17 +345,20 @@ def _key_position(term: exp.Expression, items: list[exp.Expression]) -> Optional
         except ValueError:
             return None
         return ordinal - 1 if 1 <= ordinal <= len(items) else None
-    # The exact expression goes first: in a self-join `ORDER BY b.city` must not
-    # match `a.city` by its bare name.
+    is_name = isinstance(term, (exp.Column, exp.Identifier)) and not term.is_star
+    name = term.name.lower() if is_name else ''
+    # SQL resolves a bare name to an output alias first.
+    if is_name and not (isinstance(term, exp.Column) and term.table):
+        for index, item in enumerate(items):
+            if isinstance(item, exp.Alias) and item.alias.lower() == name:
+                return index
+    # Then the exact expression: in a self-join `ORDER BY b.city` must not match
+    # `a.city` by its bare name.
     text = term.sql()
     for index, item in enumerate(items):
         if item.unalias().sql() == text:
             return index
-    if isinstance(term, (exp.Column, exp.Identifier)) and not term.is_star:
-        name = term.name.lower()
-        for index, item in enumerate(items):
-            if isinstance(item, exp.Alias) and item.alias.lower() == name:
-                return index
+    if is_name:
         for index, item in enumerate(items):
             if isinstance(item, exp.Column) and item.name.lower() == name:
                 return index
