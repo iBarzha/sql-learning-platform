@@ -311,6 +311,62 @@ class StreamingMixin:
         self.assertTrue(results[2].truncated)
         self.assertEqual(results[4].rows, [[5]])
 
+    def on_one_connection(self, queries):
+        """Run every statement on one seeded connection, failures included."""
+        from sandbox.exceptions import QuerySyntaxError, QueryTimeoutError
+        from sandbox.executors.base import QueryResult
+        from sandbox.pool import get_sandbox_pool
+        results = []
+        with get_sandbox_pool()._isolated(self.db_type, SQL_SCHEMA, SQL_SEED) as executor:
+            for query in queries:
+                try:
+                    results.append(executor.execute_query(query, timeout=10))
+                except (QuerySyntaxError, QueryTimeoutError) as e:
+                    results.append(QueryResult(success=False, error_message=str(e)))
+        return results
+
+    def test_select_in_user_transaction_is_capped_and_the_transaction_survives(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        results = self.on_one_connection([
+            'BEGIN',
+            'UPDATE employees SET salary = 0',
+            SERIES_2500,
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+            'ROLLBACK',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+            SERIES_2500,
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(len(results[2].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[2].truncated)
+        self.assertEqual(results[3].rows, [[5]])
+        self.assertEqual(results[5].rows, [[0]])
+        # Outside the transaction again nothing of the in-transaction cap lingers.
+        self.assertEqual(len(results[6].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[6].truncated)
+
+    def test_huge_select_in_user_transaction_is_not_computed_in_full(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        results = self.on_one_connection(['BEGIN', self.huge_cross_join, 'SELECT 1', 'ROLLBACK'])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(len(results[1].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[1].truncated)
+
+    def test_undeclarable_select_in_user_transaction_keeps_the_transaction(self):
+        results = self.on_one_connection([
+            'BEGIN',
+            'UPDATE employees SET salary = 0',
+            self.select_into,
+            self.read_back,
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+            'ROLLBACK',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[3].rows, [[5]])
+        self.assertEqual(results[4].rows, [[5]])
+        self.assertEqual(results[6].rows, [[0]])
+
     def test_syntax_error_still_fails(self):
         r = self.run_one('SELECT FROM WHERE')
         self.assertFalse(r.success)
@@ -319,6 +375,49 @@ class StreamingMixin:
 
 class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
     db_type = 'postgresql'
+    select_into = 'SELECT * INTO emp_copy FROM employees'
+    read_back = 'SELECT COUNT(*) FROM emp_copy'
+
+    def test_script_returns_the_last_result(self):
+        r = self.run_one('CREATE TEMP TABLE tt AS SELECT id FROM employees; '
+                         "INSERT INTO tt VALUES (99); SELECT COUNT(*) AS n FROM tt")
+        self.assertTrue(r.success, r.error_message)
+        self.assertEqual(r.columns, ['n'])
+        self.assertEqual(r.rows, [[6]])
+
+    def test_failing_script_leaves_no_trace(self):
+        results = self.on_one_connection([
+            "INSERT INTO departments VALUES (9, 'x'); SELECT * FROM missing_table; SELECT 1",
+            'SELECT COUNT(*) FROM departments',
+        ])
+        self.assertFalse(results[0].success)
+        self.assertEqual(results[1].rows, [[3]])
+
+    def test_script_with_a_large_last_select_is_capped(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        r = self.run_one("UPDATE employees SET bonus = 0; " + SERIES_2500 + ';')
+        self.assertTrue(r.success, r.error_message)
+        self.assertEqual(r.columns, ['x'])
+        self.assertEqual(len(r.rows), MAX_RESULT_ROWS)
+        self.assertTrue(r.truncated)
+
+    def test_script_with_a_huge_last_select_is_not_computed_in_full(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        r = self.run_one('SELECT 1; ' + self.huge_cross_join, timeout=5)
+        self.assertTrue(r.success, r.error_message)
+        self.assertEqual(len(r.rows), MAX_RESULT_ROWS)
+        self.assertTrue(r.truncated)
+
+    def test_script_inside_user_transaction(self):
+        results = self.on_one_connection([
+            'BEGIN',
+            "UPDATE employees SET salary = 0; SELECT COUNT(*) FROM employees WHERE salary = 0",
+            'ROLLBACK',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[1].rows, [[5]])
+        self.assertEqual(results[3].rows, [[0]])
     huge_cross_join = ('SELECT a.x FROM generate_series(1, 3000) a(x) '
                        'CROSS JOIN generate_series(1, 3000) b CROSS JOIN generate_series(1, 3000) c')
 
@@ -356,6 +455,24 @@ class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
 class MariadbEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
     db_type = 'mariadb'
     huge_cross_join = 'SELECT a.seq FROM seq_1_to_3000 a, seq_1_to_3000 b, seq_1_to_3000 c'
+    select_into = 'SELECT COUNT(*) INTO @n FROM employees'
+    read_back = 'SELECT @n'
+
+    def test_explicit_limit_in_user_transaction_is_capped(self):
+        from sandbox.executors.base import MAX_RESULT_ROWS
+        results = self.on_one_connection([
+            'BEGIN',
+            'UPDATE employees SET salary = 0',
+            'SELECT seq FROM seq_1_to_5000 LIMIT 3000',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+            'ROLLBACK',
+            'SELECT COUNT(*) FROM employees WHERE salary = 0',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(len(results[2].rows), MAX_RESULT_ROWS)
+        self.assertTrue(results[2].truncated)
+        self.assertEqual(results[3].rows, [[5]])
+        self.assertEqual(results[5].rows, [[0]])
 
     def test_truncated_result_is_still_graded_exactly(self):
         ref = 'SELECT seq FROM seq_1_to_1500'

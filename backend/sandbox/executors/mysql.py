@@ -92,10 +92,13 @@ class MySQLExecutor(BaseExecutor):
                     except pymysql.Error:
                         pass  # If neither works, proceed without timeout
 
-                # Not inside a user transaction: dropping the connection after a
-                # truncated result would silently roll it back.
-                in_trans = self._connection.server_status & SERVER_STATUS.SERVER_STATUS_IN_TRANS
-                if not in_trans and _is_row_query(query):
+                if _is_row_query(query):
+                    # Inside a user transaction the connection must not be dropped
+                    # after a truncated result: that would roll the transaction back.
+                    in_trans = (self._connection.server_status
+                                & SERVER_STATUS.SERVER_STATUS_IN_TRANS)
+                    if in_trans:
+                        return self._execute_capped_in_transaction(cur, query)
                     return self._execute_streaming(query)
 
                 result, elapsed_ms = self._measure_time(cur.execute, query)
@@ -141,13 +144,36 @@ class MySQLExecutor(BaseExecutor):
                 error_message=error_msg,
             )
 
-    def _execute_streaming(self, query: str) -> QueryResult:
+    def _execute_capped_in_transaction(self, cur, query: str) -> QueryResult:
+        """Row query inside a user transaction, without reconnecting.
+
+        sql_select_limit makes the server send at most MAX_RESULT_ROWS + 1 rows. An
+        explicit LIMIT in the query takes precedence over it, so the unbuffered
+        cursor still keeps memory bounded: whatever is left is drained and
+        discarded, never stored. The limit is reset afterwards, also on error.
+        """
+        cur.execute('SET SESSION sql_select_limit = %s', [MAX_RESULT_ROWS + 1])
+        try:
+            result = self._execute_streaming(query, reconnect=False)
+        except BaseException:
+            try:
+                cur.execute('SET SESSION sql_select_limit = DEFAULT')
+            except Exception:
+                pass  # a broken connection must not mask the original error
+            raise
+        # Outside the error path a failed reset must surface: a lingering limit
+        # would silently cut later results short.
+        cur.execute('SET SESSION sql_select_limit = DEFAULT')
+        return result
+
+    def _execute_streaming(self, query: str, reconnect: bool = True) -> QueryResult:
         """Run a row query on an unbuffered cursor; at most MAX_RESULT_ROWS + 1 rows
-        are read off the wire.
+        are kept.
 
         A truncated result is not drained: closing the cursor would read every
         remaining row. The connection is dropped instead (the server abandons the
-        result) and a fresh one opened to the same database.
+        result) and a fresh one opened to the same database. With reconnect=False
+        (inside a transaction) the remainder is drained instead.
         """
         cur = self._connection.cursor(SSCursor)
         try:
@@ -178,6 +204,7 @@ class MySQLExecutor(BaseExecutor):
         truncated = len(rows) > MAX_RESULT_ROWS
         if truncated:
             rows = rows[:MAX_RESULT_ROWS]
+        if truncated and reconnect:
             self._reconnect()
             # Detach the abandoned result so garbage collection does not try to
             # drain it from the closed socket (SSCursor and MySQLResult both would).

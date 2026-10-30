@@ -52,8 +52,15 @@ class SqliteRowCapTests(SimpleTestCase):
 # ---------------------------------------------------------------------------
 
 
+# Statements the fake plain cursor accepts without producing a result.
+_PG_CONTROL = ('SET', 'SAVEPOINT', 'RELEASE', 'CLOSE', 'MOVE', 'BEGIN', 'COMMIT', 'ROLLBACK')
+
+
 class _FakePgPlainCursor:
-    """psycopg2 client-side cursor: everything arrives during execute()."""
+    """psycopg2 client-side cursor: everything arrives during execute().
+
+    SQL-level cursors (DECLARE / FETCH) are served from the connection's named_result.
+    """
 
     def __init__(self, conn):
         self.conn = conn
@@ -69,7 +76,22 @@ class _FakePgPlainCursor:
 
     def execute(self, query, params=None):
         self.conn.log.append(('plain', query))
-        if query.startswith('SET '):
+        self.description = None
+        self.rowcount = -1
+        self._rows = []
+        word = query.split(None, 1)[0].upper()
+        if self.conn.fail_on is not None and self.conn.fail_on in query:
+            raise psycopg2.errors.UndefinedTable('relation "missing" does not exist')
+        if word in _PG_CONTROL:
+            return
+        if word == 'DECLARE':
+            if self.conn.declare_error is not None:
+                raise self.conn.declare_error
+            return
+        if word == 'FETCH':
+            columns, rows = self.conn.named_result
+            self.description = [(c,) for c in columns]
+            self._rows = list(rows[:int(query.split()[2])])
             return
         result = self.conn.plain_result
         if result is None:
@@ -81,6 +103,10 @@ class _FakePgPlainCursor:
 
     def fetchmany(self, size):
         rows, self._rows = self._rows[:size], self._rows[size:]
+        return rows
+
+    def fetchall(self):
+        rows, self._rows = self._rows, []
         return rows
 
 
@@ -116,9 +142,10 @@ class _FakePgNamedCursor:
 
 class _FakePgConnection:
     def __init__(self, named_result=None, plain_result=None, plain_rowcount=0,
-                 declare_error=None, fetch_error=None,
+                 declare_error=None, fetch_error=None, fail_on=None,
                  transaction_status=psycopg2.extensions.TRANSACTION_STATUS_IDLE):
         self.autocommit = True
+        self.fail_on = fail_on
         self.closed = 0
         self.info = mock.Mock(transaction_status=transaction_status)
         self.named_result = named_result
@@ -156,6 +183,12 @@ class PostgresStreamingTests(SimpleTestCase):
     def plain_queries(self, conn):
         return [e[1] for e in conn.log if e[0] == 'plain' and not e[1].startswith('SET ')]
 
+    def statements(self, conn):
+        """Plain-cursor statements with generated cursor names replaced by "c"."""
+        import re
+        return [re.sub(r'"sandbox_fetch_[0-9a-f]+"', '"c"', e[1]) for e in conn.log
+                if e[0] == 'plain' and not e[1].startswith('SET ')]
+
     def test_select_streams_through_a_named_cursor(self):
         _, conn, result = self.run_query(
             'SELECT x FROM t', named_result=(['x'], _numbers(2500)))
@@ -192,7 +225,7 @@ class PostgresStreamingTests(SimpleTestCase):
 
     def test_other_statements_keep_the_plain_cursor(self):
         for query in ('UPDATE t SET x = 1', 'INSERT INTO t VALUES (1)', 'EXPLAIN SELECT 1',
-                      'SHOW search_path', "SELECT 'a;b'; SELECT 2", '-- SELECT\nDELETE FROM t'):
+                      'SHOW search_path', "UPDATE t SET s = 'a;b'", '-- SELECT\nDELETE FROM t'):
             with self.subTest(query=query):
                 _, conn, _ = self.run_query(query, plain_rowcount=3)
                 self.assertEqual(conn.named, [])
@@ -236,15 +269,124 @@ class PostgresStreamingTests(SimpleTestCase):
         self.assertTrue(conn.autocommit)
         self.assertEqual(self.plain_queries(conn), [])
 
-    def test_open_user_transaction_keeps_the_plain_cursor(self):
+    def test_select_in_user_transaction_streams_through_a_sql_cursor(self):
         _, conn, result = self.run_query(
-            'SELECT x FROM t', named_result=(['x'], [(1,)]), plain_result=(['x'], [(1,)]),
+            'SELECT x FROM t', named_result=(['x'], _numbers(2500)),
             transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
         self.assertEqual(conn.named, [])
-        self.assertEqual(self.plain_queries(conn), ['SELECT x FROM t'])
+        self.assertEqual(self.statements(conn), [
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM t',
+            'FETCH FORWARD %d FROM "c"' % (MAX_RESULT_ROWS + 1),
+            'CLOSE "c"',
+            'RELEASE SAVEPOINT sandbox_cursor',
+        ])
         self.assertNotIn(('commit',), conn.log)
         self.assertNotIn(('rollback',), conn.log)
+        self.assertTrue(conn.autocommit)
+        self.assertEqual(result.columns, ['x'])
+        self.assertEqual(len(result.rows), MAX_RESULT_ROWS)
+        self.assertEqual(result.row_count, MAX_RESULT_ROWS)
+        self.assertTrue(result.truncated)
+
+    def test_empty_select_in_user_transaction_keeps_columns(self):
+        _, _, result = self.run_query('SELECT a, b FROM t WHERE false',
+                                      named_result=(['a', 'b'], []),
+                                      transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
+        self.assertEqual(result.columns, ['a', 'b'])
+        self.assertEqual(result.rows, [])
+        self.assertFalse(result.truncated)
+
+    def test_rejected_declare_in_user_transaction_rolls_back_to_the_savepoint(self):
+        _, conn, result = self.run_query(
+            'SELECT 1 INTO t2', plain_rowcount=1, transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS,
+            declare_error=psycopg2.errors.SyntaxError('SELECT ... INTO is not allowed here'))
+        self.assertEqual(self.statements(conn), [
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT 1 INTO t2',
+            'ROLLBACK TO SAVEPOINT sandbox_cursor',
+            'RELEASE SAVEPOINT sandbox_cursor',
+            'SELECT 1 INTO t2',
+        ])
+        self.assertNotIn(('commit',), conn.log)
+        self.assertNotIn(('rollback',), conn.log)
+        self.assertTrue(result.success)
+        self.assertEqual(result.affected_rows, 1)
+
+    def test_failed_transaction_keeps_the_plain_cursor(self):
+        _, conn, _ = self.run_query(
+            'SELECT x FROM t', plain_result=(['x'], [(1,)]),
+            transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INERROR)
+        self.assertEqual(self.statements(conn), ['SELECT x FROM t'])
+        self.assertEqual(conn.named, [])
+
+    def test_script_runs_atomically_and_streams_the_last_statement(self):
+        _, conn, result = self.run_query(
+            "CREATE TABLE t (x int); INSERT INTO t VALUES (1); SELECT x FROM t",
+            named_result=(['x'], _numbers(2500)))
+        self.assertEqual(conn.named, [])
+        self.assertEqual(self.statements(conn), [
+            'BEGIN',
+            'CREATE TABLE t (x int)',
+            'INSERT INTO t VALUES (1)',
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM t',
+            'FETCH FORWARD %d FROM "c"' % (MAX_RESULT_ROWS + 1),
+            'CLOSE "c"',
+            'RELEASE SAVEPOINT sandbox_cursor',
+            'COMMIT',
+        ])
+        self.assertEqual(result.columns, ['x'])
+        self.assertEqual(len(result.rows), MAX_RESULT_ROWS)
+        self.assertTrue(result.truncated)
+
+    def test_failing_script_is_rolled_back_as_a_whole(self):
+        _, conn, result = self.run_query(
+            'INSERT INTO t VALUES (1); SELECT * FROM missing; SELECT 2',
+            named_result=(['x'], [(1,)]), fail_on='missing')
+        statements = self.statements(conn)
+        self.assertEqual(statements[0], 'BEGIN')
+        self.assertEqual(statements[-1], 'ROLLBACK')
+        self.assertNotIn('COMMIT', statements)
+        self.assertNotIn('SELECT 2', ' '.join(statements))
+        self.assertFalse(result.success)
+        self.assertIn('does not exist', result.error_message)
+
+    def test_script_skips_earlier_results_on_the_server(self):
+        _, conn, result = self.run_query('SELECT x FROM big; DELETE FROM t', plain_rowcount=3)
+        self.assertEqual(self.statements(conn), [
+            'BEGIN',
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM big',
+            'MOVE FORWARD ALL IN "c"',
+            'CLOSE "c"',
+            'RELEASE SAVEPOINT sandbox_cursor',
+            'DELETE FROM t',
+            'COMMIT',
+        ])
+        self.assertEqual(result.affected_rows, 3)
+        self.assertEqual(result.columns, [])
+
+    def test_script_in_user_transaction_runs_inside_it(self):
+        _, conn, result = self.run_query('UPDATE t SET x = 1; SELECT x FROM t',
+                                         named_result=(['x'], [(1,)]),
+                                         transaction_status=psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
+        self.assertEqual(self.statements(conn), [
+            'UPDATE t SET x = 1',
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM t',
+            'FETCH FORWARD %d FROM "c"' % (MAX_RESULT_ROWS + 1),
+            'CLOSE "c"',
+            'RELEASE SAVEPOINT sandbox_cursor',
+        ])
         self.assertEqual(result.rows, [[1]])
+
+    def test_scripts_kept_whole(self):
+        for query in ('BEGIN; SELECT 1', 'SELECT 1; COMMIT', 'INSERT INTO t VALUES (1); END',
+                      'SELECT 1 /* a /* b */ ; */; SELECT 2', 'SELECT a$b FROM t; SELECT 2'):
+            with self.subTest(query=query):
+                _, conn, _ = self.run_query(query, plain_rowcount=1)
+                self.assertEqual(self.statements(conn), [query])
 
     def test_cursor_names_are_unique_per_call(self):
         executor = PostgreSQLExecutor('fake-host', 5432)
@@ -392,15 +534,33 @@ class MariadbStreamingTests(SimpleTestCase):
                 self.assertIn(('buffered', query), conn.log)
                 self.assertEqual(result.affected_rows, 2)
 
-    def test_open_user_transaction_keeps_the_buffered_cursor(self):
+    def test_user_transaction_caps_on_the_server_without_reconnecting(self):
         in_trans = pymysql.constants.SERVER_STATUS.SERVER_STATUS_IN_TRANS
         conn, result = self.run_query('SELECT x FROM t', result=(['x'], _numbers(1500)),
                                       server_status=in_trans)
-        self.assertEqual(conn.unbuffered, [])
-        self.assertIn(('buffered', 'SELECT x FROM t'), conn.log)
+        statements = [e[1] for e in conn.log if not e[1].startswith('SET max_')]
+        self.assertEqual(statements, ['SET SESSION sql_select_limit = %s', 'SELECT x FROM t',
+                                      'SET SESSION sql_select_limit = DEFAULT'])
+        self.assertEqual(conn.log[1][0], 'buffered')
+        self.assertEqual(len(conn.unbuffered), 1)
+        self.assertTrue(conn.unbuffered[0].closed)   # drained, the transaction stays
         self.assertFalse(conn.closed)
         self.connect.assert_not_called()
+        self.assertEqual(len(result.rows), MAX_RESULT_ROWS)
         self.assertTrue(result.truncated)
+
+    def test_select_limit_is_reset_when_the_query_fails(self):
+        in_trans = pymysql.constants.SERVER_STATUS.SERVER_STATUS_IN_TRANS
+        conn, result = self.run_query(
+            'SELECT x FROM missing', server_status=in_trans,
+            execute_error=pymysql.err.OperationalError(1146, "Table 'missing' doesn't exist"))
+        self.assertEqual(conn.log[-1], ('buffered', 'SET SESSION sql_select_limit = DEFAULT'))
+        self.assertFalse(result.success)
+        self.connect.assert_not_called()
+
+    def test_outside_a_transaction_the_select_limit_is_not_touched(self):
+        conn, _ = self.run_query('SELECT 1', result=(['1'], [(1,)]))
+        self.assertFalse(any('sql_select_limit' in e[1] for e in conn.log))
 
     def test_row_query_without_a_result_set_reports_affected_rows(self):
         conn, result = self.run_query('SELECT 1 INTO @v', rowcount=1)
@@ -425,3 +585,37 @@ class MariadbStreamingTests(SimpleTestCase):
         self.assertTrue(result.success)
         self.assertTrue(result.truncated)
         self.assertIsNone(self.executor._connection)
+
+
+class SplitStatementsTests(SimpleTestCase):
+    def split(self, query):
+        from sandbox.executors.postgresql import _split_statements
+        return _split_statements(query)
+
+    def test_splits_at_top_level_semicolons_only(self):
+        cases = {
+            'SELECT 1': ['SELECT 1'],
+            'SELECT 1; SELECT 2;': ['SELECT 1', 'SELECT 2'],
+            "SELECT 'a;b'; SELECT 2": ["SELECT 'a;b'", 'SELECT 2'],
+            "SELECT 'it''s;'; SELECT 2": ["SELECT 'it''s;'", 'SELECT 2'],
+            "SELECT E'x\\';y'; SELECT 2": ["SELECT E'x\\';y'", 'SELECT 2'],
+            'SELECT "a;b" FROM t; SELECT 2': ['SELECT "a;b" FROM t', 'SELECT 2'],
+            'SELECT $$a;b$$; SELECT 2': ['SELECT $$a;b$$', 'SELECT 2'],
+            'SELECT $t$x;$$y$t$; SELECT 2': ['SELECT $t$x;$$y$t$', 'SELECT 2'],
+            'SELECT 1 -- c;\n; SELECT 2': ['SELECT 1 -- c;', 'SELECT 2'],
+            'SELECT /* ; */ 1; SELECT 2': ['SELECT /* ; */ 1', 'SELECT 2'],
+        }
+        for query, expected in cases.items():
+            with self.subTest(query=query):
+                self.assertEqual(self.split(query), expected)
+
+    def test_drops_empty_and_comment_only_pieces(self):
+        self.assertEqual(self.split('SELECT 1; -- done\n;;'), ['SELECT 1'])
+        self.assertEqual(self.split(';;'), [])
+
+    def test_untrusted_tokenization_is_refused(self):
+        for query in ('SELECT 1 /* a /* b */ ; */; SELECT 2',   # nested comment
+                      'SELECT a$b FROM t; SELECT 2',             # $ in a bare identifier
+                      "SELECT 'open; SELECT 2"):                 # unclosed literal
+            with self.subTest(query=query):
+                self.assertIsNone(self.split(query))
