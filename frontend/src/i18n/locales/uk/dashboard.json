@@ -8,7 +8,7 @@
   "stats": {
     "enrolledCourses": "Записані курси",
     "completed": "Завершено",
-    "completedSubtitle": "з {{total}} уроків",
+    "completedSubtitle": "з {{total}} завдань",
     "ofLessons": "з {{count}} уроків",
     "ofLessons_one": "з {{count}} уроку",
     "ofLessons_few": "з {{count}} уроків",

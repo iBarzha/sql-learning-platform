@@ -8,7 +8,7 @@
   "stats": {
     "enrolledCourses": "Enrolled Courses",
     "completed": "Completed",
-    "completedSubtitle": "of {{total}} lessons",
+    "completedSubtitle": "of {{total}} tasks",
     "ofLessons": "of {{count}} lessons",
     "ofLessons_one": "of {{count}} lesson",
     "ofLessons_other": "of {{count}} lessons",
