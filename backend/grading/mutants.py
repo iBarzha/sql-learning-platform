@@ -193,7 +193,10 @@ def generate_mutants(reference_sql: str, db_type: str) -> list[Mutant]:
             emit('group_by', f'прибрано вираз №{k + 1} з GROUP BY', tree)
 
     for tree, target in _copies(root, exp.Join, lambda n: n.args.get('on') is not None):
+        # An explicit CROSS JOIN: PostgreSQL rejects a bare JOIN without ON.
         target.set('on', None)
+        target.set('side', None)
+        target.set('kind', 'CROSS')
         emit('join_condition', "прибрано умову з'єднання", tree)
 
     for tree, target in _copies(root, exp.Not, lambda n: not isinstance(n.this, (exp.Is, exp.In))):

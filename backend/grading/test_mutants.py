@@ -208,6 +208,13 @@ class NewMutationClassTests(unittest.TestCase):
             [("прибрано умову з'єднання",
               canonical('SELECT e.name FROM employees e CROSS JOIN departments d'))])
 
+    def test_join_condition_mutant_is_an_explicit_cross_join_on_postgres(self):
+        mutants = generate_mutants(
+            'SELECT e.name FROM employees e LEFT JOIN departments d ON d.id = e.dept_id',
+            'postgresql')
+        self.assertEqual([m.sql for m in mutants if m.kind == 'join_condition'],
+                         ['SELECT e.name FROM employees AS e CROSS JOIN departments AS d'])
+
     def test_not_is_dropped(self):
         self.assertEqual(
             self.of_kind('SELECT name FROM departments d WHERE NOT EXISTS '

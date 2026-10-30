@@ -1,6 +1,7 @@
 """Unit tests for multiset result comparison. No database required."""
 
 import datetime as dt
+import time
 import unittest
 from decimal import Decimal
 
@@ -234,6 +235,12 @@ class TypeOnlyTests(unittest.TestCase):
         diff = cmp([['2000-10-03']], [[dt.date(2000, 10, 3)]])
         self.assertTrue(diff.type_only)
 
+    def test_whitespace_only_difference_is_not_type_only(self):
+        self.assertFalse(cmp([[' Kyiv']], [['Kyiv']]).type_only)
+
+    def test_two_texts_of_one_number_are_not_type_only(self):
+        self.assertFalse(cmp([['10.0']], [['10']]).type_only)
+
     def test_real_difference_is_not_type_only(self):
         diff = cmp([['11']], [[10]])
         self.assertFalse(diff.type_only)
@@ -278,6 +285,17 @@ class ColumnPermutationTests(unittest.TestCase):
         diff = cmp([['a', 1]], [['a', 1]], ignore_column_order=True)
         self.assertTrue(diff.equal)
         self.assertIsNone(diff.column_permutation)
+
+    def test_equal_value_columns_without_a_permutation_finish_quickly(self):
+        # Every column holds the same values, and the first seven pair up exactly as
+        # expected; only the last one is shifted. Without pruning this is 8! full checks.
+        n, width = 200, 8
+        expected = [[(r + k) % n for k in range(width)] for r in range(n)]
+        student = [row[:-1] + [(r + width) % n] for r, row in enumerate(expected)]
+        started = time.monotonic()
+        diff = cmp(student, expected, ignore_column_order=True)
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertEqual(diff.kind, KIND_ROWS)
 
     def test_too_many_columns_are_not_permuted(self):
         expected = [list(range(11))]

@@ -358,6 +358,12 @@ class OrderKeyPositionsTests(unittest.TestCase):
     def test_no_order_by_gives_none(self):
         self.assertIsNone(self.keys('SELECT name FROM employees'))
 
+    def test_self_join_maps_the_qualified_column_exactly(self):
+        self.assertEqual(
+            self.keys('SELECT a.city, b.city FROM Customers a JOIN Customers b ON a.cnum < b.cnum '
+                      'ORDER BY b.city'),
+            [1])
+
     def test_set_operation_uses_first_operand_select_list(self):
         self.assertEqual(
             self.keys('SELECT cname, city FROM Customers UNION SELECT sname, city FROM Salespeople '

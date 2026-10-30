@@ -345,6 +345,12 @@ def _key_position(term: exp.Expression, items: list[exp.Expression]) -> Optional
         except ValueError:
             return None
         return ordinal - 1 if 1 <= ordinal <= len(items) else None
+    # The exact expression goes first: in a self-join `ORDER BY b.city` must not
+    # match `a.city` by its bare name.
+    text = term.sql()
+    for index, item in enumerate(items):
+        if item.unalias().sql() == text:
+            return index
     if isinstance(term, (exp.Column, exp.Identifier)) and not term.is_star:
         name = term.name.lower()
         for index, item in enumerate(items):
@@ -353,10 +359,6 @@ def _key_position(term: exp.Expression, items: list[exp.Expression]) -> Optional
         for index, item in enumerate(items):
             if isinstance(item, exp.Column) and item.name.lower() == name:
                 return index
-    text = term.sql()
-    for index, item in enumerate(items):
-        if item.unalias().sql() == text:
-            return index
     return None
 
 

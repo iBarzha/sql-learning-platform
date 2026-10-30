@@ -116,7 +116,9 @@ def compare(
             missing, extra = [], []
 
     if missing or extra:
-        type_only = Counter(map(loose_row, student)) == Counter(map(loose_row, expected))
+        # Computed on the student's own column order: a result that is both permuted
+        # and type-mismatched gets the row list, not the hint.
+        type_only = _differs_only_in_type(missing, extra)
         return _diff(False, KIND_ROWS, counts, overlap, missing, extra, type_only=type_only)
     if ordered and (_order_view(student, key_positions, len(expected_columns))
                     != _order_view(expected, key_positions, len(expected_columns))):
@@ -131,13 +133,28 @@ def _order_view(rows: list[tuple], key_positions: Optional[Sequence[int]], width
     return [tuple(row[i] for i in key_positions) for row in rows]
 
 
+def _differs_only_in_type(missing: list[tuple], extra: list[tuple]) -> bool:
+    """The differing rows hold the same values, and some cells differ in type.
+
+    Whitespace or '10' against '10.0' (both text) is a value difference, not a type one.
+    """
+    if Counter(map(loose_row, missing)) != Counter(map(loose_row, extra)):
+        return False
+    return Counter(map(_tags, missing)) != Counter(map(_tags, extra))
+
+
+def _tags(row: tuple) -> tuple:
+    return tuple(cell[0] if isinstance(cell, tuple) and cell else None for cell in row)
+
+
 def _column_permutation(student: list[tuple], expected: list[tuple],
                         expected_counts: Counter) -> Optional[list[int]]:
     """A reordering of the student's columns that makes the multisets equal, or None.
 
     Candidates for an expected column are the student columns holding the same values.
-    Two columns can hold the same values yet pair up differently within rows, so every
-    complete assignment is verified against the whole rows.
+    Two columns can hold the same values yet pair up differently within rows, so each
+    partial assignment is checked against the rows projected onto the columns chosen so
+    far; that prunes the search early, and at full width it verifies the whole rows.
     """
     width = len(expected[0]) if expected else 0
     if not width or width > MAX_PERMUTED_COLUMNS or len(student) != len(expected):
@@ -147,18 +164,20 @@ def _column_permutation(student: list[tuple], expected: list[tuple],
     for i in range(width):
         values = Counter(row[i] for row in expected)
         candidates.append([j for j in range(width) if student_values[j] == values])
+    expected_prefixes = [Counter(row[:i + 1] for row in expected) for i in range(width - 1)]
+    expected_prefixes.append(expected_counts)
 
     chosen: list[int] = []
 
     def search(i: int) -> Optional[list[int]]:
         if i == width:
-            reordered = Counter(tuple(row[j] for j in chosen) for row in student)
-            return list(chosen) if reordered == expected_counts else None
+            return list(chosen)
         for j in candidates[i]:
             if j in chosen:
                 continue
             chosen.append(j)
-            found = search(i + 1)
+            projected = Counter(tuple(row[c] for c in chosen) for row in student)
+            found = search(i + 1) if projected == expected_prefixes[i] else None
             chosen.pop()
             if found is not None:
                 return found
