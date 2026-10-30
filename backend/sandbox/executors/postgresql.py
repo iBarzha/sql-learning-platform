@@ -34,8 +34,9 @@ _DECLARE_REJECTED = (
 )
 
 
-# A script containing any of these runs piece by piece without a transaction of our
-# own: wrapping it in BEGIN ... COMMIT would change what they do.
+# A script containing any of these runs piece by piece, wrapping only the statements
+# outside the user's own blocks: one BEGIN ... COMMIT around it all would change
+# what they do.
 _TRANSACTION_CONTROL = frozenset({
     'BEGIN', 'START', 'COMMIT', 'END', 'ROLLBACK', 'ABORT', 'SAVEPOINT', 'RELEASE', 'PREPARE',
 })
@@ -213,13 +214,39 @@ class PostgreSQLExecutor(BaseExecutor):
         """Run a script with the user's own transaction control, one statement at a time.
 
         Each piece is dispatched as if sent alone, so a row query after BEGIN is still
-        capped on the server. Nothing here begins, commits or rolls back: an error
-        stops the sequence and leaves the transaction as the user's statements left it.
-        The result is the last statement's.
+        capped on the server. PostgreSQL runs a multi-statement message as one implicit
+        transaction, so statements outside a user's block are wrapped the same way: when
+        the server is idle before a piece that is not BEGIN / START, the executor opens
+        a block. The user's COMMIT, ROLLBACK or END ends it as it would the implicit one,
+        and a later piece opens the next. At the end a block the executor opened is
+        committed; on an error it is rolled back, so the wrapped pieces leave no trace.
+        A block the user opened is never committed or rolled back here: an error leaves
+        it as the user's statements left it. The result is the last statement's.
         """
+        conn = self._connection
         start = time.perf_counter()
-        for piece in pieces:
-            result = self._execute_statement(cur, piece)
+        own_block = False
+        try:
+            for piece in pieces:
+                opens_block = _first_keyword(piece) in ('BEGIN', 'START')
+                if opens_block:
+                    own_block = False   # an explicit BEGIN makes the block the user's
+                elif conn.info.transaction_status == extensions.TRANSACTION_STATUS_IDLE:
+                    cur.execute('BEGIN')
+                    own_block = True
+                result = self._execute_statement(cur, piece)
+                if conn.info.transaction_status == extensions.TRANSACTION_STATUS_IDLE:
+                    own_block = False
+            if own_block and conn.info.transaction_status == extensions.TRANSACTION_STATUS_INTRANS:
+                cur.execute('COMMIT')
+                own_block = False
+        except BaseException:
+            if own_block:
+                try:
+                    cur.execute('ROLLBACK')
+                except Exception:
+                    pass  # a broken connection must not mask the original error
+            raise
         result.execution_time_ms = int((time.perf_counter() - start) * 1000)
         return result
 

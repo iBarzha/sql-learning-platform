@@ -502,6 +502,27 @@ class PostgresEngineTests(StreamingMixin, SqlEngineMixin, TestCase):
         self.assertEqual(results[2].rows, [[0]])
         self.assertEqual(results[3].rows, [[1]])
 
+    def test_rollback_in_a_script_undoes_the_statements_before_it(self):
+        # One multi-statement message is one implicit transaction in PostgreSQL.
+        results = self.on_one_connection([
+            'CREATE TEMP TABLE probe (x INTEGER)',
+            'INSERT INTO probe VALUES (1); ROLLBACK',
+            'SELECT COUNT(*) FROM probe',
+        ])
+        self.assertTrue(all(r.success for r in results), [r.error_message for r in results])
+        self.assertEqual(results[2].rows, [[0]])
+
+    def test_failing_script_with_a_commit_leaves_no_trace(self):
+        results = self.on_one_connection([
+            'CREATE TEMP TABLE probe (x INTEGER)',
+            'INSERT INTO probe VALUES (1); SELECT 1/0; COMMIT',
+            'SELECT COUNT(*) FROM probe',
+        ])
+        self.assertFalse(results[1].success)
+        self.assertIn('division by zero', results[1].error_message)
+        self.assertTrue(results[2].success, results[2].error_message)
+        self.assertEqual(results[2].rows, [[0]])
+
     def test_select_into_falls_back_to_a_plain_statement(self):
         results = self.run_sequence(['SELECT * INTO emp_copy FROM employees',
                                      'SELECT COUNT(*) FROM emp_copy'])

@@ -413,45 +413,68 @@ class PostgresStreamingTests(SimpleTestCase):
                 _, conn, _ = self.run_query(query, plain_rowcount=1)
                 self.assertEqual(self.statements(conn), [query])
 
-    def test_script_with_transaction_control_runs_piece_by_piece(self):
-        _, conn, result = self.run_query(
-            'BEGIN; SELECT x FROM big; COMMIT; SELECT x FROM t',
-            named_result=(['x'], _numbers(2500)))
-        # BEGIN opens the user's transaction, so its SELECT streams through a SQL cursor;
-        # after COMMIT the last SELECT streams in a short transaction of its own.
-        self.assertEqual(self.statements(conn), [
-            'BEGIN',
+    def stream_lines(self, table):
+        return [
             'SAVEPOINT sandbox_cursor',
-            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM big',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT x FROM %s' % table,
             'FETCH FORWARD %d FROM "c"' % (MAX_RESULT_ROWS + 1),
             'CLOSE "c"',
             'RELEASE SAVEPOINT sandbox_cursor',
-            'COMMIT',
-        ])
-        self.assertEqual(len(conn.named), 1)
+        ]
+
+    def test_user_block_gets_no_begin_or_commit_of_the_executor(self):
+        _, conn, result = self.run_query(
+            'BEGIN; SELECT x FROM big; COMMIT', named_result=(['x'], _numbers(2500)))
+        # BEGIN opens the user's transaction, so its SELECT streams through a SQL cursor.
+        self.assertEqual(self.statements(conn),
+                         ['BEGIN'] + self.stream_lines('big') + ['COMMIT'])
+        self.assertEqual(conn.named, [])
         self.assertEqual(conn.info.transaction_status, psycopg2.extensions.TRANSACTION_STATUS_IDLE)
         self.assertTrue(conn.autocommit)
+        self.assertTrue(result.success)
+
+    def test_select_after_begin_is_capped_and_the_block_stays_open(self):
+        _, conn, result = self.run_query(
+            'BEGIN; SELECT x FROM big', named_result=(['x'], _numbers(2500)))
+        self.assertEqual(self.statements(conn), ['BEGIN'] + self.stream_lines('big'))
+        self.assertEqual(conn.info.transaction_status,
+                         psycopg2.extensions.TRANSACTION_STATUS_INTRANS)
         self.assertEqual(len(result.rows), MAX_RESULT_ROWS)
         self.assertTrue(result.truncated)
 
-    def test_script_with_transaction_control_returns_the_last_result(self):
-        cases = (
-            ('BEGIN; SELECT x FROM big', MAX_RESULT_ROWS,
-             psycopg2.extensions.TRANSACTION_STATUS_INTRANS),
-            ('SELECT x FROM big; COMMIT', 0, psycopg2.extensions.TRANSACTION_STATUS_IDLE),
-            ('INSERT INTO t VALUES (1); END', 0, psycopg2.extensions.TRANSACTION_STATUS_IDLE),
-        )
-        for query, rows, status in cases:
-            with self.subTest(query=query):
-                _, conn, result = self.run_query(query, named_result=(['x'], _numbers(2500)),
-                                                 plain_rowcount=1)
-                self.assertTrue(result.success)
-                self.assertEqual(len(result.rows), rows)
-                self.assertEqual(conn.info.transaction_status, status)
-                # No statement of the executor's own ended or began a transaction.
-                self.assertEqual(
-                    [s for s in self.statements(conn) if s in ('BEGIN', 'COMMIT', 'ROLLBACK')],
-                    [s for s in query.replace(';', ' ').split() if s in ('BEGIN', 'COMMIT')])
+    def test_statements_outside_a_user_block_share_an_implicit_one(self):
+        # As in one multi-statement message: the user's ROLLBACK ends the block the
+        # executor opened, so the INSERT is undone and nothing is committed afterwards.
+        _, conn, result = self.run_query('INSERT INTO t VALUES (1); ROLLBACK', plain_rowcount=1)
+        self.assertEqual(self.statements(conn), ['BEGIN', 'INSERT INTO t VALUES (1)', 'ROLLBACK'])
+        self.assertEqual(conn.info.transaction_status, psycopg2.extensions.TRANSACTION_STATUS_IDLE)
+        self.assertTrue(result.success)
+
+    def test_a_piece_after_the_users_commit_is_wrapped_and_committed(self):
+        _, conn, result = self.run_query(
+            'SELECT x FROM big; COMMIT; SELECT x FROM t', named_result=(['x'], _numbers(2500)))
+        self.assertEqual(self.statements(conn),
+                         ['BEGIN'] + self.stream_lines('big') + ['COMMIT', 'BEGIN']
+                         + self.stream_lines('t') + ['COMMIT'])
+        self.assertEqual(conn.named, [])
+        self.assertEqual(conn.info.transaction_status, psycopg2.extensions.TRANSACTION_STATUS_IDLE)
+        self.assertEqual(len(result.rows), MAX_RESULT_ROWS)
+        self.assertTrue(result.truncated)
+
+    def test_an_error_rolls_back_the_block_the_executor_opened(self):
+        _, conn, result = self.run_query(
+            'INSERT INTO t VALUES (1); SELECT * FROM missing; COMMIT',
+            plain_rowcount=1, fail_on='missing')
+        self.assertEqual(self.statements(conn), [
+            'BEGIN',
+            'INSERT INTO t VALUES (1)',
+            'SAVEPOINT sandbox_cursor',
+            'DECLARE "c" NO SCROLL CURSOR FOR SELECT * FROM missing',
+            'ROLLBACK',
+        ])
+        self.assertEqual(conn.info.transaction_status, psycopg2.extensions.TRANSACTION_STATUS_IDLE)
+        self.assertFalse(result.success)
+        self.assertIn('does not exist', result.error_message)
 
     def test_script_with_transaction_control_stops_at_an_error(self):
         _, conn, result = self.run_query(
