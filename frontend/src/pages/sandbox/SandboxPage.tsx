@@ -172,6 +172,8 @@ export function SandboxPage() {
   const [seedSql, setSeedSql] = useState('');
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<QueryResult | null>(null);
+  // null = follow the default (open until the first result), otherwise the user's choice
+  const [quickStartOpen, setQuickStartOpen] = useState<boolean | null>(null);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState('');
   const [showSchema, setShowSchema] = useState(true);
@@ -542,7 +544,7 @@ export function SandboxPage() {
                 language={selectedDbType === 'mongodb' ? 'javascript' : selectedDbType === 'redis' ? 'redis' : 'sql'}
                 height="160px"
                 onExecute={handleExecute}
-                placeholder="-- Write your SQL query here\nSELECT * FROM users;"
+                placeholder={t('queryPlaceholder')}
               />
               <div className="flex items-center justify-end mt-4">
                 <Button onClick={handleExecute} disabled={executing || !query.trim()}>
@@ -634,11 +636,13 @@ export function SandboxPage() {
                   </div>
                 )}
 
-                {result.success && result.affected_rows !== undefined && (
-                  <p className="text-sm text-muted-foreground">
-                    {t('rowsAffected', { count: result.affected_rows })}
-                  </p>
-                )}
+                {result.success &&
+                  result.affected_rows !== undefined &&
+                  ((result.columns?.length ?? 0) === 0 || result.affected_rows > 0) && (
+                    <p className="text-sm text-muted-foreground">
+                      {t('rowsAffected', { count: result.affected_rows })}
+                    </p>
+                  )}
 
                 {result.row_count !== undefined && result.row_count > 100 && (
                   <p className="text-xs text-muted-foreground mt-2">
@@ -649,8 +653,8 @@ export function SandboxPage() {
             </Card>
           )}
 
-          {/* Quick examples */}
-          {!result && (() => {
+          {/* Quick examples: open until the first run, then collapsible */}
+          {(() => {
             const activeDataset = selectedDataset
               ? datasets.find((d) => d.id === selectedDataset)
               : null;
@@ -661,12 +665,19 @@ export function SandboxPage() {
               : baseExamples;
 
             if (visibleExamples.length === 0) return null;
+            const quickOpen = quickStartOpen ?? !result;
 
             return (
               <Card variant="glass">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{t('quickStart')}</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">{t('quickStart')}</CardTitle>
+                    <Button variant="ghost" size="sm" onClick={() => setQuickStartOpen(!quickOpen)}>
+                      {quickOpen ? t('hide') : t('show')}
+                    </Button>
+                  </div>
                 </CardHeader>
+                {quickOpen && (
                 <CardContent className="space-y-3">
                   <p className="text-sm text-muted-foreground">
                     {t('tryExamples')}
@@ -694,6 +705,7 @@ export function SandboxPage() {
                     ))}
                   </div>
                 </CardContent>
+                )}
               </Card>
             );
           })()}

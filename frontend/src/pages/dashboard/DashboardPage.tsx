@@ -6,14 +6,17 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { StatCard } from '@/components/charts/StatCard';
-import { BookOpen, CheckCircle, Clock, TrendingUp, ArrowRight } from 'lucide-react';
+import { BookOpen, CheckCircle, Clock, TrendingUp, ArrowRight, Users, Layers, ClipboardList, Plus } from 'lucide-react';
 import { useCourses } from '@/hooks/queries/useCourses';
 import { useMyProgress } from '@/hooks/queries/useSubmissions';
+import type { Course } from '@/types';
 
 export function DashboardPage() {
   const { t } = useTranslation(['dashboard', 'common']);
   const { user } = useAuthStore();
-  const { data: coursesData, isLoading: coursesLoading } = useCourses({ is_published: true });
+  const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
+  // Instructors see their own courses, drafts included; students only published ones.
+  const { data: coursesData, isLoading: coursesLoading } = useCourses(isInstructor ? undefined : { is_published: true });
   const { data: progress = [], isLoading: progressLoading } = useMyProgress();
 
   const loading = coursesLoading || progressLoading;
@@ -63,6 +66,10 @@ export function DashboardPage() {
         </div>
       </div>
     );
+  }
+
+  if (isInstructor) {
+    return <InstructorDashboard courses={courses} userId={user?.id} isAdmin={user?.role === 'admin'} />;
   }
 
   const enrolledCourses = courses.filter((c) => c.is_enrolled);
@@ -200,6 +207,118 @@ export function DashboardPage() {
                   </Link>
                 );
               })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ownerId(course: Course): string | undefined {
+  const owner = course.instructor as unknown;
+  if (!owner) return undefined;
+  return typeof owner === 'string' ? owner : (owner as { id?: string }).id;
+}
+
+function InstructorDashboard({ courses, userId, isAdmin }: { courses: Course[]; userId?: string; isAdmin: boolean }) {
+  const { t } = useTranslation(['dashboard', 'common']);
+  // The API already scopes the list to what the user may see; an admin oversees every course.
+  const mine = isAdmin ? courses : courses.filter((c) => !userId || !ownerId(c) || ownerId(c) === userId);
+  const published = mine.filter((c) => c.is_published).length;
+  const sum = (pick: (c: Course) => number | undefined) => mine.reduce((acc, c) => acc + (pick(c) ?? 0), 0);
+
+  const stats = [
+    {
+      label: t('dashboard:instructor.stats.courses'),
+      value: mine.length,
+      subtitle: t('dashboard:instructor.stats.coursesSubtitle', { count: published }),
+      icon: BookOpen,
+      color: 'text-primary',
+    },
+    { label: t('dashboard:instructor.stats.students'), value: sum((c) => c.student_count), icon: Users, color: 'text-success' },
+    { label: t('dashboard:instructor.stats.lessons'), value: sum((c) => c.lesson_count), icon: Layers, color: 'text-warning' },
+    { label: t('dashboard:instructor.stats.assignments'), value: sum((c) => c.assignment_count), icon: ClipboardList, color: 'text-destructive' },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div className="rounded-2xl bg-gradient-to-r from-primary/10 to-primary/5 p-8">
+        <h1 className="text-3xl font-bold tracking-tight mb-2">{t('dashboard:welcome.title')}</h1>
+        <p className="text-muted-foreground text-lg">{t('dashboard:welcome.instructorSubtitle')}</p>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((stat) => (
+          <StatCard key={stat.label} label={stat.label} value={stat.value} subtitle={stat.subtitle} icon={stat.icon} color={stat.color} />
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl">{t('dashboard:instructor.title')}</CardTitle>
+              <CardDescription className="mt-1">{t('dashboard:instructor.subtitle')}</CardDescription>
+            </div>
+            <div className="flex items-center gap-4 shrink-0">
+              {mine.length > 0 && (
+                <Link to="/my-courses" className="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1 transition-colors">
+                  {t('dashboard:instructor.all')} <ArrowRight className="h-4 w-4" />
+                </Link>
+              )}
+              <Link
+                to="/courses/new"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-xl shadow-noble hover:shadow-noble-md transition-all"
+              >
+                <Plus className="h-4 w-4" /> {t('dashboard:instructor.new')}
+              </Link>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {mine.length === 0 ? (
+            <div className="text-center py-12 px-4">
+              <div className="mx-auto h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                <BookOpen className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="font-semibold text-lg mb-2">{t('dashboard:instructor.empty.title')}</h3>
+              <p className="text-muted-foreground mb-6 max-w-sm mx-auto">{t('dashboard:instructor.empty.description')}</p>
+              <Link
+                to="/courses/new"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground font-medium rounded-xl shadow-noble hover:shadow-noble-md transition-all"
+              >
+                {t('dashboard:instructor.empty.create')} <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {mine.map((course) => (
+                <Link key={course.id} to={`/courses/${course.id}/manage`} className="block group">
+                  <div className="flex items-center gap-5 p-5 rounded-xl border border-border/50 bg-card hover:bg-secondary/50 hover:border-primary/20 transition-all duration-200">
+                    <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                      <BookOpen className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold truncate group-hover:text-primary transition-colors">{course.title}</h3>
+                        <Badge variant="secondary" className="shrink-0 text-xs">{course.database_type}</Badge>
+                        <Badge variant={course.is_published ? 'default' : 'outline'} className="shrink-0 text-xs">
+                          {course.is_published ? t('dashboard:instructor.published') : t('dashboard:instructor.draft')}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {t('dashboard:instructor.students', { count: course.student_count ?? 0 })}
+                        {' · '}
+                        {t('dashboard:instructor.lessons', { count: course.lesson_count ?? 0 })}
+                      </p>
+                    </div>
+                    <span className="text-sm font-medium text-primary shrink-0 flex items-center gap-1">
+                      {t('dashboard:instructor.manage')} <ArrowRight className="h-4 w-4" />
+                    </span>
+                  </div>
+                </Link>
+              ))}
             </div>
           )}
         </CardContent>

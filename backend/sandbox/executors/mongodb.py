@@ -93,8 +93,9 @@ class MongoDBExecutor(BaseExecutor):
             return QueryResult(
                 success=True,
                 columns=['result'],
-                rows=[[json.dumps(doc, default=json_util.default)] for doc in result]
-                    if isinstance(result, list) else [[json.dumps(result, default=json_util.default)]],
+                rows=[[json.dumps(doc, default=json_util.default, ensure_ascii=False)] for doc in result]
+                    if isinstance(result, list)
+                    else [[json.dumps(result, default=json_util.default, ensure_ascii=False)]],
                 row_count=len(result) if isinstance(result, list) else 1,
                 execution_time_ms=elapsed_ms,
             )

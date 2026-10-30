@@ -177,6 +177,31 @@ def get_query_service() -> QueryExecutionService:
     return _query_service
 
 
+def execute_sequence(
+    database_type: str,
+    queries: list[str],
+    schema_sql: str = '',
+    seed_sql: str = '',
+    timeout: int = 10,
+) -> list[QueryResult]:
+    """Run statements in order on one seeded sandbox; see SandboxPool.execute_sequence."""
+    service = get_query_service()
+    timeout = min(timeout, service._max_query_time)
+    try:
+        return service._pool.execute_sequence(
+            database_type=database_type,
+            queries=queries,
+            schema_sql=schema_sql,
+            seed_sql=seed_sql,
+            timeout=timeout,
+        )
+    except (QueryTimeoutError, SandboxError) as e:
+        return [QueryResult(success=False, error_message=str(e))]
+    except Exception as e:
+        logger.exception(f'Unexpected error during sequence execution: {e}')
+        return [QueryResult(success=False, error_message='Internal error during query execution')]
+
+
 def execute_query(
     database_type: str,
     query: str,

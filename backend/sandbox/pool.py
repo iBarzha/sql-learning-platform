@@ -3,6 +3,8 @@
 import logging
 import threading
 import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional
 
@@ -33,46 +35,60 @@ class DatabaseConfig:
     password: str = 'sandbox'
 
 
+def _endpoint(name: str, default_host: str, default_port: int) -> tuple[str, int]:
+    """Compose hostnames by default; SANDBOX_<NAME>_HOST/_PORT override them so the
+    backend can run on the host against published ports (see docker-compose.dev-ports.yml)."""
+    import os
+    host = os.getenv(f'SANDBOX_{name}_HOST', default_host)
+    port = int(os.getenv(f'SANDBOX_{name}_PORT', default_port))
+    return host, port
+
+
+_PG_HOST, _PG_PORT = _endpoint('POSTGRESQL', 'sql-sandbox-postgres', 5432)
+_MARIA_HOST, _MARIA_PORT = _endpoint('MARIADB', 'sql-sandbox-mariadb', 3306)
+_MONGO_HOST, _MONGO_PORT = _endpoint('MONGODB', 'sql-sandbox-mongodb', 27017)
+_REDIS_HOST, _REDIS_PORT = _endpoint('REDIS', 'sql-sandbox-redis', 6379)
+
 # Static sandbox container configurations (from docker-compose)
 SANDBOX_DATABASES = {
     'postgresql': DatabaseConfig(
-        host='sql-sandbox-postgres',
-        port=5432,
+        host=_PG_HOST,
+        port=_PG_PORT,
         database='sandbox',
         user='sandbox',
         password='sandbox',
     ),
     # Restricted role for student query execution (defense-in-depth)
     'postgresql_student': DatabaseConfig(
-        host='sql-sandbox-postgres',
-        port=5432,
+        host=_PG_HOST,
+        port=_PG_PORT,
         database='sandbox',
         user='sandbox_student',
         password='sandbox_student',
     ),
     'mariadb': DatabaseConfig(
-        host='sql-sandbox-mariadb',
-        port=3306,
+        host=_MARIA_HOST,
+        port=_MARIA_PORT,
         database='sandbox',
         user='sandbox',
         password='sandbox',
     ),
     # Restricted user for student query execution
     'mariadb_student': DatabaseConfig(
-        host='sql-sandbox-mariadb',
-        port=3306,
+        host=_MARIA_HOST,
+        port=_MARIA_PORT,
         database='sandbox',
         user='sandbox_student',
         password='sandbox_student',
     ),
     'mongodb': DatabaseConfig(
-        host='sql-sandbox-mongodb',
-        port=27017,
+        host=_MONGO_HOST,
+        port=_MONGO_PORT,
         database='sandbox',
     ),
     'redis': DatabaseConfig(
-        host='sql-sandbox-redis',
-        port=6379,
+        host=_REDIS_HOST,
+        port=_REDIS_PORT,
     ),
 }
 
@@ -194,7 +210,7 @@ class SandboxPool:
         # ── Security: validate query before execution ───────
         try:
             if database_type in ('sqlite', 'postgresql', 'mariadb'):
-                validate_sql(query)
+                validate_sql(query, database_type)
             elif database_type == 'mongodb':
                 validate_mongodb(query)
             elif database_type == 'redis':
@@ -206,26 +222,11 @@ class SandboxPool:
                 error_message=e.message,
             )
 
-        executor = None
         try:
-            executor = self.get_executor(database_type)
-
-            # Reset and initialize schema/data
-            executor.reset()
-
-            if schema_sql:
-                result = executor.initialize_schema(schema_sql)
-                if not result.success:
-                    return result
-
-            if seed_sql:
-                result = executor.load_data(seed_sql)
-                if not result.success:
-                    return result
-
-            # Execute the actual query
-            return executor.execute_query(query, timeout=timeout)
-
+            with self._isolated(database_type, schema_sql, seed_sql) as executor:
+                return executor.execute_query(query, timeout=timeout)
+        except DatabaseConnectionError as e:
+            return QueryResult(success=False, error_message=str(e))
         except Exception as e:
             logger.error(f'Query execution error: {e}')
             return QueryResult(
@@ -233,12 +234,95 @@ class SandboxPool:
                 error_message=str(e),
             )
 
+    @contextmanager
+    def _isolated(self, database_type: str, schema_sql: str, seed_sql: str):
+        """A freshly seeded, private namespace for one execution.
+
+        Grading runs many executions at once (every student, the reference, the
+        hidden datasets). Sharing one database and dropping its tables before each
+        run made those executions destroy each other's data under load, so each
+        run gets its own PostgreSQL schema / MariaDB database / MongoDB database /
+        Redis key prefix - the same mechanism the persistent sessions use - and
+        drops it afterwards.
+        """
+        from .session_manager import get_session_manager
+
+        manager = get_session_manager()
+        isolation_id = f'g_{uuid.uuid4().hex[:16]}'
+        executor = None
+        try:
+            if database_type == 'sqlite':
+                executor = manager._create_sqlite_session(schema_sql, seed_sql)
+            elif database_type == 'postgresql':
+                executor = manager._create_postgresql_session(isolation_id, schema_sql, seed_sql)
+            elif database_type == 'mariadb':
+                executor = manager._create_mariadb_session(isolation_id, schema_sql, seed_sql)
+            elif database_type == 'mongodb':
+                executor = manager._create_mongodb_session(isolation_id, schema_sql, seed_sql)
+            elif database_type == 'redis':
+                executor = manager._create_redis_session(isolation_id, schema_sql, seed_sql)
+            else:
+                raise ValueError(f'Unknown database type: {database_type}')
+            yield executor
         finally:
-            if executor:
-                try:
-                    executor.disconnect()
-                except Exception:
-                    pass
+            if executor is not None:
+                self._discard(database_type, isolation_id, executor, manager)
+
+    @staticmethod
+    def _discard(database_type: str, isolation_id: str, executor, manager) -> None:
+        try:
+            if database_type == 'mongodb' and getattr(executor, '_client', None):
+                executor._client.drop_database(isolation_id)
+            elif database_type == 'redis':
+                executor.reset()
+            executor.disconnect()
+            if database_type == 'postgresql':
+                manager._drop_pg_schema(isolation_id)
+            elif database_type == 'mariadb':
+                manager._drop_mariadb_database(isolation_id)
+        except Exception as e:
+            logger.warning(f'Failed to discard sandbox namespace {isolation_id}: {e}')
+
+    def execute_sequence(
+        self,
+        database_type: str,
+        queries: list[str],
+        schema_sql: str = '',
+        seed_sql: str = '',
+        timeout: int = 30,
+    ) -> list[QueryResult]:
+        """Run several statements on one freshly seeded sandbox, in order.
+
+        Stops at the first failure. Used by grading to inspect table state after a
+        student's INSERT/UPDATE/DELETE: the statement and the follow-up SELECTs must
+        see the same connection.
+        """
+        for query in queries:
+            try:
+                if database_type in ('sqlite', 'postgresql', 'mariadb'):
+                    validate_sql(query, database_type)
+                elif database_type == 'mongodb':
+                    validate_mongodb(query)
+                elif database_type == 'redis':
+                    validate_redis(query)
+            except QueryBlockedError as e:
+                self._log_blocked_query(query, database_type, e.message)
+                return [QueryResult(success=False, error_message=e.message)]
+
+        try:
+            with self._isolated(database_type, schema_sql, seed_sql) as executor:
+                results = []
+                for query in queries:
+                    result = executor.execute_query(query, timeout=timeout)
+                    results.append(result)
+                    if not result.success:
+                        break
+                return results
+        except DatabaseConnectionError as e:
+            return [QueryResult(success=False, error_message=str(e))]
+        except Exception as e:
+            logger.error(f'Sequence execution error: {e}')
+            return [QueryResult(success=False, error_message=str(e))]
 
     # ── Session-based execution ────────────────────────────────
 
@@ -258,7 +342,7 @@ class SandboxPool:
         # Security: validate query (same as stateless path)
         try:
             if database_type in ('sqlite', 'postgresql', 'mariadb'):
-                validate_sql(query)
+                validate_sql(query, database_type)
             elif database_type == 'mongodb':
                 validate_mongodb(query)
             elif database_type == 'redis':

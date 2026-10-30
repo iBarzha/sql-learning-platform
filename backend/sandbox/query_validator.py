@@ -111,8 +111,8 @@ _SQL_RULES = [
     (r'\bcreate\s+server\b', MESSAGES['network']),
     (r'\bcreate\s+foreign\b', MESSAGES['network']),
 
-    # ── UNION-based information disclosure ──────────────────
-    (r'\bunion\s+(?:all\s+)?select\b', MESSAGES['info_leak']),
+    # UNION itself is core curriculum and stays allowed; the system catalogs a
+    # UNION-based leak would target are blocked individually above and below.
 
     # ── Information leaking ─────────────────────────────────
     (r'\bpg_ls_dir\b', MESSAGES['info_leak']),
@@ -129,27 +129,67 @@ _SQL_RULES = [
 _COMPILED_SQL_RULES = [(re.compile(pat, re.IGNORECASE), msg) for pat, msg in _SQL_RULES]
 
 
-def _strip_sql_comments(query: str) -> str:
-    """Remove SQL comments (-- line and /* block */) to prevent bypass."""
-    # Remove block comments
-    query = re.sub(r'/\*.*?\*/', ' ', query, flags=re.DOTALL)
-    # Remove line comments
-    query = re.sub(r'--[^\n]*', ' ', query)
-    # Collapse whitespace
-    query = re.sub(r'\s+', ' ', query).strip()
-    return query
+# Strings and comments are removed before the rules run, so a student searching for a
+# person named Grant is not told they attempted privilege escalation. The stripper has
+# to tokenize exactly the way the target database does: if it thinks a forbidden call
+# sits inside a string while the engine reads it as code, the rule never fires.
+#
+# PostgreSQL / SQLite: standard strings double a quote to escape it and keep
+# backslashes literal; E'...' strings use backslash escapes; $tag$...$tag$ is a string;
+# "..." is an identifier whose text must stay visible ("pg_shadow"). As in PostgreSQL's
+# lexer, a dollar quote cannot open right after an identifier character: a$b$c is one
+# identifier, not the start of a $b$ string.
+_STANDARD_TOKENS = re.compile(
+    r"""(?P<dollar>(?<![A-Za-z0-9_$\x80-\U0010FFFF])"""
+    r"""(?:\$\$.*?\$\$|\$(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\$.*?\$(?P=tag)\$))"""
+    r"""|(?P<estr>\b[eE]'(?:[^'\\]|\\.|'')*')"""
+    r"""|(?P<str>'(?:[^']|'')*')"""
+    r"""|(?P<ident>"(?:[^"]|"")*")"""
+    r"""|(?P<comment>--[^\n]*|/\*.*?\*/)""",
+    re.DOTALL,
+)
+# MySQL / MariaDB: backslash escapes in both quote styles, "..." is a string,
+# `...` is an identifier, and # starts a line comment.
+_MYSQL_TOKENS = re.compile(
+    r"""(?P<str>'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*")"""
+    r"""|(?P<ident>`(?:[^`]|``)*`)"""
+    r"""|(?P<comment>--[^\n]*|#[^\n]*|/\*.*?\*/)""",
+    re.DOTALL,
+)
+_TOKENS_BY_DIALECT = {
+    'postgresql': (_STANDARD_TOKENS,),
+    'sqlite': (_STANDARD_TOKENS,),
+    'mariadb': (_MYSQL_TOKENS,),
+    'mysql': (_MYSQL_TOKENS,),
+}
 
 
-def validate_sql(query: str) -> None:
+def _hide_token(match: 're.Match') -> str:
+    ident = match.group('ident')
+    if ident is not None:
+        return ident[1:-1]   # the identifier itself stays visible to the rules
+    return ' '
+
+
+def _strip_sql_comments(query: str, tokens: 're.Pattern' = _STANDARD_TOKENS) -> str:
+    """Remove string literals and comments so rules only see executable SQL."""
+    query = tokens.sub(_hide_token, query)
+    return re.sub(r'\s+', ' ', query).strip()
+
+
+def validate_sql(query: str, database_type: str | None = None) -> None:
     """Validate SQL query for PostgreSQL, MariaDB, and SQLite.
 
-    Raises QueryBlockedError if the query contains dangerous patterns.
+    Raises QueryBlockedError if the query contains dangerous patterns. Without a
+    database type the query is checked under every tokenization, so a forbidden
+    token would have to be hidden from all of them at once.
     """
-    cleaned = _strip_sql_comments(query)
-
-    for pattern, message in _COMPILED_SQL_RULES:
-        if pattern.search(cleaned):
-            raise QueryBlockedError(message)
+    tokenizations = _TOKENS_BY_DIALECT.get(database_type or '', (_STANDARD_TOKENS, _MYSQL_TOKENS))
+    for tokens in tokenizations:
+        cleaned = _strip_sql_comments(query, tokens)
+        for pattern, message in _COMPILED_SQL_RULES:
+            if pattern.search(cleaned):
+                raise QueryBlockedError(message)
 
 
 # ═══════════════════════════════════════════════════════════════

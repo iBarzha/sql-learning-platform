@@ -6,5 +6,9 @@
   "loading": "Завантаження...",
   "writeQuery": "-- Напишіть запит та натисніть Ctrl+Enter",
   "rowsAffected": "{{count}} рядків змінено",
+  "rowsAffected_one": "{{count}} рядок змінено",
+  "rowsAffected_few": "{{count}} рядки змінено",
+  "rowsAffected_many": "{{count}} рядків змінено",
+  "rowsAffected_other": "{{count}} рядків змінено",
   "executionTime": "{{time}}мс"
 }

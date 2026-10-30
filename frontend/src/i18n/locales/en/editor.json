@@ -6,5 +6,7 @@
   "loading": "Loading...",
   "writeQuery": "-- Write your query and press Ctrl+Enter",
   "rowsAffected": "{{count}} row(s) affected",
+  "rowsAffected_one": "{{count}} row affected",
+  "rowsAffected_other": "{{count}} rows affected",
   "executionTime": "{{time}}ms"
 }

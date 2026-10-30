@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { useAuthStore } from '@/store/authStore';
 import authApi from '@/api/auth';
 import { getApiErrorMessage } from '@/lib/utils';
@@ -56,6 +57,7 @@ export function ChangePasswordPage() {
       }
 
       await fetchUser();
+      toast.success(t('auth:changePassword.success'));
       navigate('/', { replace: true });
     } catch (err) {
       setApiError(getApiErrorMessage(err, t('auth:changePassword.error')));

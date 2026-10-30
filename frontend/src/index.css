@@ -1,6 +1,15 @@
 @import "tailwindcss";
+/* The lesson and assignment pages style markdown with `prose`; without this plugin
+   those classes do nothing and headings, tables and lists render as plain text. */
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* The typography plugin wraps inline code in literal backticks; SQL snippets read better without. */
+.prose code::before,
+.prose code::after {
+  content: none;
+}
 
 @layer base {
   :root {

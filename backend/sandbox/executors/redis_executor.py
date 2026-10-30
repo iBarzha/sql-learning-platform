@@ -261,7 +261,7 @@ class RedisExecutor(BaseExecutor):
             )
 
         if isinstance(result, list):
-            rows = [[json.dumps(item) if not isinstance(item, (str, int, float, type(None))) else str(item)]
+            rows = [[json.dumps(item, ensure_ascii=False) if not isinstance(item, (str, int, float, type(None))) else str(item)]
                     for item in result]
             return QueryResult(
                 success=True,
@@ -272,7 +272,7 @@ class RedisExecutor(BaseExecutor):
             )
 
         if isinstance(result, dict):
-            rows = [[k, json.dumps(v) if not isinstance(v, (str, int, float, type(None))) else str(v)]
+            rows = [[k, json.dumps(v, ensure_ascii=False) if not isinstance(v, (str, int, float, type(None))) else str(v)]
                     for k, v in result.items()]
             return QueryResult(
                 success=True,
@@ -296,7 +296,7 @@ class RedisExecutor(BaseExecutor):
         return QueryResult(
             success=True,
             columns=['result'],
-            rows=[[json.dumps(result)]],
+            rows=[[json.dumps(result, ensure_ascii=False)]],
             row_count=1,
             execution_time_ms=elapsed_ms,
         )

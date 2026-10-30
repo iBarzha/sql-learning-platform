@@ -1,0 +1,24 @@
+# Publishes the sandbox databases on localhost so the backend can run on the host
+# (runserver / test suite) instead of inside the compose network.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev-ports.yml up -d \
+#       sandbox-postgres sandbox-mariadb sandbox-mongodb sandbox-redis
+#
+# Then point the pool at them:
+#   SANDBOX_POSTGRESQL_HOST=127.0.0.1 SANDBOX_POSTGRESQL_PORT=55432
+#   SANDBOX_MARIADB_HOST=127.0.0.1    SANDBOX_MARIADB_PORT=53306
+#   SANDBOX_MONGODB_HOST=127.0.0.1    SANDBOX_MONGODB_PORT=57017
+#   SANDBOX_REDIS_HOST=127.0.0.1      SANDBOX_REDIS_PORT=56379
+services:
+  sandbox-postgres:
+    ports:
+      - "127.0.0.1:55432:5432"
+  sandbox-mariadb:
+    ports:
+      - "127.0.0.1:53306:3306"
+  sandbox-mongodb:
+    ports:
+      - "127.0.0.1:57017:27017"
+  sandbox-redis:
+    ports:
+      - "127.0.0.1:56379:6379"

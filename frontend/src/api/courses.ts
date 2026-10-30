@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { Course, Dataset, Enrollment, PaginatedResponse } from '@/types';
+import type { Course, Dataset, Enrollment, PaginatedResponse, StudentTimer } from '@/types';
 
 export interface CreateCourseData {
   title: string;
@@ -68,6 +68,13 @@ const coursesApi = {
 
   getMyEnrollments: async () => {
     const response = await apiClient.get<PaginatedResponse<Enrollment>>('/enrollments/');
+    return response.data;
+  },
+
+  getStudentTimers: async (courseId: string, studentId: string) => {
+    const response = await apiClient.get<StudentTimer[]>(`/courses/${courseId}/timers/`, {
+      params: { student: studentId },
+    });
     return response.data;
   },
 

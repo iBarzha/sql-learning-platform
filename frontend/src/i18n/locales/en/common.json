@@ -64,5 +64,10 @@
     "somethingWentWrong": "Something went wrong",
     "reloadPage": "Reload page",
     "sessionExpired": "Your session has expired. Please log in again."
+  },
+  "upload": {
+    "uploading": "Uploading...",
+    "drop": "Drop file here or click to browse",
+    "max": "Max {{mb}}MB"
   }
 }

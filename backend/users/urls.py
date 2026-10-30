@@ -11,6 +11,8 @@ from .views import (
     InviteCheckView,
     AdminCreateUserView,
     AdminUsersListView,
+    AdminUserDetailView,
+    AdminResetPasswordView,
 )
 
 urlpatterns = [
@@ -24,4 +26,10 @@ urlpatterns = [
     path('invite/check/<str:token>/', InviteCheckView.as_view(), name='invite_check'),
     path('admin/create-user/', AdminCreateUserView.as_view(), name='admin_create_user'),
     path('admin/users/', AdminUsersListView.as_view(), name='admin_users_list'),
+    path('admin/users/<uuid:pk>/', AdminUserDetailView.as_view(), name='admin_user_detail'),
+    path(
+        'admin/users/<uuid:pk>/reset-password/',
+        AdminResetPasswordView.as_view(),
+        name='admin_user_reset_password',
+    ),
 ]

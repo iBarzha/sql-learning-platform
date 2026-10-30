@@ -73,6 +73,10 @@ class Assignment(models.Model):
         default=False,
         help_text='Whether row order matters in result comparison'
     )
+    ignore_column_order = models.BooleanField(
+        default=False,
+        help_text='Accept the right columns in any order (matched by values)'
+    )
     partial_match = models.BooleanField(
         default=False,
         help_text='Allow partial column matches'
@@ -93,6 +97,18 @@ class Assignment(models.Model):
         default=list,
         blank=True,
         help_text='Hints to show after failed attempts'
+    )
+    check_datasets = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Hidden datasets the answer must also match: '
+                  '[{"name", "seed_sql", "schema_sql"?, "targets"?}]',
+    )
+    criteria = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Grading criteria chosen by the instructor: '
+                  '{"enabled": [...general criterion ids...], "threshold": N}; empty = defaults',
     )
 
     due_date = models.DateTimeField(null=True, blank=True)

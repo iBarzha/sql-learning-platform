@@ -1,17 +1,46 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Plus, Users, BookOpen, Settings, Eye, EyeOff, GraduationCap, Layers, Copy } from 'lucide-react';
+import type { Course } from '@/types';
 import { useCourses, useDuplicateCourse } from '@/hooks/queries/useCourses';
+import { getApiErrorMessage } from '@/lib/utils';
 
 export function MyCoursesPage() {
   const { t } = useTranslation('instructor');
+  const navigate = useNavigate();
   const { data: coursesData, isLoading: loading } = useCourses();
   const courses = coursesData?.results ?? [];
   const duplicateMutation = useDuplicateCourse();
+
+  const [duplicateTarget, setDuplicateTarget] = useState<Course | null>(null);
+  const [error, setError] = useState('');
+
+  async function confirmDuplicate() {
+    if (!duplicateTarget) return;
+    setError('');
+    try {
+      const copy = await duplicateMutation.mutateAsync({ courseId: duplicateTarget.id });
+      setDuplicateTarget(null);
+      navigate(`/courses/${copy.id}/manage`);
+    } catch (err) {
+      setDuplicateTarget(null);
+      setError(getApiErrorMessage(err, 'Failed to duplicate course'));
+    }
+  }
 
   if (loading) {
     return (
@@ -37,6 +66,12 @@ export function MyCoursesPage() {
           </Button>
         </Link>
       </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {courses.length === 0 ? (
         <Card className="border-dashed">
@@ -107,13 +142,14 @@ export function MyCoursesPage() {
                     variant="ghost"
                     size="icon"
                     title={t('myCourses.duplicate')}
+                    aria-label={t('myCourses.duplicate')}
                     disabled={duplicateMutation.isPending}
-                    onClick={() => duplicateMutation.mutate({ courseId: course.id })}
+                    onClick={() => setDuplicateTarget(course)}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
                   <Link to={`/courses/${course.id}`}>
-                    <Button variant="ghost" size="icon" title={t('myCourses.view')}>
+                    <Button variant="ghost" size="icon" title={t('myCourses.view')} aria-label={t('myCourses.view')}>
                       <Eye className="h-4 w-4" />
                     </Button>
                   </Link>
@@ -123,6 +159,26 @@ export function MyCoursesPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={!!duplicateTarget} onOpenChange={(open) => !open && setDuplicateTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('myCourses.duplicateConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('myCourses.duplicateConfirm', { title: duplicateTarget?.title ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicateTarget(null)}>
+              {t('myCourses.cancel')}
+            </Button>
+            <Button onClick={confirmDuplicate} disabled={duplicateMutation.isPending}>
+              {duplicateMutation.isPending && <Spinner size="sm" className="mr-2" />}
+              {t('myCourses.duplicate')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

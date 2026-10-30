@@ -8,6 +8,7 @@ export interface User {
   must_change_password: boolean;
   is_active: boolean;
   created_at: string;
+  last_login?: string | null;
   avatar_url?: string | null;
 }
 
@@ -70,9 +71,11 @@ export interface Assignment {
   required_keywords: string[];
   forbidden_keywords: string[];
   order_matters: boolean;
+  ignore_column_order?: boolean;
   partial_match: boolean;
   max_score: number;
-  time_limit_seconds: number;
+  criteria_summary?: CriteriaSummary;
+  time_limit_seconds: number | null;
   max_attempts?: number;
   hints: string[];
   due_date?: string;
@@ -114,13 +117,57 @@ export interface QueryResult {
   row_count: number;
 }
 
+export interface SubmissionCheck {
+  code: string;
+  name: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface CriterionVerdict {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ExerciseCriteria {
+  enabled: string[];
+  threshold: number;
+}
+
+export interface CriteriaSummary {
+  criteria: { id: string; name: string }[];
+  total: number;
+  threshold: number;
+}
+
+export type CriterionKind = 'select' | 'dml' | 'nosql';
+
+export interface CriterionInfo {
+  id: string;
+  name: string;
+  description: string;
+  kinds: CriterionKind[];
+}
+
 export interface SubmissionFeedback {
+  mode?: 'result' | 'execution';
   result_match?: boolean;
+  checks?: SubmissionCheck[];
   keywords_found?: string[];
   keywords_missing?: string[];
   forbidden_used?: string[];
   hints?: string[];
   message?: string;
+  failed_datasets?: { name: string; targets?: string }[];
+  datasets_checked?: number;
+  missing_rows?: string[];
+  extra_rows?: string[];
+  criteria?: CriterionVerdict[];
+  passed_count?: number;
+  total?: number;
+  threshold?: number;
 }
 
 export interface UserResult {
@@ -134,6 +181,56 @@ export interface UserResult {
   is_completed: boolean;
   first_completed_at?: string;
   last_attempt_at?: string;
+}
+
+/** One graded task of a student (lesson exercise or assignment), from `/results/`. */
+export interface StudentResult {
+  id: string;
+  /** The student's id, or the nested user when the serializer expands it. */
+  student: string | { id: string };
+  assignment: string | null;
+  assignment_title: string | null;
+  lesson: string | null;
+  lesson_title: string | null;
+  exercise: string | null;
+  exercise_title: string | null;
+  max_score: number;
+  best_submission: string | null;
+  // Decimal fields: DRF may send them as strings such as "20.00".
+  best_score: number | string;
+  total_attempts: number;
+  is_completed: boolean;
+  first_completed_at: string | null;
+  last_attempt_at: string | null;
+  extra_seconds: number;
+  manual_score: number | string | null;
+  manual_comment: string;
+  manual_set_at: string | null;
+  effective_score: number | string;
+}
+
+export interface ManualScoreData {
+  manual_score: number | null;
+  manual_comment: string;
+}
+
+/** Timer state of one timed lesson for one student. */
+export interface StudentTimer {
+  lesson_id: string;
+  lesson_title: string;
+  time_limit_seconds: number;
+  started_at: string | null;
+  deadline: string | null;
+  remaining_seconds: number | null;
+  extra_seconds: number;
+}
+
+export interface RegradeSummary {
+  submissions: number;
+  changed: number;
+  truncated: boolean;
+  /** Answers whose grading failed (e.g. the sandbox was down); they were left as they were. */
+  errors: number;
 }
 
 export interface Enrollment {

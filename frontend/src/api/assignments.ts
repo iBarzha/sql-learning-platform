@@ -1,3 +1,4 @@
+import type { ExerciseCriteria } from '@/types';
 import apiClient from './client';
 import type { Assignment, PaginatedResponse } from '@/types';
 
@@ -13,6 +14,7 @@ export interface CreateAssignmentData {
   required_keywords?: string[];
   forbidden_keywords?: string[];
   order_matters?: boolean;
+  ignore_column_order?: boolean;
   partial_match?: boolean;
   max_score?: number;
   time_limit_seconds?: number;
@@ -21,6 +23,7 @@ export interface CreateAssignmentData {
   due_date?: string;
   is_published?: boolean;
   order?: number;
+  criteria?: ExerciseCriteria;
 }
 
 export type UpdateAssignmentData = Partial<CreateAssignmentData>;

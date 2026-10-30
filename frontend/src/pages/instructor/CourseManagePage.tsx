@@ -1,9 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
@@ -32,12 +35,19 @@ import {
   Copy,
   ClipboardCopy,
   Check,
+  RefreshCw,
 } from 'lucide-react';
 import lessonsApi, { type Lesson } from '@/api/lessons';
-import modulesApi from '@/api/modules';
+import modulesApi, { type Module } from '@/api/modules';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCourse, useUpdateCourse, useDuplicateCourse } from '@/hooks/queries/useCourses';
-import { useLessons, useDeleteLesson } from '@/hooks/queries/useLessons';
+import {
+  useCourse,
+  useUpdateCourse,
+  useDuplicateCourse,
+  useDeleteCourse,
+} from '@/hooks/queries/useCourses';
+import { useLessons, useDeleteLesson, useRegradeLesson } from '@/hooks/queries/useLessons';
+import { getApiErrorMessage } from '@/lib/utils';
 import { useModules, useCreateModule, useDeleteModule } from '@/hooks/queries/useModules';
 
 const LESSON_TYPE_ICONS = {
@@ -60,28 +70,41 @@ export function CourseManagePage() {
   const queryClient = useQueryClient();
   const updateCourse = useUpdateCourse(courseId!);
   const duplicateMutation = useDuplicateCourse();
+  const deleteCourseMutation = useDeleteCourse();
   const deleteLessonMutation = useDeleteLesson(courseId!);
+  const regradeMutation = useRegradeLesson(courseId!);
   const createModuleMutation = useCreateModule(courseId!);
   const deleteModuleMutation = useDeleteModule(courseId!);
 
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
-  const [newModuleTitle, setNewModuleTitle] = useState('');
-  const [showAddModule, setShowAddModule] = useState(false);
 
+  // One dialog creates and edits modules; `id` set means editing.
+  const [moduleDialog, setModuleDialog] = useState<{ id?: string } | null>(null);
+  const [moduleTitle, setModuleTitle] = useState('');
+  const [moduleDescription, setModuleDescription] = useState('');
+  const [savingModule, setSavingModule] = useState(false);
+
+  const [showDeleteCourse, setShowDeleteCourse] = useState(false);
+  const [showDuplicate, setShowDuplicate] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
 
-  // Dialog state for confirmations
   const [deleteLessonId, setDeleteLessonId] = useState<string | null>(null);
+  const [regradeLesson, setRegradeLesson] = useState<Lesson | null>(null);
   const [deleteModuleId, setDeleteModuleId] = useState<string | null>(null);
 
-  const handleCopyCode = useCallback(() => {
-    if (course?.course_code) {
-      navigator.clipboard.writeText(course.course_code);
-      setCodeCopied(true);
-      setTimeout(() => setCodeCopied(false), 2000);
+  const handleCopyCode = useCallback(async () => {
+    if (!course?.course_code) return;
+    try {
+      await navigator.clipboard.writeText(course.course_code);
+    } catch {
+      toast.error(t('courseManage.copyFailed'));
+      return;
     }
-  }, [course?.course_code]);
+    toast.success(t('courseManage.codeCopied'));
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }, [course?.course_code, t]);
 
   async function togglePublish() {
     if (!course) return;
@@ -115,17 +138,56 @@ export function CourseManagePage() {
     }
   }
 
-  async function handleAddModule() {
-    if (!newModuleTitle.trim()) return;
+  async function confirmRegrade() {
+    if (!regradeLesson) return;
     try {
-      await createModuleMutation.mutateAsync({
-        title: newModuleTitle.trim(),
-        is_published: true,
-      });
-      setNewModuleTitle('');
-      setShowAddModule(false);
+      const summary = await regradeMutation.mutateAsync(regradeLesson.id);
+      const notes = [
+        summary.truncated ? t('courseManage.regradeTruncated') : null,
+        summary.errors > 0 ? t('courseManage.regradeErrors', { count: summary.errors }) : null,
+      ].filter((note): note is string => note !== null);
+      toast.success(
+        t('courseManage.regradeDone', { count: summary.submissions, changed: summary.changed }),
+        notes.length
+          ? { description: <>{notes.map((note) => <div key={note}>{note}</div>)}</> }
+          : undefined
+      );
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('courseManage.regradeFailed')));
+    } finally {
+      setRegradeLesson(null);
+    }
+  }
+
+  function openModuleDialog(mod?: Module) {
+    setModuleTitle(mod?.title ?? '');
+    setModuleDescription(mod?.description ?? '');
+    setModuleDialog({ id: mod?.id });
+  }
+
+  async function handleSaveModule() {
+    const title = moduleTitle.trim();
+    if (!title || !moduleDialog) return;
+    try {
+      setSavingModule(true);
+      if (moduleDialog.id) {
+        await modulesApi.update(courseId!, moduleDialog.id, {
+          title,
+          description: moduleDescription.trim(),
+        });
+        queryClient.invalidateQueries({ queryKey: ['course', courseId, 'modules'] });
+      } else {
+        await createModuleMutation.mutateAsync({
+          title,
+          description: moduleDescription.trim(),
+          is_published: true,
+        });
+      }
+      setModuleDialog(null);
     } catch {
-      setError('Failed to create module');
+      setError(moduleDialog.id ? 'Failed to update module' : 'Failed to create module');
+    } finally {
+      setSavingModule(false);
     }
   }
 
@@ -146,6 +208,28 @@ export function CourseManagePage() {
       queryClient.invalidateQueries({ queryKey: ['course', courseId, 'modules'] });
     } catch {
       setError('Failed to update module');
+    }
+  }
+
+  async function confirmDeleteCourse() {
+    try {
+      await deleteCourseMutation.mutateAsync(courseId!);
+      toast.success(t('courseManage.courseDeleted'));
+      navigate('/my-courses');
+    } catch {
+      setError('Failed to delete course');
+      setShowDeleteCourse(false);
+    }
+  }
+
+  async function confirmDuplicate() {
+    try {
+      const copy = await duplicateMutation.mutateAsync({ courseId: courseId! });
+      setShowDuplicate(false);
+      navigate(`/courses/${copy.id}/manage`);
+    } catch {
+      setError('Failed to duplicate course');
+      setShowDuplicate(false);
     }
   }
 
@@ -171,7 +255,7 @@ export function CourseManagePage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/my-courses')}>
+        <Button variant="ghost" size="icon" onClick={() => navigate('/my-courses')} aria-label={t('courseManage.backToMyCourses')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -186,9 +270,11 @@ export function CourseManagePage() {
           <div className="flex items-center gap-2 mt-1">
             <p className="text-muted-foreground">{t('courseManage.manageContent')}</p>
             {course.course_code && (
-              <div className="flex items-center gap-1.5 ml-2">
-                <span className="text-xs text-muted-foreground">{t('courseManage.courseCode')}:</span>
-                <Badge variant="outline" className="font-mono text-sm tracking-wider px-2.5 py-0.5">
+              <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                  {t('courseManage.courseCode')}:
+                </span>
+                <Badge variant="outline" className="font-mono text-sm tracking-wider px-2.5 py-0.5 shrink-0">
                   {course.course_code}
                 </Badge>
                 <Button
@@ -197,15 +283,16 @@ export function CourseManagePage() {
                   className="h-6 w-6"
                   onClick={handleCopyCode}
                   title={t('courseManage.copyCode')}
+                  aria-label={t('courseManage.copyCode')}
                 >
                   {codeCopied ? (
-                    <Check className="h-3.5 w-3.5 text-green-500" />
+                    <Check className="h-3.5 w-3.5 text-success" />
                   ) : (
                     <ClipboardCopy className="h-3.5 w-3.5" />
                   )}
                 </Button>
                 {codeCopied && (
-                  <span className="text-xs text-green-500">{t('courseManage.codeCopied')}</span>
+                  <span className="text-xs text-success whitespace-nowrap">{t('courseManage.codeCopied')}</span>
                 )}
               </div>
             )}
@@ -221,12 +308,7 @@ export function CourseManagePage() {
           <Button
             variant="outline"
             disabled={duplicateMutation.isPending}
-            onClick={() => {
-              duplicateMutation.mutate(
-                { courseId: courseId! },
-                { onSuccess: (newCourse) => navigate(`/courses/${newCourse.id}/manage`) }
-              );
-            }}
+            onClick={() => setShowDuplicate(true)}
           >
             <Copy className="h-4 w-4 mr-2" />
             {t('courseManage.duplicate')}
@@ -237,6 +319,14 @@ export function CourseManagePage() {
               {t('courseManage.settings')}
             </Button>
           </Link>
+          <Button
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setShowDeleteCourse(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {t('courseManage.deleteCourse')}
+          </Button>
           <Button onClick={togglePublish} disabled={publishing}>
             {publishing ? (
               <Spinner size="sm" className="mr-2" />
@@ -268,35 +358,13 @@ export function CourseManagePage() {
                   : t('courseManage.modulesCount', { count: modules.length })}
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => setShowAddModule(!showAddModule)}
-            >
+            <Button variant="outline" onClick={() => openModuleDialog()}>
               <FolderPlus className="h-4 w-4 mr-2" />
               {t('courseManage.addModule')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {showAddModule && (
-            <div className="flex gap-2 mb-4">
-              <Input
-                placeholder={t('courseManage.moduleTitlePlaceholder')}
-                value={newModuleTitle}
-                onChange={(e) => setNewModuleTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddModule();
-                  }
-                }}
-              />
-              <Button onClick={handleAddModule} disabled={!newModuleTitle.trim()}>
-                {t('courseManage.add')}
-              </Button>
-            </div>
-          )}
-
           {modules.length === 0 ? (
             <div className="text-center py-12">
               <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -304,7 +372,7 @@ export function CourseManagePage() {
               <p className="text-muted-foreground mb-4">
                 {t('courseManage.noModulesDesc')}
               </p>
-              <Button onClick={() => setShowAddModule(true)}>
+              <Button onClick={() => openModuleDialog()}>
                 <FolderPlus className="h-4 w-4 mr-2" />
                 {t('courseManage.addFirstModule')}
               </Button>
@@ -327,12 +395,15 @@ export function CourseManagePage() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold truncate">{mod.title}</span>
                           <Badge variant="outline">
-                            {moduleLessons.length} {t('courseManage.lessons').toLowerCase()}
+                            {t('myCourses.lessons', { count: moduleLessons.length })}
                           </Badge>
                           {!mod.is_published && (
                             <Badge variant="secondary">{t('courseManage.draft')}</Badge>
                           )}
                         </div>
+                        {mod.description && (
+                          <p className="text-sm text-muted-foreground truncate">{mod.description}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-1">
                         <Link to={`/courses/${courseId}/lessons/new?module=${mod.id}`}>
@@ -344,8 +415,18 @@ export function CourseManagePage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          onClick={() => openModuleDialog(mod)}
+                          title={t('courseManage.editModule')}
+                          aria-label={t('courseManage.editModule')}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => toggleModulePublish(mod)}
                           title={mod.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
+                          aria-label={mod.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
                         >
                           {mod.is_published ? (
                             <Eye className="h-4 w-4" />
@@ -358,6 +439,7 @@ export function CourseManagePage() {
                           size="icon"
                           onClick={() => setDeleteModuleId(mod.id)}
                           title={t('courseManage.deleteModule')}
+                          aria-label={t('courseManage.deleteModule')}
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -410,6 +492,7 @@ export function CourseManagePage() {
                                   size="icon"
                                   onClick={() => toggleLessonPublish(lesson)}
                                   title={lesson.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
+                                  aria-label={lesson.is_published ? t('courseManage.unpublish') : t('courseManage.publish')}
                                 >
                                   {lesson.is_published ? (
                                     <Eye className="h-4 w-4" />
@@ -417,8 +500,19 @@ export function CourseManagePage() {
                                     <EyeOff className="h-4 w-4" />
                                   )}
                                 </Button>
+                                {lesson.lesson_type !== 'theory' && (lesson.exercise_count ?? 0) > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setRegradeLesson(lesson)}
+                                    title={t('courseManage.regrade')}
+                                    aria-label={t('courseManage.regrade')}
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Link to={`/courses/${courseId}/lessons/${lesson.id}/edit`}>
-                                  <Button variant="ghost" size="icon" title="Edit">
+                                  <Button variant="ghost" size="icon" title={t('courseManage.editLesson')} aria-label={t('courseManage.editLesson')}>
                                     <Edit className="h-4 w-4" />
                                   </Button>
                                 </Link>
@@ -427,6 +521,7 @@ export function CourseManagePage() {
                                   size="icon"
                                   onClick={() => setDeleteLessonId(lesson.id)}
                                   title={t('courseManage.deleteLesson')}
+                                  aria-label={t('courseManage.deleteLesson')}
                                   className="text-destructive hover:text-destructive"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -444,6 +539,55 @@ export function CourseManagePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Create / Edit Module Dialog */}
+      <Dialog open={!!moduleDialog} onOpenChange={(open) => !open && setModuleDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {moduleDialog?.id ? t('courseManage.editModule') : t('courseManage.addModule')}
+            </DialogTitle>
+            <DialogDescription>{t('courseManage.noModulesDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="module-title">{t('courseManage.moduleTitle')} *</Label>
+              <Input
+                id="module-title"
+                placeholder={t('courseManage.moduleTitlePlaceholder')}
+                value={moduleTitle}
+                onChange={(e) => setModuleTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveModule();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="module-description">{t('courseManage.moduleDescription')}</Label>
+              <Textarea
+                id="module-description"
+                placeholder={t('courseManage.moduleDescriptionPlaceholder')}
+                value={moduleDescription}
+                onChange={(e) => setModuleDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModuleDialog(null)}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button onClick={handleSaveModule} disabled={!moduleTitle.trim() || savingModule}>
+              {savingModule && <Spinner size="sm" className="mr-2" />}
+              {moduleDialog?.id ? t('courseManage.save') : t('courseManage.add')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Lesson Dialog */}
       <Dialog open={!!deleteLessonId} onOpenChange={(open) => !open && setDeleteLessonId(null)}>
@@ -465,6 +609,25 @@ export function CourseManagePage() {
         </DialogContent>
       </Dialog>
 
+      {/* Regrade Lesson Dialog */}
+      <Dialog open={!!regradeLesson} onOpenChange={(open) => !open && !regradeMutation.isPending && setRegradeLesson(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('courseManage.regradeConfirmTitle', { title: regradeLesson?.title })}</DialogTitle>
+            <DialogDescription>{t('courseManage.regradeConfirm')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRegradeLesson(null)} disabled={regradeMutation.isPending}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button onClick={confirmRegrade} disabled={regradeMutation.isPending}>
+              {regradeMutation.isPending && <Spinner size="sm" className="mr-2" />}
+              {t('courseManage.regrade')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Module Dialog */}
       <Dialog open={!!deleteModuleId} onOpenChange={(open) => !open && setDeleteModuleId(null)}>
         <DialogContent>
@@ -480,6 +643,50 @@ export function CourseManagePage() {
             </Button>
             <Button variant="destructive" onClick={confirmDeleteModule}>
               {t('courseManage.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate Course Dialog */}
+      <Dialog open={showDuplicate} onOpenChange={(open) => !open && setShowDuplicate(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('courseManage.duplicateConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('courseManage.duplicateConfirm', { title: course.title })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDuplicate(false)}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button onClick={confirmDuplicate} disabled={duplicateMutation.isPending}>
+              {duplicateMutation.isPending && <Spinner size="sm" className="mr-2" />}
+              {t('courseManage.duplicate')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Course Dialog */}
+      <Dialog open={showDeleteCourse} onOpenChange={(open) => !open && setShowDeleteCourse(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('courseManage.deleteCourseConfirm', { title: course.title })}</DialogTitle>
+            <DialogDescription>{t('courseManage.deleteCourseWarning')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteCourse(false)}>
+              {t('courseManage.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteCourse}
+              disabled={deleteCourseMutation.isPending}
+            >
+              {deleteCourseMutation.isPending && <Spinner size="sm" className="mr-2" />}
+              {t('courseManage.deleteCourse')}
             </Button>
           </DialogFooter>
         </DialogContent>

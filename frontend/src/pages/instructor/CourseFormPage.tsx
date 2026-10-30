@@ -158,7 +158,13 @@ export function CourseFormPage() {
 
             <div className="space-y-2">
               <Label>{t('courseForm.databaseType')} *</Label>
-              <Select value={watch('database_type')} onValueChange={(val) => setValue('database_type', val)}>
+              <Select
+                value={watch('database_type')}
+                onValueChange={(val) => {
+                  // Radix Select emits '' when reset() replaces its controlled value.
+                  if (val) setValue('database_type', val);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

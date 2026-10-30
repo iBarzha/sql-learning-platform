@@ -8,10 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, Search, Users, Mail, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
-import { useCourse, useCourseEnrollments } from '@/hooks/queries/useCourses';
+import { ArrowLeft, Search, Users, Mail, Calendar, ChevronDown, ChevronUp, Timer, ClipboardList } from 'lucide-react';
+import { useCourse, useCourseEnrollments, useStudentTimers } from '@/hooks/queries/useCourses';
 import { useStudentProgress } from '@/hooks/queries/useSubmissions';
-import type { CourseProgress } from '@/types';
+import { StudentTimersDialog } from '@/components/instructor/StudentTimersDialog';
+import { StudentResultsDialog } from '@/components/instructor/StudentResultsDialog';
+import type { CourseProgress, User } from '@/types';
 
 function StudentGrades({ studentId }: { studentId: string }) {
   const { t } = useTranslation('instructor');
@@ -62,6 +64,45 @@ function StudentGrades({ studentId }: { studentId: string }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Per-student instructor tools: task results with manual scores, and timed-lesson clocks. */
+function StudentTools({ courseId, student }: { courseId: string; student: User }) {
+  const { t } = useTranslation('instructor');
+  const { data: timers = [] } = useStudentTimers(courseId, student.id);
+  const [showResults, setShowResults] = useState(false);
+  const [showTimers, setShowTimers] = useState(false);
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="sm" onClick={() => setShowResults(true)}>
+        <ClipboardList className="h-4 w-4 mr-2" />
+        {t('students.results.open')}
+      </Button>
+      {timers.length > 0 && (
+        <Button variant="outline" size="sm" onClick={() => setShowTimers(true)}>
+          <Timer className="h-4 w-4 mr-2" />
+          {t('students.timers.open')}
+        </Button>
+      )}
+      <StudentResultsDialog
+        courseId={courseId}
+        studentId={student.id}
+        studentName={student.full_name}
+        open={showResults}
+        onOpenChange={setShowResults}
+      />
+      {timers.length > 0 && (
+        <StudentTimersDialog
+          courseId={courseId}
+          studentId={student.id}
+          studentName={student.full_name}
+          open={showTimers}
+          onOpenChange={setShowTimers}
+        />
+      )}
     </div>
   );
 }
@@ -220,9 +261,12 @@ export function StudentsPage() {
                     </div>
                     {isExpanded && (
                       <div className="border-t border-border/50 p-4">
-                        <h4 className="text-sm font-medium mb-3">
-                          {t('students.studentGrades')}
-                        </h4>
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                          <h4 className="text-sm font-medium">
+                            {t('students.studentGrades')}
+                          </h4>
+                          <StudentTools courseId={course.id} student={enrollment.student} />
+                        </div>
                         <StudentGrades studentId={enrollment.student.id} />
                       </div>
                     )}
