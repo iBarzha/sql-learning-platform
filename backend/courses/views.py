@@ -76,6 +76,20 @@ class CourseViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsCourseInstructor()]
         return [IsAuthenticated()]
 
+    def destroy(self, request, *args, **kwargs):
+        course = self.get_object()
+        # Course datasets are deleted with the course; refuse while another course still uses one.
+        elsewhere = (LessonExercise.objects.filter(dataset__course=course).exclude(lesson__course=course).count()
+                     + Assignment.objects.filter(dataset__course=course).exclude(course=course).count())
+        if elsewhere:
+            return Response({
+                'detail': f'Datasets of this course are used by {elsewhere} exercise(s) in other courses; '
+                          'point them to other datasets first',
+                'code': 'datasets_in_use_elsewhere',
+                'count': elsewhere,
+            }, status=status.HTTP_409_CONFLICT)
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=False, methods=['get'])
     def available(self, request):
         """List available courses for enrollment."""

@@ -100,6 +100,22 @@ class JoinByCodeSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=8)
 
 
+def validate_dataset_for_course(dataset_id, course):
+    """An exercise or assignment may use a library dataset (course=None) or a dataset bound to
+    its own course. A dataset of another course is refused: it would vanish with that course."""
+    if not dataset_id or course is None:
+        return
+    owner_id = Dataset.objects.filter(id=dataset_id).values_list('course_id', flat=True).first()
+    if owner_id is not None and owner_id != course.id:
+        raise serializers.ValidationError('Dataset belongs to another course.')
+
+
+def _exercises_datasets_in_course(exercises, course):
+    for ex in exercises:
+        validate_dataset_for_course(ex.get('dataset_id'), course)
+    return exercises
+
+
 class LessonExerciseSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(required=False)
     dataset = DatasetSerializer(read_only=True)
@@ -353,6 +369,9 @@ class LessonDetailSerializer(serializers.ModelSerializer):
         ).count()
         return completed_count == len(exercise_ids)
 
+    def validate_exercises(self, value):
+        return _exercises_datasets_in_course(value, self.instance.course if self.instance else self.context.get('course'))
+
     def update(self, instance, validated_data):
         module_id = validated_data.pop('module_id', None)
         exercises_data = validated_data.pop('exercises', None)
@@ -407,6 +426,9 @@ class LessonCreateSerializer(serializers.ModelSerializer):
         if course and not Module.objects.filter(id=value, course=course).exists():
             raise serializers.ValidationError('Module does not belong to this course.')
         return value
+
+    def validate_exercises(self, value):
+        return _exercises_datasets_in_course(value, self.context.get('course'))
 
     def create(self, validated_data):
         module_id = validated_data.pop('module_id')
