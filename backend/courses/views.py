@@ -391,6 +391,28 @@ def _course_student(course, student_id):
     return enrollment.student
 
 
+def dataset_in_use(dataset):
+    """Deleting a dataset that exercises or assignments still reference would silently break
+    their grading (the sandbox would start from an empty schema). Returns the 409 body
+    describing the usages, or None when the dataset is free to go."""
+    exercises = dataset.exercises.select_related('lesson__course').order_by('lesson__course__title', 'lesson__order')
+    assignments = Assignment.objects.filter(dataset=dataset).select_related('course').order_by('course__title')
+    total = exercises.count() + assignments.count()
+    if not total:
+        return None
+    usages = [
+        {'course': e.lesson.course.title, 'lesson': e.lesson.title, 'title': e.title} for e in exercises[:20]
+    ] + [
+        {'course': a.course.title, 'lesson': None, 'title': a.title} for a in assignments[:20]
+    ]
+    return {
+        'detail': f'Dataset is used by {total} exercise(s); choose another dataset for them first',
+        'code': 'dataset_in_use',
+        'count': total,
+        'exercises': usages,
+    }
+
+
 class DatasetViewSet(viewsets.ModelViewSet):
     serializer_class = DatasetSerializer
     permission_classes = [IsAuthenticated]
@@ -427,6 +449,12 @@ class DatasetViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Not authorized to add datasets to this course')
         serializer.save(course_id=course_id, created_by=self.request.user)
 
+    def destroy(self, request, *args, **kwargs):
+        conflict = dataset_in_use(self.get_object())
+        if conflict:
+            return Response(conflict, status=status.HTTP_409_CONFLICT)
+        return super().destroy(request, *args, **kwargs)
+
 
 class StandaloneDatasetViewSet(viewsets.ModelViewSet):
     """Datasets owned by an instructor (course=None) or system datasets.
@@ -457,11 +485,15 @@ class StandaloneDatasetViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('You can only edit your own datasets')
         serializer.save()
 
-    def perform_destroy(self, instance):
-        user = self.request.user
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user
         if instance.created_by and instance.created_by != user and not user.is_superuser:
             raise PermissionDenied('You can only delete your own datasets')
-        instance.delete()
+        conflict = dataset_in_use(instance)
+        if conflict:
+            return Response(conflict, status=status.HTTP_409_CONFLICT)
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['post'])
     def upload_sql(self, request):

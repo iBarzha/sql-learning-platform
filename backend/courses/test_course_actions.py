@@ -129,3 +129,85 @@ class GenerateDatasetStatusTests(APITestCase):
             resp = self.client.post('/api/datasets/generate/', {'topic': 'library'}, format='json')
         self.assertIn(resp.status_code, (status.HTTP_503_SERVICE_UNAVAILABLE, status.HTTP_502_BAD_GATEWAY))
         self.assertTrue(resp.data['detail'])
+
+
+class DeleteCourseTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            email='t@test.com', password='x', role=User.Role.INSTRUCTOR, first_name='T', last_name='T')
+        self.client.force_authenticate(self.instructor)
+        self.course = Course.objects.create(title='Оригінал', instructor=self.instructor, database_type='sqlite')
+        self.course_dataset = Dataset.objects.create(
+            name='Курсовий', course=self.course, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE t (a INT);')
+        self.library_dataset = Dataset.objects.create(
+            name='Бібліотечний', course=None, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE u (b INT);')
+
+    def library_names(self):
+        data = self.client.get('/api/datasets/').data
+        rows = data['results'] if isinstance(data, dict) else data
+        return sorted(d['name'] for d in rows)
+
+    def test_deleting_a_course_removes_its_datasets_but_keeps_library_ones(self):
+        resp = self.client.delete(f'/api/courses/{self.course.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Dataset.objects.filter(id=self.course_dataset.id).exists())
+        self.assertTrue(Dataset.objects.filter(id=self.library_dataset.id).exists())
+        self.assertEqual(self.library_names(), ['Бібліотечний'])
+
+    def test_deleting_a_duplicate_leaves_no_orphan_in_the_library(self):
+        copy_id = self.client.post(f'/api/courses/{self.course.id}/duplicate/', {}, format='json').data['id']
+        self.assertEqual(Dataset.objects.filter(course_id=copy_id).count(), 1)
+
+        resp = self.client.delete(f'/api/courses/{copy_id}/')
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(self.library_names(), ['Бібліотечний'])
+        self.assertTrue(Dataset.objects.filter(id=self.course_dataset.id).exists())
+
+
+class DeleteDatasetTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            email='t@test.com', password='x', role=User.Role.INSTRUCTOR, first_name='T', last_name='T')
+        self.client.force_authenticate(self.instructor)
+        self.course = Course.objects.create(title='Курс', instructor=self.instructor, database_type='sqlite')
+        self.used = Dataset.objects.create(
+            name='Уживаний', course=None, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE t (a INT);')
+        self.unused = Dataset.objects.create(
+            name='Вільний', course=None, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE u (b INT);')
+        self.course_dataset = Dataset.objects.create(
+            name='Курсовий', course=self.course, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE v (c INT);')
+        module = Module.objects.create(course=self.course, title='Модуль', is_published=True)
+        lesson = Lesson.objects.create(course=self.course, module=module, title='Урок', lesson_type='practice',
+                                       is_published=True)
+        LessonExercise.objects.create(lesson=lesson, title='Вправа', expected_query='SELECT a FROM t',
+                                      dataset=self.used)
+        LessonExercise.objects.create(lesson=lesson, title='Ще вправа', expected_query='SELECT c FROM v',
+                                      dataset=self.course_dataset)
+
+    def test_dataset_used_by_an_exercise_is_not_deleted(self):
+        resp = self.client.delete(f'/api/datasets/{self.used.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT, resp.data)
+        self.assertEqual(resp.data['code'], 'dataset_in_use')
+        self.assertEqual(resp.data['count'], 1)
+        self.assertEqual(resp.data['exercises'], [{'course': 'Курс', 'lesson': 'Урок', 'title': 'Вправа'}])
+        self.assertTrue(Dataset.objects.filter(id=self.used.id).exists())
+
+    def test_unused_dataset_is_deleted(self):
+        resp = self.client.delete(f'/api/datasets/{self.unused.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Dataset.objects.filter(id=self.unused.id).exists())
+
+    def test_course_dataset_used_by_an_exercise_is_not_deleted(self):
+        resp = self.client.delete(f'/api/courses/{self.course.id}/datasets/{self.course_dataset.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT, resp.data)
+        self.assertTrue(Dataset.objects.filter(id=self.course_dataset.id).exists())
+
+    def test_dataset_is_deletable_once_the_exercise_moved_on(self):
+        LessonExercise.objects.filter(dataset=self.used).update(dataset=self.unused)
+        resp = self.client.delete(f'/api/datasets/{self.used.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
