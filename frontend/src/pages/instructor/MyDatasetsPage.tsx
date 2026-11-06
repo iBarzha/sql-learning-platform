@@ -60,6 +60,12 @@ const emptyForm: FormState = {
   seed_sql: '',
 };
 
+interface DatasetInUseError {
+  code?: string;
+  count?: number;
+  exercises?: Array<{ course: string; lesson: string | null; title: string }>;
+}
+
 export function MyDatasetsPage() {
   const { t } = useTranslation('instructor');
   const { user } = useAuthStore();
@@ -75,6 +81,7 @@ export function MyDatasetsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [apiError, setApiError] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [previewDataset, setPreviewDataset] = useState<Dataset | null>(null);
   const [previewResult, setPreviewResult] = useState<DatasetPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -169,11 +176,30 @@ export function MyDatasetsPage() {
 
   async function confirmDelete() {
     if (!deleteId) return;
+    setDeleteError('');
     try {
       await deleteMutation.mutateAsync(deleteId);
-    } finally {
       setDeleteId(null);
+    } catch (err) {
+      setDeleteError(describeDeleteError(err));
     }
+  }
+
+  function closeDelete() {
+    setDeleteId(null);
+    setDeleteError('');
+  }
+
+  /** A dataset that exercises still use is refused with 409 and the list of usages. */
+  function describeDeleteError(err: unknown): string {
+    const data = (err as { response?: { data?: DatasetInUseError } })?.response?.data;
+    if (data?.code === 'dataset_in_use') {
+      const where = (data.exercises ?? [])
+        .map((e) => [e.course, e.lesson, e.title].filter(Boolean).join(' / '))
+        .join('\n');
+      return `${t('datasets.delete.inUse', { count: data.count ?? 0 })}\n${where}`;
+    }
+    return getApiErrorMessage(err, t('datasets.errors.delete'));
   }
 
   async function handleGenerate() {
@@ -462,15 +488,20 @@ export function MyDatasetsPage() {
       </Dialog>
 
       {/* Delete confirmation */}
-      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && closeDelete()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('datasets.delete.title')}</DialogTitle>
             <DialogDescription>{t('datasets.delete.description')}</DialogDescription>
           </DialogHeader>
+          {deleteError && (
+            <Alert variant="destructive">
+              <AlertDescription className="whitespace-pre-line">{deleteError}</AlertDescription>
+            </Alert>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)}>{t('datasets.delete.cancel')}</Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isPending}>
+            <Button variant="outline" onClick={closeDelete}>{t('datasets.delete.cancel')}</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isPending || !!deleteError}>
               {deleteMutation.isPending && <Spinner size="sm" className="mr-2" />}
               {t('datasets.delete.confirm')}
             </Button>

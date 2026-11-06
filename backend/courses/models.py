@@ -239,7 +239,7 @@ class Dataset(models.Model):
     description = models.TextField(blank=True)
     course = models.ForeignKey(
         Course,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,  # a course-bound dataset dies with its course; library datasets have course=None
         null=True,
         blank=True,
         related_name='datasets'

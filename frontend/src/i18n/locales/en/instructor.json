@@ -349,16 +349,18 @@
     },
     "delete": {
       "title": "Delete Dataset",
-      "description": "This permanently deletes the dataset. Lessons that reference it will lose the link.",
+      "description": "This permanently deletes the dataset. A dataset that exercises use cannot be deleted.",
       "cancel": "Cancel",
-      "confirm": "Delete"
+      "confirm": "Delete",
+      "inUse": "This dataset is used by {{count}} exercise(s) and cannot be deleted. Choose another dataset for them first:"
     },
     "errors": {
       "load": "Failed to load datasets",
       "save": "Failed to save dataset",
       "parse": "Failed to parse SQL file",
       "preview": "Preview failed",
-      "generate": "Generation failed"
+      "generate": "Generation failed",
+      "delete": "Could not delete the dataset"
     }
   }
 }
