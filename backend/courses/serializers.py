@@ -100,19 +100,35 @@ class JoinByCodeSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=8)
 
 
-def validate_dataset_for_course(dataset_id, course):
-    """An exercise or assignment may use a library dataset (course=None) or a dataset bound to
-    its own course. A dataset of another course is refused: it would vanish with that course."""
+def _request_user(context):
+    request = context.get('request')
+    return getattr(request, 'user', None) if request is not None else None
+
+
+def validate_dataset_for_course(dataset_id, course, user):
+    """An exercise or assignment may use a dataset bound to its own course, or a library dataset
+    the editing user may see: a system one, their own, the course instructor's, or any for admins.
+    A dataset of another course is refused (it would vanish with that course), and so is a
+    library dataset that belongs to someone else (no borrowing by guessing ids)."""
     if not dataset_id or course is None:
         return
-    owner_id = Dataset.objects.filter(id=dataset_id).values_list('course_id', flat=True).first()
-    if owner_id is not None and owner_id != course.id:
-        raise serializers.ValidationError('Dataset belongs to another course.')
+    owner = Dataset.objects.filter(id=dataset_id).values('course_id', 'created_by_id').first()
+    if owner is None:
+        raise serializers.ValidationError('Dataset not found.')
+    if owner['course_id'] is not None:
+        if owner['course_id'] != course.id:
+            raise serializers.ValidationError('Dataset belongs to another course.')
+        return
+    author = owner['created_by_id']
+    is_admin = user is not None and (user.is_superuser or user.role == user.Role.ADMIN)
+    allowed = author is None or is_admin or (user is not None and author in (user.id, course.instructor_id))
+    if not allowed:
+        raise serializers.ValidationError('Dataset is not available to you.')
 
 
-def _exercises_datasets_in_course(exercises, course):
+def _exercises_datasets_in_course(exercises, course, user):
     for ex in exercises:
-        validate_dataset_for_course(ex.get('dataset_id'), course)
+        validate_dataset_for_course(ex.get('dataset_id'), course, user)
     return exercises
 
 
@@ -370,7 +386,8 @@ class LessonDetailSerializer(serializers.ModelSerializer):
         return completed_count == len(exercise_ids)
 
     def validate_exercises(self, value):
-        return _exercises_datasets_in_course(value, self.instance.course if self.instance else self.context.get('course'))
+        course = self.instance.course if self.instance else self.context.get('course')
+        return _exercises_datasets_in_course(value, course, _request_user(self.context))
 
     def update(self, instance, validated_data):
         module_id = validated_data.pop('module_id', None)
@@ -428,7 +445,7 @@ class LessonCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_exercises(self, value):
-        return _exercises_datasets_in_course(value, self.context.get('course'))
+        return _exercises_datasets_in_course(value, self.context.get('course'), _request_user(self.context))
 
     def create(self, validated_data):
         module_id = validated_data.pop('module_id')

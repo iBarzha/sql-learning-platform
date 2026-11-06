@@ -137,8 +137,8 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
         return course.database_type if course else 'sqlite'
 
     def validate_dataset(self, value):
-        from courses.serializers import validate_dataset_for_course
-        validate_dataset_for_course(value.id if value else None, self._course())
+        from courses.serializers import validate_dataset_for_course, _request_user
+        validate_dataset_for_course(value.id if value else None, self._course(), _request_user(self.context))
         return value
 
     def validate(self, attrs):
