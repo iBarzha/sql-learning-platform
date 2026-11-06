@@ -125,13 +125,21 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
         from courses.serializers import validate_check_datasets_value
         return validate_check_datasets_value(value)
 
-    def _db_type(self):
+    def _course(self):
         if self.instance is not None:
-            return self.instance.course.database_type
+            return self.instance.course
         view = self.context.get('view')
         course_id = getattr(view, 'kwargs', {}).get('course_pk') if view else None
-        course = Course.objects.filter(id=course_id).first() if course_id else None
+        return Course.objects.filter(id=course_id).first() if course_id else None
+
+    def _db_type(self):
+        course = self._course()
         return course.database_type if course else 'sqlite'
+
+    def validate_dataset(self, value):
+        from courses.serializers import validate_dataset_for_course
+        validate_dataset_for_course(value.id if value else None, self._course())
+        return value
 
     def validate(self, attrs):
         # A partial update may omit the reference or datasets: fall back to the stored ones.
