@@ -295,3 +295,57 @@ class CrossCourseDatasetTests(APITestCase):
         self.assertEqual(resp.data['code'], 'datasets_in_use_elsewhere')
         self.assertTrue(Course.objects.filter(id=self.other.id).exists())
         self.assertTrue(Dataset.objects.filter(id=self.other_dataset.id).exists())
+
+
+class LibraryDatasetVisibilityTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            email='t@test.com', password='x', role=User.Role.INSTRUCTOR, first_name='T', last_name='T')
+        self.stranger = User.objects.create_user(
+            email='u@test.com', password='x', role=User.Role.INSTRUCTOR, first_name='U', last_name='U')
+        self.admin = User.objects.create_user(
+            email='a@test.com', password='x', role=User.Role.ADMIN, first_name='A', last_name='A')
+        self.course = Course.objects.create(title='A', instructor=self.instructor, database_type='sqlite')
+        module = Module.objects.create(course=self.course, title='M', is_published=True)
+        self.lesson = Lesson.objects.create(course=self.course, module=module, title='L',
+                                            lesson_type='practice', is_published=True)
+        mk = lambda name, author: Dataset.objects.create(
+            name=name, course=None, created_by=author, database_type='sqlite', schema_sql='CREATE TABLE t (a INT);')
+        self.system = mk('Системний', None)
+        self.own = mk('Власний', self.instructor)
+        self.private = mk('Чужий', self.stranger)
+
+    def patch_lesson(self, dataset_id, user=None):
+        self.client.force_authenticate(user or self.instructor)
+        return self.client.patch(
+            f'/api/courses/{self.course.id}/lessons/{self.lesson.id}/',
+            {'exercises': [{'title': 'E', 'expected_query': 'SELECT a FROM t', 'dataset_id': str(dataset_id)}]},
+            format='json')
+
+    def test_system_and_own_library_datasets_are_accepted(self):
+        self.assertEqual(self.patch_lesson(self.system.id).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.patch_lesson(self.own.id).status_code, status.HTTP_200_OK)
+
+    def test_another_instructors_library_dataset_is_refused(self):
+        resp = self.patch_lesson(self.private.id)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, resp.data)
+        self.assertFalse(LessonExercise.objects.filter(dataset=self.private).exists())
+
+    def test_unknown_dataset_id_is_refused(self):
+        import uuid
+        resp = self.patch_lesson(uuid.uuid4())
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, resp.data)
+
+    def test_admin_may_attach_the_course_instructors_dataset(self):
+        self.assertEqual(self.patch_lesson(self.own.id, user=self.admin).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.patch_lesson(self.private.id, user=self.admin).status_code, status.HTTP_200_OK)
+
+    def test_assignment_follows_the_same_rule(self):
+        self.client.force_authenticate(self.instructor)
+        payload = {'title': 'Завдання', 'description': 'опис', 'expected_query': 'SELECT a FROM t',
+                   'dataset': str(self.private.id)}
+        resp = self.client.post(f'/api/courses/{self.course.id}/assignments/', payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, resp.data)
+        payload['dataset'] = str(self.system.id)
+        resp = self.client.post(f'/api/courses/{self.course.id}/assignments/', payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
