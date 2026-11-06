@@ -237,3 +237,61 @@ class SystemDatasetPermissionTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
         resp = self.client.delete(f'/api/datasets/{self.system.id}/')
         self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class CrossCourseDatasetTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            email='t@test.com', password='x', role=User.Role.INSTRUCTOR, first_name='T', last_name='T')
+        self.client.force_authenticate(self.instructor)
+        self.course = Course.objects.create(title='A', instructor=self.instructor, database_type='sqlite')
+        self.other = Course.objects.create(title='B', instructor=self.instructor, database_type='sqlite')
+        self.other_dataset = Dataset.objects.create(
+            name='Набір курсу B', course=self.other, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE t (a INT);')
+        self.library_dataset = Dataset.objects.create(
+            name='Бібліотечний', course=None, created_by=self.instructor,
+            database_type='sqlite', schema_sql='CREATE TABLE t (a INT);')
+        self.module = Module.objects.create(course=self.course, title='M', is_published=True)
+        self.lesson = Lesson.objects.create(course=self.course, module=self.module, title='L',
+                                            lesson_type='practice', is_published=True)
+
+    def patch_lesson(self, dataset_id):
+        return self.client.patch(
+            f'/api/courses/{self.course.id}/lessons/{self.lesson.id}/',
+            {'exercises': [{'title': 'E', 'expected_query': 'SELECT a FROM t', 'dataset_id': str(dataset_id)}]},
+            format='json')
+
+    def test_exercise_may_use_a_library_dataset_but_not_another_courses(self):
+        self.assertEqual(self.patch_lesson(self.library_dataset.id).status_code, status.HTTP_200_OK)
+        resp = self.patch_lesson(self.other_dataset.id)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, resp.data)
+        self.assertIn('exercises', resp.data)
+        self.assertEqual(LessonExercise.objects.get(lesson=self.lesson).dataset_id, self.library_dataset.id)
+
+    def test_new_lesson_cannot_use_another_courses_dataset(self):
+        resp = self.client.post(
+            f'/api/courses/{self.course.id}/lessons/',
+            {'title': 'L2', 'lesson_type': 'practice', 'module_id': str(self.module.id),
+             'exercises': [{'title': 'E', 'expected_query': 'SELECT a FROM t', 'dataset_id': str(self.other_dataset.id)}]},
+            format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, resp.data)
+
+    def test_assignment_cannot_use_another_courses_dataset(self):
+        payload = {'title': 'Завдання', 'description': 'опис', 'expected_query': 'SELECT a FROM t',
+                   'dataset': str(self.library_dataset.id)}
+        resp = self.client.post(f'/api/courses/{self.course.id}/assignments/', payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        payload['dataset'] = str(self.other_dataset.id)
+        resp = self.client.post(f'/api/courses/{self.course.id}/assignments/', payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, resp.data)
+        self.assertIn('dataset', resp.data)
+
+    def test_course_whose_dataset_is_used_elsewhere_is_not_deleted(self):
+        LessonExercise.objects.create(lesson=self.lesson, title='E', expected_query='SELECT a FROM t',
+                                      dataset=self.other_dataset)   # legacy cross-course link
+        resp = self.client.delete(f'/api/courses/{self.other.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT, resp.data)
+        self.assertEqual(resp.data['code'], 'datasets_in_use_elsewhere')
+        self.assertTrue(Course.objects.filter(id=self.other.id).exists())
+        self.assertTrue(Dataset.objects.filter(id=self.other_dataset.id).exists())
