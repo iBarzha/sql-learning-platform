@@ -478,18 +478,20 @@ class StandaloneDatasetViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user, course=None)
 
-    def perform_update(self, serializer):
-        instance = self.get_object()
+    def _check_can_manage(self, instance):
+        """Own datasets: the author; system datasets (no author) and other people's: admins only."""
         user = self.request.user
-        if instance.created_by and instance.created_by != user and not user.is_superuser:
+        is_admin = user.is_superuser or user.role == user.Role.ADMIN
+        if instance.created_by_id != user.id and not is_admin:
             raise PermissionDenied('You can only edit your own datasets')
+
+    def perform_update(self, serializer):
+        self._check_can_manage(serializer.instance)
         serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        user = request.user
-        if instance.created_by and instance.created_by != user and not user.is_superuser:
-            raise PermissionDenied('You can only delete your own datasets')
+        self._check_can_manage(instance)
         conflict = dataset_in_use(instance)
         if conflict:
             return Response(conflict, status=status.HTTP_409_CONFLICT)

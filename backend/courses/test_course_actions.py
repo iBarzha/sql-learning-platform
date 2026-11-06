@@ -211,3 +211,29 @@ class DeleteDatasetTests(APITestCase):
         LessonExercise.objects.filter(dataset=self.used).update(dataset=self.unused)
         resp = self.client.delete(f'/api/datasets/{self.used.id}/')
         self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class SystemDatasetPermissionTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            email='t@test.com', password='x', role=User.Role.INSTRUCTOR, first_name='T', last_name='T')
+        self.admin = User.objects.create_user(
+            email='a@test.com', password='x', role=User.Role.ADMIN, first_name='A', last_name='A')
+        self.system = Dataset.objects.create(
+            name='Системний', course=None, created_by=None,
+            database_type='sqlite', schema_sql='CREATE TABLE s (a INT);')
+
+    def test_instructor_cannot_edit_or_delete_a_system_dataset(self):
+        self.client.force_authenticate(self.instructor)
+        resp = self.client.patch(f'/api/datasets/{self.system.id}/', {'name': 'Мій'}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        resp = self.client.delete(f'/api/datasets/{self.system.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Dataset.objects.filter(id=self.system.id).exists())
+
+    def test_admin_can_edit_and_delete_a_system_dataset(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.patch(f'/api/datasets/{self.system.id}/', {'name': 'Оновлений'}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        resp = self.client.delete(f'/api/datasets/{self.system.id}/')
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
